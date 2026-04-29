@@ -40,6 +40,8 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.util.Range;
 import android.util.Size;
 import android.util.SizeF;
@@ -100,6 +102,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private LinearLayout cameraScreen;
     private String latestReport = "";
     private boolean compatibilityCheckRun = false;
+    private boolean liveImuStarted = false;
+    private boolean liveImuSampleReceived = false;
     private Uri outputTreeUri;
 
     private final List<Sensor> activeSensors = new ArrayList<>();
@@ -183,10 +187,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         homeIntro.setGravity(Gravity.CENTER);
         homeIntro.setText("Choose a module.");
         homeScreen.addView(homeIntro);
-        Button capabilitiesNav = makeHeroButton("01", "CHECK CAPABILITIES", "Sensors, GPS, IMU, and phone readiness");
+        Button capabilitiesNav = makeHeroButton("CHECK CAPABILITIES", "Sensors, GPS, IMU, and phone readiness");
         capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
         homeScreen.addView(capabilitiesNav);
-        Button cameraNav = makeHeroButton("02", "CAMERA LAB", "Daylight framing, astro burst, RAW, and lens sweep");
+        Button cameraNav = makeHeroButton("CAMERA LAB", "Daylight framing, astro burst, RAW, and lens sweep");
         cameraNav.setOnClickListener(v -> showScreen("camera"));
         homeScreen.addView(cameraNav);
 
@@ -224,6 +228,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         copy.setOnClickListener(v -> copyReport());
         row2.addView(copy);
 
+        addAreaTitle(capabilitiesScreen, "COMPATIBILITY CHECK");
         compatibilityView = sectionText();
         capabilitiesScreen.addView(compatibilityView);
 
@@ -314,7 +319,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void addBackRow(LinearLayout root) {
         LinearLayout row = buttonRow();
         root.addView(row);
-        Button back = makeGridButton("Back");
+        Button back = makeSmallButton("Back");
         back.setOnClickListener(v -> showScreen("home"));
         row.addView(back);
         TextView spacer = new TextView(this);
@@ -324,19 +329,74 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private Button makeHeroButton(String title, String subtitle) {
         Button button = new Button(this);
-        button.setText(title + "\n" + subtitle);
+        String text = title + "\n" + subtitle;
+        SpannableString styledText = new SpannableString(text);
+        styledText.setSpan(
+                new StyleSpan(Typeface.BOLD),
+                0,
+                title.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        styledText.setSpan(
+                new RelativeSizeSpan(1.12f),
+                0,
+                title.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        styledText.setSpan(
+                new StyleSpan(Typeface.NORMAL),
+                title.length() + 1,
+                text.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        styledText.setSpan(
+                new RelativeSizeSpan(0.76f),
+                title.length() + 1,
+                text.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        styledText.setSpan(
+                new ForegroundColorSpan(COLOR_MUTED),
+                title.length() + 1,
+                text.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        button.setText(styledText);
         button.setAllCaps(false);
-        button.setTextSize(15);
+        button.setTextSize(16);
         button.setTextColor(COLOR_TEXT);
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
-        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-        button.setPadding(dp(18), dp(18), dp(18), dp(18));
-        button.setBackground(roundedRect(COLOR_PANEL, COLOR_ACCENT_DARK, 1, 6));
+        button.setGravity(Gravity.CENTER);
+        button.setLetterSpacing(0.06f);
+        button.setMinHeight(dp(132));
+        button.setPadding(dp(18), dp(22), dp(18), dp(22));
+        button.setBackground(roundedRect(COLOR_PANEL, COLOR_ACCENT_DARK, 1, 8));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        params.setMargins(0, dp(12), 0, 0);
+        params.setMargins(0, dp(16), 0, 0);
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    private Button makeSmallButton(String label) {
+        Button button = new Button(this);
+        button.setText(label.toUpperCase(Locale.US));
+        button.setTextSize(10);
+        button.setTextColor(COLOR_MUTED);
+        button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        button.setLetterSpacing(0.08f);
+        button.setAllCaps(false);
+        button.setMinHeight(dp(32));
+        button.setMinWidth(dp(72));
+        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setBackground(roundedRect(COLOR_BG, Color.rgb(45, 51, 66), 1, 3));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(36)
+        );
+        params.setMargins(0, 0, dp(8), dp(10));
         button.setLayoutParams(params);
         return button;
     }
@@ -388,6 +448,31 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         );
         accentParams.setMargins(dp(34), 0, 0, 0);
         block.addView(accent, accentParams);
+    }
+
+    private void addAreaTitle(LinearLayout root, String title) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(0, dp(18), 0, dp(4));
+        root.addView(block);
+
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextSize(15);
+        heading.setTextColor(COLOR_TEXT);
+        heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        heading.setLetterSpacing(0.14f);
+        heading.setGravity(Gravity.START);
+        block.addView(heading);
+
+        View underline = new View(this);
+        underline.setBackgroundColor(COLOR_ACCENT);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dp(92),
+                dp(2)
+        );
+        params.setMargins(0, dp(7), 0, dp(8));
+        block.addView(underline, params);
     }
 
     private LinearLayout buttonRow() {
@@ -488,17 +573,27 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         StringBuilder cameraReport = new StringBuilder();
         appendCameraReport(cameraReport);
 
+        String compatibilityReport = compatibilityCheckRun
+                ? buildCompatibilityReport()
+                : buildCompatibilityPlaceholder();
+
         latestReport = deviceReport.toString()
                 + "\n"
-                + buildCompatibilityReport()
+                + "COMPATIBILITY CHECK\n"
+                + compatibilityReport
                 + "\n"
                 + sensorReport
                 + "\n"
                 + cameraReport;
-        compatibilityView.setText(colorizeCompatibility(buildCompatibilityReport()));
+        compatibilityView.setText(colorizeCompatibility(compatibilityReport));
         deviceReportView.setText(deviceReport.toString());
         sensorReportView.setText(sensorReport.toString());
         cameraReportView.setText(cameraReport.toString());
+    }
+
+    private String buildCompatibilityPlaceholder() {
+        return "Status: NOT RUN\n\n"
+                + "Start IMU, move the phone gently, press STOP, then RUN CHECK.";
     }
 
     private SpannableString colorizeCompatibility(String report) {
@@ -509,6 +604,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         colorToken(styled, report, "HIGH", COLOR_PASS);
         colorToken(styled, report, "MEDIUM", COLOR_WARN);
         colorToken(styled, report, "LOW", COLOR_FAIL);
+        colorToken(styled, report, "NOT RUN", COLOR_MUTED);
+        colorToken(styled, report, "NOT TESTED", COLOR_MUTED);
+        colorToken(styled, report, "RECOMMENDATION", COLOR_ACCENT);
+        boldToken(styled, report, "RECOMMENDATION");
         return styled;
     }
 
@@ -525,9 +624,22 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
+    private void boldToken(SpannableString styled, String text, String token) {
+        int start = text.indexOf(token);
+        while (start >= 0) {
+            styled.setSpan(
+                    new StyleSpan(Typeface.BOLD),
+                    start,
+                    start + token.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+            start = text.indexOf(token, start + token.length());
+        }
+    }
+
     private String buildCompatibilityReport() {
         int score = 0;
-        int maxScore = 7;
+        int maxScore = 9;
         List<String> lines = new ArrayList<>();
 
         Sensor accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -585,6 +697,22 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             lines.add("WARN  Location: Android location service unavailable");
         }
 
+        if (!liveImuStarted) {
+            lines.add("NOT TESTED  Live IMU stream: press START IMU before checking dynamic sensor behavior");
+        } else if (liveImuSampleReceived) {
+            score++;
+            lines.add("PASS  Live IMU stream: sensor samples received");
+        } else {
+            lines.add("FAIL  Live IMU stream: no live sensor samples received");
+        }
+
+        if (latestLocation != null) {
+            score++;
+            lines.add("PASS  GPS sample: live or cached location available");
+        } else {
+            lines.add("NOT TESTED  GPS sample: no location sample yet");
+        }
+
         int percent = Math.round((score * 100f) / maxScore);
         String grade;
         if (percent >= 85) {
@@ -596,13 +724,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
 
         StringBuilder report = new StringBuilder();
-        report.append("COMPATIBILITY CHECK\n");
         report.append("PiFinder Lite readiness: ").append(grade)
                 .append(" (").append(percent).append("%)\n\n");
         for (String line : lines) {
             report.append(line).append("\n");
         }
-        report.append("\nRecommendation: ");
+        report.append("\nRECOMMENDATION\n");
         if (percent >= 85) {
             report.append("good candidate for mobile UI, GPS, IMU bridge, and experimental camera bridge.");
         } else if (percent >= 60) {
@@ -750,6 +877,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         registerLiveSensor(Sensor.TYPE_ROTATION_VECTOR);
         registerLiveSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
         startLocation();
+        liveImuStarted = true;
+        liveImuSampleReceived = false;
+        if (startImuButton != null) {
+            startImuButton.setText("IMU RUNNING");
+            startImuButton.setBackground(roundedRect(Color.rgb(112, 22, 48), COLOR_ACCENT, 1, 3));
+        }
         liveView.setText("Live sensors started. Move the phone slowly to inspect updates.");
     }
 
@@ -766,6 +899,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         sensorManager.unregisterListener(this);
         activeSensors.clear();
         liveSensorText.setLength(0);
+        if (startImuButton != null) {
+            startImuButton.setText("START IMU");
+            startImuButton.setBackground(roundedRect(COLOR_PANEL_SOFT, COLOR_ACCENT_DARK, 1, 3));
+        }
         if (liveView != null) {
             liveView.setText("Live sensors stopped.");
         }
@@ -796,6 +933,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     @Override
     public void onSensorChanged(SensorEvent event) {
+        liveImuSampleReceived = true;
         liveSensorText.setLength(0);
         liveSensorText.append("LIVE SENSOR SAMPLE\n");
         liveSensorText.append(sensorName(event.sensor.getType())).append(": ");
