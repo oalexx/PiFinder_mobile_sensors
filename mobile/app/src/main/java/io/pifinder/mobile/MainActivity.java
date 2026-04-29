@@ -9,6 +9,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -34,7 +36,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.provider.DocumentsContract;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.util.Range;
 import android.util.Size;
 import android.util.SizeF;
@@ -67,16 +72,34 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int SWEEP_FRAMES_PER_ISO = 8;
     private static final int RAW_BURST_FRAMES = 12;
     private static final int DAY_TEST_FRAMES = 8;
+    private static final int COLOR_BG = Color.rgb(3, 5, 10);
+    private static final int COLOR_PANEL = Color.rgb(17, 20, 28);
+    private static final int COLOR_PANEL_SOFT = Color.rgb(24, 27, 37);
+    private static final int COLOR_TEXT = Color.rgb(238, 242, 247);
+    private static final int COLOR_MUTED = Color.rgb(127, 136, 153);
+    private static final int COLOR_ACCENT = Color.rgb(255, 38, 92);
+    private static final int COLOR_ACCENT_DARK = Color.rgb(92, 12, 35);
+    private static final int COLOR_PASS = Color.rgb(64, 214, 137);
+    private static final int COLOR_WARN = Color.rgb(255, 190, 92);
+    private static final int COLOR_FAIL = Color.rgb(255, 74, 107);
     private static final DecimalFormat F3 = new DecimalFormat("0.000");
 
     private SensorManager sensorManager;
     private LocationManager locationManager;
     private CameraManager cameraManager;
 
-    private TextView reportView;
+    private TextView deviceReportView;
+    private TextView sensorReportView;
+    private TextView cameraReportView;
+    private TextView compatibilityView;
     private TextView liveView;
     private TextView captureView;
+    private Button startImuButton;
+    private LinearLayout homeScreen;
+    private LinearLayout capabilitiesScreen;
+    private LinearLayout cameraScreen;
     private String latestReport = "";
+    private boolean compatibilityCheckRun = false;
     private Uri outputTreeUri;
 
     private final List<Sensor> activeSensors = new ArrayList<>();
@@ -132,82 +155,129 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
-        root.setBackgroundColor(Color.rgb(248, 250, 252));
+        root.setBackgroundColor(COLOR_BG);
         scrollView.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("PiFinder Mobile Diagnostics");
+        title.setText("PIFINDER MOBILE");
         title.setTextSize(24);
-        title.setTextColor(Color.rgb(15, 23, 42));
-        title.setGravity(Gravity.START);
-        title.setPadding(0, 0, 0, dp(6));
+        title.setTextColor(COLOR_TEXT);
+        title.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        title.setLetterSpacing(0.18f);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(56), 0, dp(6));
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Checks Android sensors, GPS, and Camera2 controls exposed by this phone.");
-        subtitle.setTextSize(14);
-        subtitle.setTextColor(Color.rgb(71, 85, 105));
-        subtitle.setPadding(0, 0, 0, dp(14));
+        subtitle.setText("COMPATIBILITY TESTER");
+        subtitle.setTextSize(12);
+        subtitle.setTextColor(COLOR_ACCENT);
+        subtitle.setLetterSpacing(0.24f);
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(0, 0, 0, dp(34));
         root.addView(subtitle);
 
-        LinearLayout row1 = buttonRow();
-        root.addView(row1);
-        Button refresh = makeGridButton("Refresh");
-        refresh.setOnClickListener(v -> refreshReport());
-        row1.addView(refresh);
-        Button start = makeGridButton("Start IMU");
-        start.setOnClickListener(v -> startLiveSensors());
-        row1.addView(start);
+        homeScreen = screenContainer();
+        root.addView(homeScreen);
+        TextView homeIntro = proseText();
+        homeIntro.setGravity(Gravity.CENTER);
+        homeIntro.setText("Choose a module.");
+        homeScreen.addView(homeIntro);
+        Button capabilitiesNav = makeHeroButton("01", "CHECK CAPABILITIES", "Sensors, GPS, IMU, and phone readiness");
+        capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
+        homeScreen.addView(capabilitiesNav);
+        Button cameraNav = makeHeroButton("02", "CAMERA LAB", "Daylight framing, astro burst, RAW, and lens sweep");
+        cameraNav.setOnClickListener(v -> showScreen("camera"));
+        homeScreen.addView(cameraNav);
 
-        LinearLayout row2 = buttonRow();
-        root.addView(row2);
+        capabilitiesScreen = screenContainer();
+        root.addView(capabilitiesScreen);
+        cameraScreen = screenContainer();
+        root.addView(cameraScreen);
+
+        addBackRow(capabilitiesScreen);
+        addSectionHeader(capabilitiesScreen, "01", "CHECK CAPABILITIES", "Start IMU, stop it after a few seconds, then run the compatibility check.");
+        TextView workflow = proseText();
+        workflow.setText("1  START IMU\n2  Move the phone gently for a few seconds\n3  STOP\n4  RUN CHECK\n5  COPY REPORT if you want to share it");
+        capabilitiesScreen.addView(workflow);
+        LinearLayout row1 = buttonRow();
+        capabilitiesScreen.addView(row1);
+        startImuButton = makeGridButton("Start IMU");
+        startImuButton.setOnClickListener(v -> startLiveSensors());
+        row1.addView(startImuButton);
         Button stop = makeGridButton("Stop");
         stop.setOnClickListener(v -> {
             stopLiveSensors();
             stopLocation();
         });
-        row2.addView(stop);
-        Button copy = makeGridButton("Copy");
+        row1.addView(stop);
+
+        LinearLayout row2 = buttonRow();
+        capabilitiesScreen.addView(row2);
+        Button refresh = makeGridButton("Run Check");
+        refresh.setOnClickListener(v -> {
+            compatibilityCheckRun = true;
+            refreshReport();
+        });
+        row2.addView(refresh);
+        Button copy = makeGridButton("Copy Report");
         copy.setOnClickListener(v -> copyReport());
         row2.addView(copy);
 
-        LinearLayout row3 = buttonRow();
-        root.addView(row3);
-        Button pickFolder = makeGridButton("Save Folder");
-        pickFolder.setOnClickListener(v -> pickOutputFolder());
-        row3.addView(pickFolder);
-        Button manualBurst = makeGridButton("Manual Burst");
-        manualBurst.setOnClickListener(v -> startCaptureTest("manual_burst", 256));
-        row3.addView(manualBurst);
-
-        LinearLayout row4 = buttonRow();
-        root.addView(row4);
-        Button isoSweep = makeGridButton("ISO Sweep");
-        isoSweep.setOnClickListener(v -> startCaptureTest("iso_sweep", 256));
-        row4.addView(isoSweep);
-        Button rawBurst = makeGridButton("RAW Burst");
-        rawBurst.setOnClickListener(v -> startCaptureTest("raw_burst", 32));
-        row4.addView(rawBurst);
-
-        LinearLayout row5 = buttonRow();
-        root.addView(row5);
-        Button cameraSweep = makeGridButton("Cam Sweep");
-        cameraSweep.setOnClickListener(v -> startCaptureTest("camera_sweep", 256));
-        row5.addView(cameraSweep);
-        Button dayTest = makeGridButton("Day Test");
-        dayTest.setOnClickListener(v -> startCaptureTest("day_test", 256));
-        row5.addView(dayTest);
+        compatibilityView = sectionText();
+        capabilitiesScreen.addView(compatibilityView);
 
         liveView = sectionText();
         liveView.setText("Live sensors stopped.");
-        root.addView(liveView);
+        capabilitiesScreen.addView(liveView);
+
+        addSectionHeader(capabilitiesScreen, "02", "TECHNICAL REPORT", "Detailed sensor and system data for debugging.");
+        deviceReportView = sectionText();
+        capabilitiesScreen.addView(deviceReportView);
+        sensorReportView = sectionText();
+        capabilitiesScreen.addView(sensorReportView);
+
+        addBackRow(cameraScreen);
+        addSectionHeader(cameraScreen, "01", "CAMERA LAB", "Select a save folder before running any test.");
+        TextView cameraGuide = proseText();
+        cameraGuide.setText("SAVE FOLDER first.\n\nDay Test checks framing indoors or daylight. Manual Burst, ISO Sweep, RAW Burst and Cam Sweep are for real sky testing.");
+        cameraScreen.addView(cameraGuide);
+
+        LinearLayout row3 = buttonRow();
+        cameraScreen.addView(row3);
+        Button pickFolder = makeGridButton("Save Folder");
+        pickFolder.setOnClickListener(v -> pickOutputFolder());
+        row3.addView(pickFolder);
+        Button dayTest = makeGridButton("Day Test");
+        dayTest.setOnClickListener(v -> startCaptureTest("day_test", 256));
+        row3.addView(dayTest);
+
+        LinearLayout row4 = buttonRow();
+        cameraScreen.addView(row4);
+        Button manualBurst = makeGridButton("Manual Burst");
+        manualBurst.setOnClickListener(v -> startCaptureTest("manual_burst", 256));
+        row4.addView(manualBurst);
+        Button isoSweep = makeGridButton("ISO Sweep");
+        isoSweep.setOnClickListener(v -> startCaptureTest("iso_sweep", 256));
+        row4.addView(isoSweep);
+
+        LinearLayout row5 = buttonRow();
+        cameraScreen.addView(row5);
+        Button rawBurst = makeGridButton("RAW Burst");
+        rawBurst.setOnClickListener(v -> startCaptureTest("raw_burst", 32));
+        row5.addView(rawBurst);
+        Button cameraSweep = makeGridButton("Cam Sweep");
+        cameraSweep.setOnClickListener(v -> startCaptureTest("camera_sweep", 256));
+        row5.addView(cameraSweep);
 
         captureView = sectionText();
         captureView.setText("Capture test: choose a save folder, then run Day Test, Manual Burst, ISO Sweep, RAW Burst, or Cam Sweep.");
-        root.addView(captureView);
+        cameraScreen.addView(captureView);
 
-        reportView = sectionText();
-        root.addView(reportView);
+        cameraReportView = sectionText();
+        cameraScreen.addView(cameraReportView);
+
+        showScreen("home");
 
         return scrollView;
     }
@@ -225,6 +295,101 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return button;
     }
 
+    private LinearLayout screenContainer() {
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setVisibility(View.GONE);
+        return screen;
+    }
+
+    private void showScreen(String screenName) {
+        if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null) {
+            return;
+        }
+        homeScreen.setVisibility("home".equals(screenName) ? View.VISIBLE : View.GONE);
+        capabilitiesScreen.setVisibility("capabilities".equals(screenName) ? View.VISIBLE : View.GONE);
+        cameraScreen.setVisibility("camera".equals(screenName) ? View.VISIBLE : View.GONE);
+    }
+
+    private void addBackRow(LinearLayout root) {
+        LinearLayout row = buttonRow();
+        root.addView(row);
+        Button back = makeGridButton("Back");
+        back.setOnClickListener(v -> showScreen("home"));
+        row.addView(back);
+        TextView spacer = new TextView(this);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
+        row.addView(spacer, params);
+    }
+
+    private Button makeHeroButton(String title, String subtitle) {
+        Button button = new Button(this);
+        button.setText(title + "\n" + subtitle);
+        button.setAllCaps(false);
+        button.setTextSize(15);
+        button.setTextColor(COLOR_TEXT);
+        button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        button.setPadding(dp(18), dp(18), dp(18), dp(18));
+        button.setBackground(roundedRect(COLOR_PANEL, COLOR_ACCENT_DARK, 1, 6));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(12), 0, 0);
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    private void addSectionHeader(LinearLayout root, String number, String title, String subtitle) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(0, dp(18), 0, dp(8));
+        root.addView(block);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        block.addView(titleRow);
+
+        TextView index = new TextView(this);
+        index.setText(number + ".");
+        index.setTextSize(13);
+        index.setTextColor(COLOR_ACCENT);
+        index.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        index.setLetterSpacing(0.08f);
+        LinearLayout.LayoutParams indexParams = new LinearLayout.LayoutParams(
+                dp(34),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        titleRow.addView(index, indexParams);
+
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextSize(16);
+        heading.setTextColor(COLOR_TEXT);
+        heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        heading.setLetterSpacing(0.18f);
+        titleRow.addView(heading);
+
+        TextView caption = new TextView(this);
+        caption.setText(subtitle);
+        caption.setTextSize(12);
+        caption.setTextColor(COLOR_MUTED);
+        caption.setLineSpacing(dp(2), 1.0f);
+        caption.setPadding(dp(34), dp(4), 0, dp(8));
+        block.addView(caption);
+
+        View accent = new View(this);
+        accent.setBackgroundColor(COLOR_ACCENT);
+        LinearLayout.LayoutParams accentParams = new LinearLayout.LayoutParams(
+                dp(56),
+                dp(1)
+        );
+        accentParams.setMargins(dp(34), 0, 0, 0);
+        block.addView(accent, accentParams);
+    }
+
     private LinearLayout buttonRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -235,10 +400,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private Button makeGridButton(String label) {
         Button button = new Button(this);
-        button.setText(label);
+        button.setText(label.toUpperCase(Locale.US));
+        button.setTextSize(11);
+        button.setTextColor(COLOR_TEXT);
+        button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        button.setLetterSpacing(0.08f);
         button.setAllCaps(false);
         button.setSingleLine(false);
         button.setMinHeight(dp(48));
+        button.setBackground(roundedRect(COLOR_PANEL_SOFT, COLOR_ACCENT_DARK, 1, 3));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -252,10 +422,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView sectionText() {
         TextView textView = new TextView(this);
         textView.setTextSize(13);
-        textView.setTextColor(Color.rgb(15, 23, 42));
+        textView.setTextColor(COLOR_TEXT);
+        textView.setTypeface(Typeface.MONOSPACE);
         textView.setTextIsSelectable(true);
-        textView.setPadding(dp(12), dp(12), dp(12), dp(12));
-        textView.setBackgroundColor(Color.WHITE);
+        textView.setPadding(dp(14), dp(14), dp(14), dp(14));
+        textView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 4));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -263,6 +434,30 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         params.setMargins(0, dp(10), 0, 0);
         textView.setLayoutParams(params);
         return textView;
+    }
+
+    private TextView proseText() {
+        TextView textView = new TextView(this);
+        textView.setTextSize(14);
+        textView.setTextColor(COLOR_MUTED);
+        textView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        textView.setLineSpacing(dp(4), 1.0f);
+        textView.setPadding(dp(2), dp(8), dp(2), dp(8));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(4), 0, dp(8));
+        textView.setLayoutParams(params);
+        return textView;
+    }
+
+    private GradientDrawable roundedRect(int fill, int stroke, int strokeWidthDp, int radiusDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(radiusDp));
+        drawable.setStroke(dp(strokeWidthDp), stroke);
+        return drawable;
     }
 
     private void requestRuntimePermissions() {
@@ -279,19 +474,143 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void refreshReport() {
-        StringBuilder report = new StringBuilder();
-        report.append("DEVICE\n");
-        report.append("Android: ").append(android.os.Build.VERSION.RELEASE)
+        StringBuilder deviceReport = new StringBuilder();
+        deviceReport.append("DEVICE\n");
+        deviceReport.append("Android: ").append(android.os.Build.VERSION.RELEASE)
                 .append(" (API ").append(android.os.Build.VERSION.SDK_INT).append(")\n");
-        report.append("Model: ").append(android.os.Build.MANUFACTURER)
+        deviceReport.append("Model: ").append(android.os.Build.MANUFACTURER)
                 .append(" ").append(android.os.Build.MODEL).append("\n\n");
+        appendLocationReport(deviceReport);
 
-        appendSensorReport(report);
-        appendLocationReport(report);
-        appendCameraReport(report);
+        StringBuilder sensorReport = new StringBuilder();
+        appendSensorReport(sensorReport);
 
-        latestReport = report.toString();
-        reportView.setText(latestReport);
+        StringBuilder cameraReport = new StringBuilder();
+        appendCameraReport(cameraReport);
+
+        latestReport = deviceReport.toString()
+                + "\n"
+                + buildCompatibilityReport()
+                + "\n"
+                + sensorReport
+                + "\n"
+                + cameraReport;
+        compatibilityView.setText(colorizeCompatibility(buildCompatibilityReport()));
+        deviceReportView.setText(deviceReport.toString());
+        sensorReportView.setText(sensorReport.toString());
+        cameraReportView.setText(cameraReport.toString());
+    }
+
+    private SpannableString colorizeCompatibility(String report) {
+        SpannableString styled = new SpannableString(report);
+        colorToken(styled, report, "PASS", COLOR_PASS);
+        colorToken(styled, report, "WARN", COLOR_WARN);
+        colorToken(styled, report, "FAIL", COLOR_FAIL);
+        colorToken(styled, report, "HIGH", COLOR_PASS);
+        colorToken(styled, report, "MEDIUM", COLOR_WARN);
+        colorToken(styled, report, "LOW", COLOR_FAIL);
+        return styled;
+    }
+
+    private void colorToken(SpannableString styled, String text, String token, int color) {
+        int start = text.indexOf(token);
+        while (start >= 0) {
+            styled.setSpan(
+                    new ForegroundColorSpan(color),
+                    start,
+                    start + token.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+            start = text.indexOf(token, start + token.length());
+        }
+    }
+
+    private String buildCompatibilityReport() {
+        int score = 0;
+        int maxScore = 7;
+        List<String> lines = new ArrayList<>();
+
+        Sensor accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        Sensor gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        Sensor magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        Sensor rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        Sensor gameRotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
+
+        if (accelerometer != null && gyroscope != null) {
+            score++;
+            lines.add("PASS  Motion core: accelerometer + gyroscope available");
+        } else {
+            lines.add("FAIL  Motion core: accelerometer/gyroscope incomplete");
+        }
+
+        if (rotationVector != null || gameRotationVector != null) {
+            score++;
+            lines.add("PASS  Orientation: rotation vector available");
+        } else {
+            lines.add("WARN  Orientation: no Android fused rotation vector");
+        }
+
+        if (magnetometer != null) {
+            score++;
+            lines.add("PASS  Compass: magnetometer available");
+        } else {
+            lines.add("WARN  Compass: magnetometer unavailable");
+        }
+
+        if (hasBackCamera()) {
+            score++;
+            lines.add("PASS  Camera: rear camera available");
+        } else {
+            lines.add("FAIL  Camera: no rear camera exposed");
+        }
+
+        if (hasManualBackCamera()) {
+            score++;
+            lines.add("PASS  Camera2 manual: exposure/ISO control exposed");
+        } else {
+            lines.add("WARN  Camera2 manual: limited manual controls");
+        }
+
+        if (hasRawBackCamera()) {
+            score++;
+            lines.add("PASS  RAW: raw capture exposed");
+        } else {
+            lines.add("WARN  RAW: no raw capture exposed");
+        }
+
+        if (locationManager != null) {
+            score++;
+            lines.add("PASS  Location: Android location service available");
+        } else {
+            lines.add("WARN  Location: Android location service unavailable");
+        }
+
+        int percent = Math.round((score * 100f) / maxScore);
+        String grade;
+        if (percent >= 85) {
+            grade = "HIGH";
+        } else if (percent >= 60) {
+            grade = "MEDIUM";
+        } else {
+            grade = "LOW";
+        }
+
+        StringBuilder report = new StringBuilder();
+        report.append("COMPATIBILITY CHECK\n");
+        report.append("PiFinder Lite readiness: ").append(grade)
+                .append(" (").append(percent).append("%)\n\n");
+        for (String line : lines) {
+            report.append(line).append("\n");
+        }
+        report.append("\nRecommendation: ");
+        if (percent >= 85) {
+            report.append("good candidate for mobile UI, GPS, IMU bridge, and experimental camera bridge.");
+        } else if (percent >= 60) {
+            report.append("usable as PiFinder companion; validate camera solving before relying on phone camera.");
+        } else {
+            report.append("usable mainly as UI/GPS companion; dedicated camera or IMU may be needed.");
+        }
+        return report.toString();
     }
 
     private void appendSensorReport(StringBuilder report) {
@@ -692,6 +1011,48 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             }
         }
         return ids;
+    }
+
+    private boolean hasBackCamera() {
+        try {
+            return !backCameraIds().isEmpty();
+        } catch (CameraAccessException | SecurityException e) {
+            return false;
+        }
+    }
+
+    private boolean hasManualBackCamera() {
+        try {
+            for (String cameraId : backCameraIds()) {
+                CameraCharacteristics c = cameraManager.getCameraCharacteristics(cameraId);
+                if (hasCapability(
+                        c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES),
+                        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR
+                )) {
+                    return true;
+                }
+            }
+        } catch (CameraAccessException | SecurityException e) {
+            return false;
+        }
+        return false;
+    }
+
+    private boolean hasRawBackCamera() {
+        try {
+            for (String cameraId : backCameraIds()) {
+                CameraCharacteristics c = cameraManager.getCameraCharacteristics(cameraId);
+                if (hasCapability(
+                        c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES),
+                        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW
+                )) {
+                    return true;
+                }
+            }
+        } catch (CameraAccessException | SecurityException e) {
+            return false;
+        }
+        return false;
     }
 
     private int frameCountForTest(String testName) {
