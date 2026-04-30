@@ -7,6 +7,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -67,6 +68,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 public class MainActivity extends Activity implements SensorEventListener, LocationListener {
     private static final int REQUEST_PERMISSIONS = 41;
     private static final int REQUEST_OUTPUT_DIR = 42;
@@ -85,6 +90,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int COLOR_WARN = Color.rgb(255, 190, 92);
     private static final int COLOR_FAIL = Color.rgb(255, 74, 107);
     private static final DecimalFormat F3 = new DecimalFormat("0.000");
+    private static final String PREFS_NAME = "pifinder_mobile";
+    private static final String KEY_CHECK_HISTORY = "check_history";
+    private static final int MAX_HISTORY_RECORDS = 20;
 
     private SensorManager sensorManager;
     private LocationManager locationManager;
@@ -94,13 +102,24 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView sensorReportView;
     private TextView cameraReportView;
     private TextView compatibilityView;
+    private TextView readinessBadgeView;
+    private TextView homeStatusView;
+    private TextView capabilityActionView;
+    private TextView cameraFolderStatusView;
+    private TextView historyView;
     private TextView liveView;
     private TextView captureView;
     private Button startImuButton;
     private LinearLayout homeScreen;
     private LinearLayout capabilitiesScreen;
     private LinearLayout cameraScreen;
+    private LinearLayout historyScreen;
+    private String latestCheckResult = "";
+    private String latestProfileJson = "";
+    private String latestHistoryJson = "";
     private String latestReport = "";
+    private String latestReadinessGrade = "NOT RUN";
+    private int latestReadinessPercent = -1;
     private boolean compatibilityCheckRun = false;
     private boolean liveImuStarted = false;
     private boolean liveImuSampleReceived = false;
@@ -118,6 +137,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private int pendingFrames;
     private int savedFrames;
     private int failedFrames;
+    private int completedFrames;
     private String captureRunPrefix = "";
     private String captureDirDocumentId;
     private String captureTestName = "manual";
@@ -183,10 +203,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
         homeScreen = screenContainer();
         root.addView(homeScreen);
-        TextView homeIntro = proseText();
-        homeIntro.setGravity(Gravity.CENTER);
-        homeIntro.setText("Choose a module.");
-        homeScreen.addView(homeIntro);
+        homeStatusView = statusCard();
+        homeScreen.addView(homeStatusView);
         Button capabilitiesNav = makeHeroButton("CHECK CAPABILITIES", "Sensors, GPS, IMU, and phone readiness");
         capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
         homeScreen.addView(capabilitiesNav);
@@ -198,12 +216,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(capabilitiesScreen);
         cameraScreen = screenContainer();
         root.addView(cameraScreen);
+        historyScreen = screenContainer();
+        root.addView(historyScreen);
 
         addBackRow(capabilitiesScreen);
-        addSectionHeader(capabilitiesScreen, "01", "CHECK CAPABILITIES", "Start IMU, stop it after a few seconds, then run the compatibility check.");
-        TextView workflow = proseText();
-        workflow.setText("1  START IMU\n2  Move the phone gently for a few seconds\n3  STOP\n4  RUN CHECK\n5  COPY REPORT if you want to share it");
-        capabilitiesScreen.addView(workflow);
+        addSectionHeader(capabilitiesScreen, "01", "CHECK CAPABILITIES", "Sensor, GPS, camera, and readiness diagnostics.");
+        capabilityActionView = statusCard();
+        capabilitiesScreen.addView(capabilityActionView);
         LinearLayout row1 = buttonRow();
         capabilitiesScreen.addView(row1);
         startImuButton = makeGridButton("Start IMU");
@@ -222,13 +241,41 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         refresh.setOnClickListener(v -> {
             compatibilityCheckRun = true;
             refreshReport();
+            saveCheckHistoryRecord();
+            updateHistoryView();
+            updateCapabilityAction("Review the readiness result and copy the report if needed.");
         });
         row2.addView(refresh);
-        Button copy = makeGridButton("Copy Report");
-        copy.setOnClickListener(v -> copyReport());
-        row2.addView(copy);
+        Button copyCheck = makeGridButton("Copy Check Result");
+        copyCheck.setOnClickListener(v -> copyCheckResult());
+        row2.addView(copyCheck);
 
-        addAreaTitle(capabilitiesScreen, "COMPATIBILITY CHECK");
+        LinearLayout rowCopy = buttonRow();
+        capabilitiesScreen.addView(rowCopy);
+        Button copyTech = makeGridButton("Copy Tech Report");
+        copyTech.setOnClickListener(v -> copyTechReport());
+        rowCopy.addView(copyTech);
+        Button copyProfile = makeGridButton("Copy Profile JSON");
+        copyProfile.setOnClickListener(v -> copyProfileJson());
+        rowCopy.addView(copyProfile);
+
+        LinearLayout rowHistory = buttonRow();
+        capabilitiesScreen.addView(rowHistory);
+        Button viewHistory = makeGridButton("View History");
+        viewHistory.setOnClickListener(v -> {
+            updateHistoryView();
+            showScreen("history");
+        });
+        rowHistory.addView(viewHistory);
+        Button copyHistory = makeGridButton("Copy History");
+        copyHistory.setOnClickListener(v -> copyHistoryJson());
+        rowHistory.addView(copyHistory);
+
+        addAreaTitle(capabilitiesScreen, "READINESS");
+        readinessBadgeView = readinessBadge();
+        capabilitiesScreen.addView(readinessBadgeView);
+
+        addAreaTitle(capabilitiesScreen, "CHECK DETAILS");
         compatibilityView = sectionText();
         capabilitiesScreen.addView(compatibilityView);
 
@@ -242,11 +289,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         sensorReportView = sectionText();
         capabilitiesScreen.addView(sensorReportView);
 
+        addBackRow(historyScreen, "capabilities");
+        addSectionHeader(historyScreen, "01", "RECENT CHECK HISTORY", "Saved locally on this device.");
+        historyView = sectionText();
+        historyScreen.addView(historyView);
+
         addBackRow(cameraScreen);
         addSectionHeader(cameraScreen, "01", "CAMERA LAB", "Select a save folder before running any test.");
-        TextView cameraGuide = proseText();
-        cameraGuide.setText("SAVE FOLDER first.\n\nDay Test checks framing indoors or daylight. Manual Burst, ISO Sweep, RAW Burst and Cam Sweep are for real sky testing.");
-        cameraScreen.addView(cameraGuide);
+        cameraFolderStatusView = statusCard();
+        cameraScreen.addView(cameraFolderStatusView);
 
         LinearLayout row3 = buttonRow();
         cameraScreen.addView(row3);
@@ -276,13 +327,17 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         row5.addView(cameraSweep);
 
         captureView = sectionText();
-        captureView.setText("Capture test: choose a save folder, then run Day Test, Manual Burst, ISO Sweep, RAW Burst, or Cam Sweep.");
+        captureView.setText("Capture test: waiting for a save folder.");
         cameraScreen.addView(captureView);
 
         cameraReportView = sectionText();
         cameraScreen.addView(cameraReportView);
 
         showScreen("home");
+        updateCapabilityAction("Start IMU, move the phone, stop it, then run the check.");
+        updateCameraFolderStatus();
+        updateHomeStatus();
+        updateHistoryView();
 
         return scrollView;
     }
@@ -308,19 +363,24 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void showScreen(String screenName) {
-        if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null) {
+        if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null || historyScreen == null) {
             return;
         }
         homeScreen.setVisibility("home".equals(screenName) ? View.VISIBLE : View.GONE);
         capabilitiesScreen.setVisibility("capabilities".equals(screenName) ? View.VISIBLE : View.GONE);
         cameraScreen.setVisibility("camera".equals(screenName) ? View.VISIBLE : View.GONE);
+        historyScreen.setVisibility("history".equals(screenName) ? View.VISIBLE : View.GONE);
     }
 
     private void addBackRow(LinearLayout root) {
+        addBackRow(root, "home");
+    }
+
+    private void addBackRow(LinearLayout root, String targetScreen) {
         LinearLayout row = buttonRow();
         root.addView(row);
         Button back = makeSmallButton("Back");
-        back.setOnClickListener(v -> showScreen("home"));
+        back.setOnClickListener(v -> showScreen(targetScreen));
         row.addView(back);
         TextView spacer = new TextView(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
@@ -521,6 +581,32 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return textView;
     }
 
+    private TextView statusCard() {
+        TextView textView = new TextView(this);
+        textView.setTextSize(14);
+        textView.setTextColor(COLOR_TEXT);
+        textView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        textView.setLineSpacing(dp(4), 1.0f);
+        textView.setPadding(dp(16), dp(14), dp(16), dp(14));
+        textView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(10), 0, dp(8));
+        textView.setLayoutParams(params);
+        return textView;
+    }
+
+    private TextView readinessBadge() {
+        TextView textView = statusCard();
+        textView.setTextSize(18);
+        textView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        textView.setGravity(Gravity.CENTER);
+        textView.setMinHeight(dp(104));
+        return textView;
+    }
+
     private TextView proseText() {
         TextView textView = new TextView(this);
         textView.setTextSize(14);
@@ -577,6 +663,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 ? buildCompatibilityReport()
                 : buildCompatibilityPlaceholder();
 
+        latestCheckResult = buildCheckResult(compatibilityReport);
+        latestProfileJson = buildProfileJson();
         latestReport = deviceReport.toString()
                 + "\n"
                 + "COMPATIBILITY CHECK\n"
@@ -589,9 +677,377 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         deviceReportView.setText(deviceReport.toString());
         sensorReportView.setText(sensorReport.toString());
         cameraReportView.setText(cameraReport.toString());
+        updateReadinessBadge();
+        updateHomeStatus();
+    }
+
+    private String buildCheckResult(String compatibilityReport) {
+        StringBuilder result = new StringBuilder();
+        result.append("PiFinder Lite check result\n");
+        result.append("Device: ").append(deviceLabel()).append("\n");
+        result.append("Readiness: ").append(latestReadinessGrade);
+        if (latestReadinessPercent >= 0) {
+            result.append(" (").append(latestReadinessPercent).append("%)");
+        }
+        result.append("\n");
+
+        if (!compatibilityCheckRun) {
+            result.append("Status: NOT RUN\n");
+            result.append("Next: Start IMU, move the phone, stop it, then run the check.\n");
+            return result.toString();
+        }
+
+        result.append("PASS: ").append(countPrefixedLines(compatibilityReport, "PASS")).append("\n");
+        result.append("WARN: ").append(countPrefixedLines(compatibilityReport, "WARN")).append("\n");
+        result.append("FAIL: ").append(countPrefixedLines(compatibilityReport, "FAIL")).append("\n");
+        result.append("NOT TESTED: ").append(countPrefixedLines(compatibilityReport, "NOT TESTED")).append("\n");
+        result.append("Recommendation: ").append(recommendationText()).append("\n");
+        return result.toString();
+    }
+
+    private String deviceLabel() {
+        return android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + " / Android " + android.os.Build.VERSION.RELEASE
+                + " API " + android.os.Build.VERSION.SDK_INT;
+    }
+
+    private int countPrefixedLines(String text, String prefix) {
+        int count = 0;
+        String[] lines = text.split("\\n");
+        for (String line : lines) {
+            if (line.startsWith(prefix)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String recommendationText() {
+        if ("HIGH".equals(latestReadinessGrade)) {
+            return "good candidate for mobile UI, GPS, IMU bridge, and experimental camera bridge.";
+        }
+        if ("MEDIUM".equals(latestReadinessGrade)) {
+            return "usable as PiFinder companion; validate camera solving before relying on phone camera.";
+        }
+        if ("LOW".equals(latestReadinessGrade)) {
+            return "usable mainly as UI/GPS companion; dedicated camera or IMU may be needed.";
+        }
+        return "run the compatibility check before sharing results.";
+    }
+
+    private String buildProfileJson() {
+        try {
+            JSONObject profile = new JSONObject();
+            profile.put("schema", "io.pifinder.mobile.profile.v1");
+            profile.put("app", appJson());
+            profile.put("device", deviceJson());
+            profile.put("readiness", readinessJson());
+            profile.put("location", locationJson());
+            profile.put("sensors", sensorsJson());
+            profile.put("camera", cameraProfileJson());
+            return profile.toString(2);
+        } catch (JSONException e) {
+            return "{\"error\":\"profile_json_failed\",\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+
+    private JSONObject appJson() throws JSONException {
+        JSONObject app = new JSONObject();
+        app.put("package", getPackageName());
+        app.put("version_name", appVersionName());
+        app.put("version_code", appVersionCode());
+        return app;
+    }
+
+    private String appVersionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException e) {
+            return "unknown";
+        }
+    }
+
+    private long appVersionCode() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+            }
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+        } catch (PackageManager.NameNotFoundException e) {
+            return -1;
+        }
+    }
+
+    private JSONObject deviceJson() throws JSONException {
+        JSONObject device = new JSONObject();
+        device.put("manufacturer", android.os.Build.MANUFACTURER);
+        device.put("model", android.os.Build.MODEL);
+        device.put("brand", android.os.Build.BRAND);
+        device.put("device", android.os.Build.DEVICE);
+        device.put("android_release", android.os.Build.VERSION.RELEASE);
+        device.put("android_api", android.os.Build.VERSION.SDK_INT);
+        return device;
+    }
+
+    private JSONObject readinessJson() throws JSONException {
+        JSONObject readiness = new JSONObject();
+        readiness.put("check_run", compatibilityCheckRun);
+        readiness.put("level", latestReadinessGrade);
+        readiness.put("percent", latestReadinessPercent >= 0 ? latestReadinessPercent : JSONObject.NULL);
+        readiness.put("recommendation", recommendationText());
+        return readiness;
+    }
+
+    private JSONObject locationJson() throws JSONException {
+        JSONObject location = new JSONObject();
+        location.put("service_available", locationManager != null);
+        location.put("fine_permission", checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED);
+        location.put("coarse_permission", checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED);
+        location.put("sample_available", latestLocation != null);
+        if (latestLocation != null) {
+            location.put("provider", latestLocation.getProvider());
+            location.put("latitude", latestLocation.getLatitude());
+            location.put("longitude", latestLocation.getLongitude());
+            location.put("altitude_m", latestLocation.getAltitude());
+            location.put("accuracy_m", latestLocation.getAccuracy());
+            location.put("time_ms", latestLocation.getTime());
+        }
+        return location;
+    }
+
+    private JSONObject sensorsJson() throws JSONException {
+        JSONObject sensors = new JSONObject();
+        sensors.put("live_imu_started", liveImuStarted);
+        sensors.put("live_sample_received", liveImuSampleReceived);
+        sensors.put("accelerometer", sensorJson(Sensor.TYPE_ACCELEROMETER));
+        sensors.put("gyroscope", sensorJson(Sensor.TYPE_GYROSCOPE));
+        sensors.put("magnetometer", sensorJson(Sensor.TYPE_MAGNETIC_FIELD));
+        sensors.put("rotation_vector", sensorJson(Sensor.TYPE_ROTATION_VECTOR));
+        sensors.put("game_rotation_vector", sensorJson(Sensor.TYPE_GAME_ROTATION_VECTOR));
+        sensors.put("gravity", sensorJson(Sensor.TYPE_GRAVITY));
+        sensors.put("linear_acceleration", sensorJson(Sensor.TYPE_LINEAR_ACCELERATION));
+        sensors.put("all_sensor_count", sensorManager.getSensorList(Sensor.TYPE_ALL).size());
+        return sensors;
+    }
+
+    private JSONObject sensorJson(int type) throws JSONException {
+        JSONObject json = new JSONObject();
+        Sensor sensor = sensorManager.getDefaultSensor(type);
+        json.put("available", sensor != null);
+        if (sensor != null) {
+            json.put("name", sensor.getName());
+            json.put("vendor", sensor.getVendor());
+            json.put("type", sensor.getType());
+            json.put("min_delay_us", sensor.getMinDelay());
+            json.put("resolution", sensor.getResolution());
+            json.put("max_range", sensor.getMaximumRange());
+        }
+        return json;
+    }
+
+    private JSONObject cameraProfileJson() throws JSONException {
+        JSONObject camera = new JSONObject();
+        camera.put("camera_permission", checkSelfPermission(Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED);
+        camera.put("back_camera_available", hasBackCamera());
+        camera.put("manual_back_camera_available", hasManualBackCamera());
+        camera.put("raw_back_camera_available", hasRawBackCamera());
+
+        JSONArray cameras = new JSONArray();
+        try {
+            for (String cameraId : cameraManager.getCameraIdList()) {
+                cameras.put(cameraIdProfileJson(cameraId));
+            }
+        } catch (CameraAccessException | SecurityException e) {
+            camera.put("error", e.getMessage());
+        }
+        camera.put("cameras", cameras);
+        return camera;
+    }
+
+    private JSONObject cameraIdProfileJson(String cameraId) throws CameraAccessException, JSONException {
+        CameraCharacteristics c = cameraManager.getCameraCharacteristics(cameraId);
+        JSONObject camera = new JSONObject();
+        Integer lensFacing = c.get(CameraCharacteristics.LENS_FACING);
+        int[] caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
+        camera.put("id", cameraId);
+        camera.put("facing", lensFacingName(lensFacing));
+        camera.put("manual_sensor", hasCapability(caps,
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR));
+        camera.put("raw", hasCapability(caps,
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW));
+        camera.put("logical_multi_camera", hasCapability(caps,
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA));
+        camera.put("capabilities", intArrayJson(caps));
+
+        Range<Long> exposureRange = c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
+        if (exposureRange != null) {
+            JSONObject exposure = new JSONObject();
+            exposure.put("min_ns", exposureRange.getLower());
+            exposure.put("max_ns", exposureRange.getUpper());
+            camera.put("exposure_time_range", exposure);
+        }
+
+        Range<Integer> isoRange = c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
+        if (isoRange != null) {
+            JSONObject iso = new JSONObject();
+            iso.put("min", isoRange.getLower());
+            iso.put("max", isoRange.getUpper());
+            camera.put("iso_range", iso);
+        }
+
+        Float minFocus = c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+        camera.put("minimum_focus_distance_diopters", minFocus != null ? minFocus : JSONObject.NULL);
+        camera.put("focal_lengths_mm", floatArrayJson(c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)));
+
+        SizeF sensorSize = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+        if (sensorSize != null) {
+            JSONObject size = new JSONObject();
+            size.put("width_mm", sensorSize.getWidth());
+            size.put("height_mm", sensorSize.getHeight());
+            camera.put("sensor_physical_size", size);
+        }
+
+        StreamConfigurationMap map = c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        if (map != null) {
+            JSONObject outputs = new JSONObject();
+            outputs.put("jpeg", sizeArrayJson(map.getOutputSizes(256)));
+            outputs.put("raw_sensor", sizeArrayJson(map.getOutputSizes(32)));
+            outputs.put("yuv_420_888", sizeArrayJson(map.getOutputSizes(35)));
+            camera.put("output_sizes", outputs);
+        }
+        camera.put("hardware_level", hardwareLevelName(valueOrMinusOne(
+                c.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL))));
+        return camera;
+    }
+
+    private JSONArray intArrayJson(int[] values) {
+        JSONArray array = new JSONArray();
+        if (values != null) {
+            for (int value : values) {
+                array.put(value);
+            }
+        }
+        return array;
+    }
+
+    private JSONArray floatArrayJson(float[] values) {
+        JSONArray array = new JSONArray();
+        if (values != null) {
+            for (float value : values) {
+                try {
+                    array.put(value);
+                } catch (JSONException ignored) {
+                }
+            }
+        }
+        return array;
+    }
+
+    private JSONArray sizeArrayJson(Size[] sizes) throws JSONException {
+        JSONArray array = new JSONArray();
+        if (sizes != null) {
+            for (Size size : sizes) {
+                JSONObject item = new JSONObject();
+                item.put("width", size.getWidth());
+                item.put("height", size.getHeight());
+                array.put(item);
+            }
+        }
+        return array;
+    }
+
+    private void saveCheckHistoryRecord() {
+        try {
+            JSONArray history = loadCheckHistory();
+            JSONArray updated = new JSONArray();
+            updated.put(checkHistoryRecordJson());
+            for (int i = 0; i < history.length() && updated.length() < MAX_HISTORY_RECORDS; i++) {
+                updated.put(history.getJSONObject(i));
+            }
+            prefs().edit().putString(KEY_CHECK_HISTORY, updated.toString()).apply();
+            latestHistoryJson = updated.toString(2);
+        } catch (JSONException e) {
+            Toast.makeText(this, "Could not save check history", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private JSONObject checkHistoryRecordJson() throws JSONException {
+        JSONObject record = new JSONObject();
+        record.put("timestamp_ms", System.currentTimeMillis());
+        record.put("timestamp_local", new SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss",
+                Locale.US
+        ).format(new java.util.Date()));
+        record.put("app", appJson());
+        record.put("device", deviceJson());
+        record.put("readiness", readinessJson());
+        record.put("check_result", latestCheckResult);
+        record.put("profile", new JSONObject(latestProfileJson));
+        return record;
+    }
+
+    private JSONArray loadCheckHistory() {
+        String raw = prefs().getString(KEY_CHECK_HISTORY, "[]");
+        try {
+            return new JSONArray(raw);
+        } catch (JSONException e) {
+            return new JSONArray();
+        }
+    }
+
+    private SharedPreferences prefs() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+    }
+
+    private void updateHistoryView() {
+        JSONArray history = loadCheckHistory();
+        latestHistoryJson = history.toString();
+        if (historyView == null) {
+            return;
+        }
+        if (history.length() == 0) {
+            historyView.setText("No saved checks yet.\nRun Check to save the first history record.");
+            return;
+        }
+
+        StringBuilder text = new StringBuilder();
+        text.append("Saved checks: ").append(history.length()).append("\n\n");
+        int shown = Math.min(history.length(), 5);
+        for (int i = 0; i < shown; i++) {
+            JSONObject record = history.optJSONObject(i);
+            if (record == null) {
+                continue;
+            }
+            JSONObject readiness = record.optJSONObject("readiness");
+            JSONObject device = record.optJSONObject("device");
+            text.append(record.optString("timestamp_local", "unknown time")).append("\n");
+            if (readiness != null) {
+                text.append("Readiness: ")
+                        .append(readiness.optString("level", "unknown"))
+                        .append(" (")
+                        .append(readiness.optString("percent", "n/a"))
+                        .append("%)\n");
+            }
+            if (device != null) {
+                text.append("Device: ")
+                        .append(device.optString("manufacturer", "unknown"))
+                        .append(" ")
+                        .append(device.optString("model", "unknown"))
+                        .append("\n");
+            }
+            if (i < shown - 1) {
+                text.append("\n");
+            }
+        }
+        historyView.setText(text.toString());
     }
 
     private String buildCompatibilityPlaceholder() {
+        latestReadinessGrade = "NOT RUN";
+        latestReadinessPercent = -1;
         return "Status: NOT RUN\n\n"
                 + "Start IMU, move the phone gently, press STOP, then RUN CHECK.";
     }
@@ -635,6 +1091,87 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             );
             start = text.indexOf(token, start + token.length());
         }
+    }
+
+    private void updateReadinessBadge() {
+        if (readinessBadgeView == null) {
+            return;
+        }
+        if (!compatibilityCheckRun) {
+            readinessBadgeView.setText("NOT RUN\nReady for first check");
+            readinessBadgeView.setTextColor(COLOR_MUTED);
+            readinessBadgeView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
+            return;
+        }
+
+        int color = readinessColor();
+        String detail;
+        if ("HIGH".equals(latestReadinessGrade)) {
+            detail = "Strong PiFinder Lite candidate";
+        } else if ("MEDIUM".equals(latestReadinessGrade)) {
+            detail = "Usable companion; validate camera at night";
+        } else {
+            detail = "Best as UI/GPS companion for now";
+        }
+        readinessBadgeView.setText(
+                latestReadinessGrade + "\n"
+                        + latestReadinessPercent + "%\n"
+                        + detail
+        );
+        readinessBadgeView.setTextColor(COLOR_TEXT);
+        readinessBadgeView.setBackground(roundedRect(COLOR_PANEL, color, 2, 6));
+    }
+
+    private void updateHomeStatus() {
+        if (homeStatusView == null) {
+            return;
+        }
+        if (!compatibilityCheckRun) {
+            homeStatusView.setText("Readiness: NOT RUN\nStart with Check Capabilities to grade this phone.");
+            homeStatusView.setTextColor(COLOR_MUTED);
+            homeStatusView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
+            return;
+        }
+        homeStatusView.setText(
+                "Readiness: " + latestReadinessGrade + " (" + latestReadinessPercent + "%)\n"
+                        + "Next: run Camera Lab tests with a saved output folder."
+        );
+        homeStatusView.setTextColor(COLOR_TEXT);
+        homeStatusView.setBackground(roundedRect(COLOR_PANEL, readinessColor(), 1, 6));
+    }
+
+    private int readinessColor() {
+        if ("HIGH".equals(latestReadinessGrade)) {
+            return COLOR_PASS;
+        }
+        if ("MEDIUM".equals(latestReadinessGrade)) {
+            return COLOR_WARN;
+        }
+        if ("LOW".equals(latestReadinessGrade)) {
+            return COLOR_FAIL;
+        }
+        return COLOR_MUTED;
+    }
+
+    private void updateCapabilityAction(String text) {
+        if (capabilityActionView != null) {
+            capabilityActionView.setText("Next action\n" + text);
+        }
+    }
+
+    private void updateCameraFolderStatus() {
+        if (cameraFolderStatusView == null) {
+            return;
+        }
+        if (outputTreeUri == null) {
+            cameraFolderStatusView.setText("Save folder: NOT SELECTED\nChoose a folder before running camera tests.");
+            cameraFolderStatusView.setTextColor(COLOR_WARN);
+            cameraFolderStatusView.setBackground(roundedRect(COLOR_PANEL, COLOR_WARN, 1, 6));
+            return;
+        }
+        cameraFolderStatusView.setText("Save folder: SELECTED\n" + outputTreeUri);
+        cameraFolderStatusView.setTextColor(COLOR_TEXT);
+        cameraFolderStatusView.setBackground(roundedRect(COLOR_PANEL, COLOR_PASS, 1, 6));
     }
 
     private String buildCompatibilityReport() {
@@ -722,6 +1259,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } else {
             grade = "LOW";
         }
+        latestReadinessGrade = grade;
+        latestReadinessPercent = percent;
 
         StringBuilder report = new StringBuilder();
         report.append("PiFinder Lite readiness: ").append(grade)
@@ -730,13 +1269,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             report.append(line).append("\n");
         }
         report.append("\nRECOMMENDATION\n");
-        if (percent >= 85) {
-            report.append("good candidate for mobile UI, GPS, IMU bridge, and experimental camera bridge.");
-        } else if (percent >= 60) {
-            report.append("usable as PiFinder companion; validate camera solving before relying on phone camera.");
-        } else {
-            report.append("usable mainly as UI/GPS companion; dedicated camera or IMU may be needed.");
-        }
+        report.append(recommendationText());
         return report.toString();
     }
 
@@ -883,6 +1416,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             startImuButton.setText("IMU RUNNING");
             startImuButton.setBackground(roundedRect(Color.rgb(112, 22, 48), COLOR_ACCENT, 1, 3));
         }
+        updateCapabilityAction("IMU is running. Move the phone gently, then stop and run the check.");
         liveView.setText("Live sensors started. Move the phone slowly to inspect updates.");
     }
 
@@ -905,6 +1439,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (liveView != null) {
             liveView.setText("Live sensors stopped.");
+        }
+        if (capabilityActionView != null) {
+            updateCapabilityAction("Run the check to calculate readiness.");
         }
     }
 
@@ -965,10 +1502,29 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         refreshReport();
     }
 
-    private void copyReport() {
+    private void copyCheckResult() {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder diagnostics", latestReport));
-        Toast.makeText(this, "Report copied", Toast.LENGTH_SHORT).show();
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder check result", latestCheckResult));
+        Toast.makeText(this, "Check result copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void copyTechReport() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder tech report", latestReport));
+        Toast.makeText(this, "Tech report copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void copyProfileJson() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder mobile profile JSON", latestProfileJson));
+        Toast.makeText(this, "Profile JSON copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void copyHistoryJson() {
+        updateHistoryView();
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder check history JSON", latestHistoryJson));
+        Toast.makeText(this, "Check history copied", Toast.LENGTH_SHORT).show();
     }
 
     private void pickOutputFolder() {
@@ -989,6 +1545,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             if (outputTreeUri != null) {
                 getContentResolver().takePersistableUriPermission(outputTreeUri, flags);
+                updateCameraFolderStatus();
                 captureView.setText("Save folder selected:\n" + outputTreeUri);
             }
         }
@@ -996,6 +1553,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private void startCaptureTest(String testName, int format) {
         if (outputTreeUri == null) {
+            updateCameraFolderStatus();
             Toast.makeText(this, "Choose a save folder first", Toast.LENGTH_SHORT).show();
             pickOutputFolder();
             return;
@@ -1081,17 +1639,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             pendingFrames = captureFrameCount;
             savedFrames = 0;
             failedFrames = 0;
+            completedFrames = 0;
             queuedRequests = new ArrayList<>();
             queuedLabels.clear();
             captureMetadata.setLength(0);
-            captureMetadata.append("PiFinder capture test\n");
-            captureMetadata.append("test=").append(captureTestName).append("\n");
-            captureMetadata.append("cameraId=").append(cameraId).append("\n");
-            captureMetadata.append("format=").append(captureFormatName(captureFormat)).append("\n");
-            captureMetadata.append("size=").append(captureSize.getWidth()).append("x").append(captureSize.getHeight()).append("\n");
-            captureMetadata.append("frames=").append(captureFrameCount).append("\n");
-            captureMetadata.append("focusDiopters=0.0\n");
-            captureMetadata.append("jpegOrientation=").append(captureJpegOrientation).append("\n");
+            appendCaptureMetadataHeader(cameraId, c, captureSize, timestamp);
 
             cameraManager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
@@ -1223,6 +1775,74 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return sorted.get(sorted.size() - 1);
     }
 
+    private void appendCaptureMetadataHeader(
+            String cameraId,
+            CameraCharacteristics c,
+            Size captureSize,
+            String timestamp
+    ) {
+        Integer lensFacing = c.get(CameraCharacteristics.LENS_FACING);
+        Integer sensorOrientation = c.get(CameraCharacteristics.SENSOR_ORIENTATION);
+        int deviceRotation = getWindowManager().getDefaultDisplay().getRotation();
+        int[] caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
+        Range<Long> exposureRange = c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
+        Range<Integer> isoRange = c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
+        Float minFocus = c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+        float[] focalLengths = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+        SizeF sensorSize = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+
+        captureMetadata.append("PiFinder capture test\n");
+        captureMetadata.append("metadataVersion=2\n");
+        captureMetadata.append("runPrefix=").append(captureRunPrefix).append("\n");
+        captureMetadata.append("timestamp=").append(timestamp).append("\n");
+        captureMetadata.append("timestampMs=").append(System.currentTimeMillis()).append("\n");
+        captureMetadata.append("appPackage=").append(getPackageName()).append("\n");
+        captureMetadata.append("appVersionName=").append(appVersionName()).append("\n");
+        captureMetadata.append("appVersionCode=").append(appVersionCode()).append("\n");
+        captureMetadata.append("deviceManufacturer=").append(android.os.Build.MANUFACTURER).append("\n");
+        captureMetadata.append("deviceModel=").append(android.os.Build.MODEL).append("\n");
+        captureMetadata.append("androidRelease=").append(android.os.Build.VERSION.RELEASE).append("\n");
+        captureMetadata.append("androidApi=").append(android.os.Build.VERSION.SDK_INT).append("\n");
+        captureMetadata.append("test=").append(captureTestName).append("\n");
+        captureMetadata.append("cameraId=").append(cameraId).append("\n");
+        captureMetadata.append("cameraFacing=").append(lensFacingName(lensFacing)).append("\n");
+        captureMetadata.append("cameraCapabilities=").append(capabilityNames(caps)).append("\n");
+        captureMetadata.append("manualSensor=").append(hasCapability(
+                caps,
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR
+        )).append("\n");
+        captureMetadata.append("raw=").append(hasCapability(
+                caps,
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW
+        )).append("\n");
+        captureMetadata.append("logicalMultiCamera=").append(hasCapability(
+                caps,
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA
+        )).append("\n");
+        captureMetadata.append("hardwareLevel=").append(hardwareLevelName(valueOrMinusOne(
+                c.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+        ))).append("\n");
+        captureMetadata.append("format=").append(captureFormatName(captureFormat)).append("\n");
+        captureMetadata.append("size=").append(captureSize.getWidth()).append("x")
+                .append(captureSize.getHeight()).append("\n");
+        captureMetadata.append("frames=").append(captureFrameCount).append("\n");
+        captureMetadata.append("sensorOrientation=").append(sensorOrientation != null ? sensorOrientation : "unknown")
+                .append("\n");
+        captureMetadata.append("deviceRotation=").append(deviceRotationName(deviceRotation)).append("\n");
+        captureMetadata.append("jpegOrientation=").append(captureJpegOrientation).append("\n");
+        captureMetadata.append("minimumFocusDistanceDiopters=").append(minFocus != null ? minFocus : "unknown")
+                .append("\n");
+        captureMetadata.append("focalLengthsMm=").append(focalLengths != null ? Arrays.toString(focalLengths) : "unknown")
+                .append("\n");
+        captureMetadata.append("sensorPhysicalSizeMm=").append(sensorSize != null ? sensorSize : "unknown")
+                .append("\n");
+        captureMetadata.append("exposureRangeNs=").append(exposureRange != null ? exposureRange : "unknown")
+                .append("\n");
+        captureMetadata.append("isoRange=").append(isoRange != null ? isoRange : "unknown").append("\n");
+        captureMetadata.append("outputTreeUri=").append(outputTreeUri != null ? outputTreeUri : "none").append("\n");
+        captureMetadata.append("\nREQUESTS\n");
+    }
+
     private void createCaptureSession(CameraDevice camera, CameraCharacteristics c) {
         try {
             Surface surface = captureReader.getSurface();
@@ -1254,12 +1874,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             long exposureNs = exposureRange != null ? exposureRange.getUpper() : 200_000_000L;
             int maxIso = isoRange != null ? isoRange.getUpper() : 3200;
 
-            captureMetadata.append("exposureNs=").append(exposureNs).append("\n");
-            captureMetadata.append("maxIso=").append(maxIso).append("\n");
+            captureMetadata.append("selectedExposureNs=").append(exposureNs).append("\n");
+            captureMetadata.append("selectedMaxIso=").append(maxIso).append("\n");
 
             if ("day_test".equals(captureTestName)) {
                 for (int i = 0; i < captureFrameCount; i++) {
-                    queuedRequests.add(buildAutoDayRequest());
+                    queuedRequests.add(buildAutoDayRequest(i + 1));
                     queuedLabels.add("auto_day");
                 }
             } else if ("iso_sweep".equals(captureTestName)) {
@@ -1271,13 +1891,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 };
                 for (int iso : isoValues) {
                     for (int i = 0; i < SWEEP_FRAMES_PER_ISO; i++) {
-                        queuedRequests.add(buildStillRequest(exposureNs, iso));
+                        queuedRequests.add(buildStillRequest(exposureNs, iso, queuedRequests.size() + 1));
                         queuedLabels.add("iso" + iso);
                     }
                 }
             } else {
                 for (int i = 0; i < captureFrameCount; i++) {
-                    queuedRequests.add(buildStillRequest(exposureNs, maxIso));
+                    queuedRequests.add(buildStillRequest(exposureNs, maxIso, i + 1));
                     queuedLabels.add("iso" + maxIso);
                 }
             }
@@ -1293,7 +1913,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             captureSession.captureBurst(queuedRequests, new CameraCaptureSession.CaptureCallback() {
                 @Override
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                    captureMetadata.append("completedFrame\n");
+                    completedFrames++;
+                    appendCaptureResultMetadata(completedFrames, request, result);
                 }
 
                 @Override
@@ -1307,7 +1928,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
-    private CaptureRequest buildStillRequest(long exposureNs, int iso) throws CameraAccessException {
+    private CaptureRequest buildStillRequest(long exposureNs, int iso, int frameNumber) throws CameraAccessException {
         CaptureRequest.Builder request = captureCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
         request.addTarget(captureReader.getSurface());
         request.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
@@ -1320,14 +1941,18 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             request.set(CaptureRequest.JPEG_QUALITY, (byte) 95);
             request.set(CaptureRequest.JPEG_ORIENTATION, captureJpegOrientation);
         }
-        captureMetadata.append("request exposureNs=").append(exposureNs)
+        captureMetadata.append("requestFrame=").append(frameNumber)
+                .append(" mode=manual")
+                .append(" exposureNs=").append(exposureNs)
                 .append(" iso=").append(iso)
+                .append(" focusDiopters=0.0")
+                .append(" jpegOrientation=").append(captureJpegOrientation)
                 .append(" format=").append(captureFormatName(captureFormat))
                 .append("\n");
         return request.build();
     }
 
-    private CaptureRequest buildAutoDayRequest() throws CameraAccessException {
+    private CaptureRequest buildAutoDayRequest(int frameNumber) throws CameraAccessException {
         CaptureRequest.Builder request = captureCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
         request.addTarget(captureReader.getSurface());
         request.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO);
@@ -1338,7 +1963,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             request.set(CaptureRequest.JPEG_QUALITY, (byte) 95);
             request.set(CaptureRequest.JPEG_ORIENTATION, captureJpegOrientation);
         }
-        captureMetadata.append("request mode=auto_day")
+        captureMetadata.append("requestFrame=").append(frameNumber)
+                .append(" mode=auto_day")
+                .append(" jpegOrientation=").append(captureJpegOrientation)
                 .append(" format=").append(captureFormatName(captureFormat))
                 .append("\n");
         return request.build();
@@ -1349,6 +1976,28 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return value;
         }
         return Math.max(range.getLower(), Math.min(range.getUpper(), value));
+    }
+
+    private void appendCaptureResultMetadata(
+            int frameNumber,
+            CaptureRequest request,
+            TotalCaptureResult result
+    ) {
+        captureMetadata.append("completedFrame=").append(frameNumber);
+        appendRequestValue(captureMetadata, " requestExposureNs", request.get(CaptureRequest.SENSOR_EXPOSURE_TIME));
+        appendRequestValue(captureMetadata, " requestIso", request.get(CaptureRequest.SENSOR_SENSITIVITY));
+        appendRequestValue(captureMetadata, " requestFocusDiopters", request.get(CaptureRequest.LENS_FOCUS_DISTANCE));
+        appendRequestValue(captureMetadata, " resultExposureNs", result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
+        appendRequestValue(captureMetadata, " resultIso", result.get(CaptureResult.SENSOR_SENSITIVITY));
+        appendRequestValue(captureMetadata, " resultFocusDiopters", result.get(CaptureResult.LENS_FOCUS_DISTANCE));
+        appendRequestValue(captureMetadata, " resultAfState", result.get(CaptureResult.CONTROL_AF_STATE));
+        appendRequestValue(captureMetadata, " resultAeState", result.get(CaptureResult.CONTROL_AE_STATE));
+        appendRequestValue(captureMetadata, " resultAwbState", result.get(CaptureResult.CONTROL_AWB_STATE));
+        captureMetadata.append("\n");
+    }
+
+    private void appendRequestValue(StringBuilder builder, String label, Object value) {
+        builder.append(label).append("=").append(value != null ? value : "unknown");
     }
 
     private int jpegOrientationFor(CameraCharacteristics c) {
@@ -1380,6 +2029,20 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return (sensorOrientation - deviceDegrees + 360) % 360;
     }
 
+    private String deviceRotationName(int rotation) {
+        switch (rotation) {
+            case Surface.ROTATION_90:
+                return "ROTATION_90";
+            case Surface.ROTATION_180:
+                return "ROTATION_180";
+            case Surface.ROTATION_270:
+                return "ROTATION_270";
+            case Surface.ROTATION_0:
+            default:
+                return "ROTATION_0";
+        }
+    }
+
     private void saveNextImage(ImageReader reader) {
         Image image = null;
         try {
@@ -1397,6 +2060,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             String mimeType = captureFormat == 32 ? "application/octet-stream" : "image/jpeg";
             String name = captureRunPrefix + "_" + label + "_" + String.format(Locale.US, "%03d", savedFrames + 1) + extension;
             writeDocument(name, mimeType, bytes);
+            captureMetadata.append("savedFile=").append(name)
+                    .append(" label=").append(label)
+                    .append(" bytes=").append(bytes.length)
+                    .append(" mimeType=").append(mimeType)
+                    .append("\n");
             savedFrames++;
             runOnUiThread(() -> captureView.setText(
                     "Saving " + captureTestName + "...\nSaved: " + savedFrames + "/" + captureFrameCount
@@ -1419,8 +2087,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         try {
+            captureMetadata.append("\nSUMMARY\n");
             captureMetadata.append("savedFrames=").append(savedFrames).append("\n");
             captureMetadata.append("failedFrames=").append(failedFrames).append("\n");
+            captureMetadata.append("completedFrames=").append(completedFrames).append("\n");
             writeDocument(
                     captureRunPrefix + "_metadata.txt",
                     "text/plain",
