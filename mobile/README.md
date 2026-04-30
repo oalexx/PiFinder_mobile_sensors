@@ -132,3 +132,6 @@ Raspberry Pi / PiFinder Lite
 
 The classic PiFinder hardware mode should remain unchanged. Mobile/Lite behavior
 should be added as optional modules and configuration.
+
+See [ROADMAP.md](ROADMAP.md) for the phased PiFinder Mobile / PiFinder Lite
+development plan.
