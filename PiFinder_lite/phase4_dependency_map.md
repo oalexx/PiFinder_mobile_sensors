@@ -31,8 +31,8 @@ should be additive, explicit, and easy to disable or ignore.
 | 14 | [#32 Camera frame endpoint contract/placeholder](https://github.com/oalexx/PiFinder_mobile_sensors/issues/32) | Ready | Phase 2 now provides real mobile-camera evidence. |
 | 15 | [#33 Upload one mobile JPEG frame](https://github.com/oalexx/PiFinder_mobile_sensors/issues/33) | Unblocked, storage-only | Phase 2 found 2 mobile JPEG solves; upload/storage can proceed without live solving. |
 | 16 | [#37 Offline preprocessing/frame selector](https://github.com/oalexx/PiFinder_mobile_sensors/issues/37) | Next camera analysis | Improve solve reliability before server-side quality scoring. |
-| 17 | [#38 Identify recommended camera ID](https://github.com/oalexx/PiFinder_mobile_sensors/issues/38) | Next camera analysis | Successful frames came from one Camera Sweep run; map it to camera metadata. |
-| 18 | [#39 Solve Candidate Burst mode](https://github.com/oalexx/PiFinder_mobile_sensors/issues/39) | After #38 | Add an app capture mode targeted at solvable frames. |
+| 17 | [#38 Identify recommended camera ID](https://github.com/oalexx/PiFinder_mobile_sensors/issues/38) | Done | Successful frames came from Samsung `SM-S948B` rear `cameraId=2`. |
+| 18 | [#39 Solve Candidate Burst mode](https://github.com/oalexx/PiFinder_mobile_sensors/issues/39) | Done | Android Camera Lab now has a solve-targeted JPEG burst, initially using `cameraId=2` on `SM-S948B`. |
 | 19 | [#40 Server-side image quality score](https://github.com/oalexx/PiFinder_mobile_sensors/issues/40) | After #37/#33 | Score uploaded frames before spending CPU on solve. |
 | 20 | [#34 Decide mobile camera solver path](https://github.com/oalexx/PiFinder_mobile_sensors/issues/34) | Partially unblocked | Decision is promising/tune first; final live-solver decision waits for upload + quality scoring. |
 | 21 | [#41 Diagnostic solve for stored mobile JPEGs](https://github.com/oalexx/PiFinder_mobile_sensors/issues/41) | After #33/#40 | Explicit diagnostic solve only; no integrator/live pointing changes. |
@@ -45,7 +45,7 @@ These are low-risk because they are additive and debug-oriented:
 - [#32 Camera frame API contract](https://github.com/oalexx/PiFinder_mobile_sensors/issues/32), documentation-first
 - [#33 Upload one mobile JPEG frame](https://github.com/oalexx/PiFinder_mobile_sensors/issues/33), storage-only
 - [#37 Offline preprocessing/frame selector](https://github.com/oalexx/PiFinder_mobile_sensors/issues/37), analysis-only
-- [#38 Identify recommended camera ID](https://github.com/oalexx/PiFinder_mobile_sensors/issues/38), analysis-only
+- [#38 Identify recommended camera ID](https://github.com/oalexx/PiFinder_mobile_sensors/issues/38), done: `SM-S948B` should try rear `cameraId=2` first
 
 Build rule:
 
@@ -178,11 +178,12 @@ flowchart TD
 
 ## Next Best Issue
 
-The next best camera issues are:
+After completing [#38](https://github.com/oalexx/PiFinder_mobile_sensors/issues/38),
+the next best camera issues are:
 
-1. [#38 Identify recommended camera ID](https://github.com/oalexx/PiFinder_mobile_sensors/issues/38).
-2. [#37 Improve offline preprocessing/frame selector](https://github.com/oalexx/PiFinder_mobile_sensors/issues/37).
-3. [#33 Upload one mobile JPEG frame](https://github.com/oalexx/PiFinder_mobile_sensors/issues/33).
+1. [#37 Improve offline preprocessing/frame selector](https://github.com/oalexx/PiFinder_mobile_sensors/issues/37), now using Solve Candidate Burst captures when available.
+2. [#33 Upload one mobile JPEG frame](https://github.com/oalexx/PiFinder_mobile_sensors/issues/33).
+3. [#40 Server-side image quality score](https://github.com/oalexx/PiFinder_mobile_sensors/issues/40).
 
 The next best bridge/hardware issue remains Raspberry/device validation of
 #21-#30. After real IMU batches are captured, [#31 IMU confidence and drift

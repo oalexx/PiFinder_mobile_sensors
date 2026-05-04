@@ -94,6 +94,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int REQUEST_PERMISSIONS = 41;
     private static final int REQUEST_OUTPUT_DIR = 42;
     private static final int BURST_FRAMES = 30;
+    private static final int SOLVE_CANDIDATE_FRAMES = 30;
+    private static final int SOLVE_CANDIDATE_ISO = 3200;
+    private static final String RECOMMENDED_SOLVE_DEVICE = "SM-S948B";
+    private static final String RECOMMENDED_SOLVE_CAMERA_ID = "2";
     private static final int SWEEP_FRAMES_PER_ISO = 8;
     private static final int RAW_BURST_FRAMES = 12;
     private static final int DAY_TEST_FRAMES = 8;
@@ -180,6 +184,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private int captureFormat = 256;
     private int captureJpegOrientation = 0;
     private int captureFrameCount = BURST_FRAMES;
+    private String captureCameraSelection = "default";
     private List<CaptureRequest> queuedRequests = new ArrayList<>();
     private final List<String> queuedLabels = new ArrayList<>();
     private final StringBuilder captureMetadata = new StringBuilder();
@@ -437,6 +442,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button cameraSweep = makeGridButton("Cam Sweep");
         cameraSweep.setOnClickListener(v -> startCaptureTest("camera_sweep", 256));
         row5.addView(cameraSweep);
+
+        LinearLayout row6 = buttonRow();
+        cameraScreen.addView(row6);
+        Button solveCandidateBurst = makeGridButton("Solve Candidate Burst");
+        solveCandidateBurst.setOnClickListener(v -> startCaptureTest("solve_candidate_burst", 256));
+        row6.addView(solveCandidateBurst);
 
         captureView = sectionText();
         captureView.setText("Capture test: waiting for a save folder.");
@@ -2423,9 +2434,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     @SuppressLint("MissingPermission")
     private void openCaptureCamera() {
         try {
-            String cameraId = "camera_sweep".equals(captureTestName)
-                    ? cameraSweepIds.get(cameraSweepIndex)
-                    : chooseBackCameraId();
+            String cameraId = chooseCaptureCameraId();
             CameraCharacteristics c = cameraManager.getCameraCharacteristics(cameraId);
             captureJpegOrientation = jpegOrientationFor(c);
             Size captureSize = chooseCaptureSize(c, captureFormat);
@@ -2438,7 +2447,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     captureSize.getWidth(),
                     captureSize.getHeight(),
                     captureFormat,
-                    Math.max(BURST_FRAMES, RAW_BURST_FRAMES)
+                    Math.max(Math.max(BURST_FRAMES, RAW_BURST_FRAMES), SOLVE_CANDIDATE_FRAMES)
             );
             captureReader.setOnImageAvailableListener(reader -> saveNextImage(reader), cameraHandler);
 
@@ -2482,6 +2491,42 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } catch (CameraAccessException | SecurityException e) {
             captureView.setText("Open camera failed: " + e.getMessage());
         }
+    }
+
+    private String chooseCaptureCameraId() throws CameraAccessException {
+        if ("camera_sweep".equals(captureTestName)) {
+            captureCameraSelection = "camera_sweep_index_" + cameraSweepIndex;
+            return cameraSweepIds.get(cameraSweepIndex);
+        }
+        if ("solve_candidate_burst".equals(captureTestName)) {
+            return chooseSolveCandidateCameraId();
+        }
+        captureCameraSelection = "default_back_camera";
+        return chooseBackCameraId();
+    }
+
+    private String chooseSolveCandidateCameraId() throws CameraAccessException {
+        if (RECOMMENDED_SOLVE_DEVICE.equalsIgnoreCase(android.os.Build.MODEL)
+                && isBackCamera(RECOMMENDED_SOLVE_CAMERA_ID)) {
+            captureCameraSelection = "recommended_" + RECOMMENDED_SOLVE_DEVICE
+                    + "_camera_" + RECOMMENDED_SOLVE_CAMERA_ID;
+            return RECOMMENDED_SOLVE_CAMERA_ID;
+        }
+        String fallback = chooseBackCameraId();
+        captureCameraSelection = "recommended_camera_unavailable_fallback_" + fallback;
+        return fallback;
+    }
+
+    private boolean isBackCamera(String cameraId) throws CameraAccessException {
+        for (String availableCameraId : cameraManager.getCameraIdList()) {
+            if (!availableCameraId.equals(cameraId)) {
+                continue;
+            }
+            CameraCharacteristics c = cameraManager.getCameraCharacteristics(cameraId);
+            Integer facing = c.get(CameraCharacteristics.LENS_FACING);
+            return facing != null && facing == CameraCharacteristics.LENS_FACING_BACK;
+        }
+        return false;
     }
 
     private String chooseBackCameraId() throws CameraAccessException {
@@ -2567,6 +2612,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         if ("raw_burst".equals(testName)) {
             return RAW_BURST_FRAMES;
         }
+        if ("solve_candidate_burst".equals(testName)) {
+            return SOLVE_CANDIDATE_FRAMES;
+        }
         if ("camera_sweep".equals(testName)) {
             return 6;
         }
@@ -2620,6 +2668,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         captureMetadata.append("androidApi=").append(android.os.Build.VERSION.SDK_INT).append("\n");
         captureMetadata.append("test=").append(captureTestName).append("\n");
         captureMetadata.append("cameraId=").append(cameraId).append("\n");
+        captureMetadata.append("cameraSelection=").append(captureCameraSelection).append("\n");
+        captureMetadata.append("recommendedSolveDevice=").append(RECOMMENDED_SOLVE_DEVICE).append("\n");
+        captureMetadata.append("recommendedSolveCameraId=").append(RECOMMENDED_SOLVE_CAMERA_ID).append("\n");
         captureMetadata.append("cameraFacing=").append(lensFacingName(lensFacing)).append("\n");
         captureMetadata.append("cameraCapabilities=").append(capabilityNames(caps)).append("\n");
         captureMetadata.append("manualSensor=").append(hasCapability(
@@ -2688,9 +2739,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             Range<Integer> isoRange = c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
             long exposureNs = exposureRange != null ? exposureRange.getUpper() : 200_000_000L;
             int maxIso = isoRange != null ? isoRange.getUpper() : 3200;
+            int solveIso = clampIso(SOLVE_CANDIDATE_ISO, isoRange);
 
             captureMetadata.append("selectedExposureNs=").append(exposureNs).append("\n");
             captureMetadata.append("selectedMaxIso=").append(maxIso).append("\n");
+            captureMetadata.append("selectedSolveCandidateIso=").append(solveIso).append("\n");
 
             if ("day_test".equals(captureTestName)) {
                 for (int i = 0; i < captureFrameCount; i++) {
@@ -2710,6 +2763,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                         queuedLabels.add("iso" + iso);
                     }
                 }
+            } else if ("solve_candidate_burst".equals(captureTestName)) {
+                for (int i = 0; i < captureFrameCount; i++) {
+                    queuedRequests.add(buildStillRequest(exposureNs, solveIso, i + 1));
+                    queuedLabels.add("solve_iso" + solveIso);
+                }
             } else {
                 for (int i = 0; i < captureFrameCount; i++) {
                     queuedRequests.add(buildStillRequest(exposureNs, maxIso, i + 1));
@@ -2722,7 +2780,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                             + "Test: " + captureTestName + "\n"
                             + ("day_test".equals(captureTestName)
                             ? "Exposure: auto\nISO: auto"
-                            : "Exposure: " + (exposureNs / 1_000_000.0) + " ms\nMax ISO: " + maxIso)
+                            : "Exposure: " + (exposureNs / 1_000_000.0) + " ms\nISO: "
+                                    + ("solve_candidate_burst".equals(captureTestName) ? solveIso : maxIso))
             ));
 
             captureSession.captureBurst(queuedRequests, new CameraCaptureSession.CaptureCallback() {
