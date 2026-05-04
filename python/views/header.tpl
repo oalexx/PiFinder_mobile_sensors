@@ -8,7 +8,7 @@
   <!-- CSS  -->
   <link href="/css/material_icons.css" rel="stylesheet">
   <link href="/css/materialize.css" type="text/css" rel="stylesheet" media="screen,projection"/>
-  <link href="/css/style.css" type="text/css" rel="stylesheet" media="screen,projection"/>
+  <link href="/css/style.css?v=20260502-lite-remote" type="text/css" rel="stylesheet" media="screen,projection"/>
 </head>
 <body class="grey darken-3">
   <nav class="grey darken-1" role="navigation">

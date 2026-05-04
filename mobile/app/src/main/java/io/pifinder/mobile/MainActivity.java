@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -36,7 +37,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.provider.DocumentsContract;
+import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -47,26 +50,41 @@ import android.util.Range;
 import android.util.Size;
 import android.util.SizeF;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.TimeZone;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -79,6 +97,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int SWEEP_FRAMES_PER_ISO = 8;
     private static final int RAW_BURST_FRAMES = 12;
     private static final int DAY_TEST_FRAMES = 8;
+    private static final int IMU_BATCH_TARGET_SAMPLES = 24;
+    private static final int IMU_BATCH_CAPTURE_MS = 2000;
     private static final int COLOR_BG = Color.rgb(3, 5, 10);
     private static final int COLOR_PANEL = Color.rgb(17, 20, 28);
     private static final int COLOR_PANEL_SOFT = Color.rgb(24, 27, 37);
@@ -92,6 +112,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final DecimalFormat F3 = new DecimalFormat("0.000");
     private static final String PREFS_NAME = "pifinder_mobile";
     private static final String KEY_CHECK_HISTORY = "check_history";
+    private static final String KEY_REMOTE_BASE_URL = "remote_base_url";
     private static final int MAX_HISTORY_RECORDS = 20;
 
     private SensorManager sensorManager;
@@ -114,6 +135,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private LinearLayout capabilitiesScreen;
     private LinearLayout cameraScreen;
     private LinearLayout historyScreen;
+    private LinearLayout remoteScreen;
+    private LinearLayout remoteWebScreen;
+    private LinearLayout rootLayout;
+    private TextView titleView;
+    private TextView subtitleView;
+    private EditText remoteUrlInput;
+    private TextView remoteStatusView;
+    private WebView remoteWebView;
     private String latestCheckResult = "";
     private String latestProfileJson = "";
     private String latestHistoryJson = "";
@@ -124,9 +153,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private boolean liveImuStarted = false;
     private boolean liveImuSampleReceived = false;
     private Uri outputTreeUri;
+    private String currentScreenName = "home";
+    private String pendingGpsBaseUrl = "";
+    private boolean imuBatchCaptureActive = false;
+    private String pendingImuBaseUrl = "";
 
     private final List<Sensor> activeSensors = new ArrayList<>();
+    private final List<Sensor> imuBatchSensors = new ArrayList<>();
+    private final JSONArray imuBatchSamples = new JSONArray();
     private final StringBuilder liveSensorText = new StringBuilder();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Location latestLocation;
 
     private HandlerThread cameraThread;
@@ -166,10 +202,46 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     @Override
     protected void onPause() {
         super.onPause();
+        stopImuBatchCapture();
         stopLiveSensors();
         stopLocation();
+        if (remoteWebView != null) {
+            remoteWebView.onPause();
+        }
         closeCaptureCamera();
         stopCameraThread();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (remoteWebView != null) {
+            remoteWebView.onResume();
+        }
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        resizeRemoteWebView();
+        showScreen(currentScreenName);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (remoteScreen != null && remoteScreen.getVisibility() == View.VISIBLE) {
+            showScreen("home");
+            return;
+        }
+        if (remoteWebScreen != null && remoteWebScreen.getVisibility() == View.VISIBLE) {
+            if (remoteWebView != null && remoteWebView.canGoBack()) {
+                remoteWebView.goBack();
+            } else {
+                showScreen("remote");
+            }
+            return;
+        }
+        super.onBackPressed();
     }
 
     private View buildUi() {
@@ -177,29 +249,30 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         scrollView.setFillViewport(true);
 
         LinearLayout root = new LinearLayout(this);
+        rootLayout = root;
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
         root.setBackgroundColor(COLOR_BG);
         scrollView.addView(root);
 
-        TextView title = new TextView(this);
-        title.setText("PIFINDER MOBILE");
-        title.setTextSize(24);
-        title.setTextColor(COLOR_TEXT);
-        title.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
-        title.setLetterSpacing(0.18f);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dp(56), 0, dp(6));
-        root.addView(title);
+        titleView = new TextView(this);
+        titleView.setText("PIFINDER MOBILE");
+        titleView.setTextSize(24);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        titleView.setLetterSpacing(0.18f);
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setPadding(0, dp(56), 0, dp(6));
+        root.addView(titleView);
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("COMPATIBILITY TESTER");
-        subtitle.setTextSize(12);
-        subtitle.setTextColor(COLOR_ACCENT);
-        subtitle.setLetterSpacing(0.24f);
-        subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0, 0, 0, dp(34));
-        root.addView(subtitle);
+        subtitleView = new TextView(this);
+        subtitleView.setText("COMPATIBILITY TESTER");
+        subtitleView.setTextSize(12);
+        subtitleView.setTextColor(COLOR_ACCENT);
+        subtitleView.setLetterSpacing(0.24f);
+        subtitleView.setGravity(Gravity.CENTER);
+        subtitleView.setPadding(0, 0, 0, dp(34));
+        root.addView(subtitleView);
 
         homeScreen = screenContainer();
         root.addView(homeScreen);
@@ -211,6 +284,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button cameraNav = makeHeroButton("CAMERA LAB", "Daylight framing, astro burst, RAW, and lens sweep");
         cameraNav.setOnClickListener(v -> showScreen("camera"));
         homeScreen.addView(cameraNav);
+        Button remoteNav = makeHeroButton("PIFINDER REMOTE", "Open the existing PiFinder web remote inside the app");
+        remoteNav.setOnClickListener(v -> showScreen("remote"));
+        homeScreen.addView(remoteNav);
 
         capabilitiesScreen = screenContainer();
         root.addView(capabilitiesScreen);
@@ -218,6 +294,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(cameraScreen);
         historyScreen = screenContainer();
         root.addView(historyScreen);
+        remoteScreen = screenContainer();
+        root.addView(remoteScreen);
+        remoteWebScreen = screenContainer();
+        root.addView(remoteWebScreen);
 
         addBackRow(capabilitiesScreen);
         addSectionHeader(capabilitiesScreen, "01", "CHECK CAPABILITIES", "Sensor, GPS, camera, and readiness diagnostics.");
@@ -294,6 +374,38 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         historyView = sectionText();
         historyScreen.addView(historyView);
 
+        addBackRow(remoteScreen);
+        addSectionHeader(remoteScreen, "01", "PIFINDER REMOTE", "Loads the existing /remote page from your PiFinder.");
+        remoteStatusView = statusCard();
+        remoteScreen.addView(remoteStatusView);
+        remoteUrlInput = makeUrlInput();
+        remoteScreen.addView(remoteUrlInput);
+        LinearLayout remoteRow = buttonRow();
+        remoteScreen.addView(remoteRow);
+        Button openRemote = makeGridButton("Open Remote");
+        openRemote.setOnClickListener(v -> openRemoteWebView());
+        remoteRow.addView(openRemote);
+        Button testConnection = makeGridButton("Test Connection");
+        testConnection.setOnClickListener(v -> testPiFinderConnection());
+        remoteRow.addView(testConnection);
+        LinearLayout remoteBridgeRow = buttonRow();
+        remoteScreen.addView(remoteBridgeRow);
+        Button sendProfile = makeGridButton("Send Profile");
+        sendProfile.setOnClickListener(v -> sendProfileToPiFinder());
+        remoteBridgeRow.addView(sendProfile);
+        Button sendGps = makeGridButton("Send GPS");
+        sendGps.setOnClickListener(v -> sendGpsToPiFinder());
+        remoteBridgeRow.addView(sendGps);
+        LinearLayout remoteImuRow = buttonRow();
+        remoteScreen.addView(remoteImuRow);
+        Button sendImu = makeGridButton("Send IMU Batch");
+        sendImu.setOnClickListener(v -> sendImuBatchToPiFinder());
+        remoteImuRow.addView(sendImu);
+
+        addRemoteWebToolbar(remoteWebScreen);
+        remoteWebView = makeRemoteWebView();
+        remoteWebScreen.addView(remoteWebView);
+
         addBackRow(cameraScreen);
         addSectionHeader(cameraScreen, "01", "CAMERA LAB", "Select a save folder before running any test.");
         cameraFolderStatusView = statusCard();
@@ -338,6 +450,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         updateCameraFolderStatus();
         updateHomeStatus();
         updateHistoryView();
+        updateRemoteStatus("Enter the PiFinder base URL, then open the remote.");
 
         return scrollView;
     }
@@ -363,13 +476,28 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void showScreen(String screenName) {
-        if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null || historyScreen == null) {
+        if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null
+                || historyScreen == null || remoteScreen == null || remoteWebScreen == null) {
             return;
         }
+        currentScreenName = screenName;
         homeScreen.setVisibility("home".equals(screenName) ? View.VISIBLE : View.GONE);
         capabilitiesScreen.setVisibility("capabilities".equals(screenName) ? View.VISIBLE : View.GONE);
         cameraScreen.setVisibility("camera".equals(screenName) ? View.VISIBLE : View.GONE);
         historyScreen.setVisibility("history".equals(screenName) ? View.VISIBLE : View.GONE);
+        remoteScreen.setVisibility("remote".equals(screenName) ? View.VISIBLE : View.GONE);
+        remoteWebScreen.setVisibility("remoteWeb".equals(screenName) ? View.VISIBLE : View.GONE);
+        boolean fullRemote = "remoteWeb".equals(screenName);
+        titleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+        subtitleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+        if (rootLayout != null) {
+            if (fullRemote) {
+                rootLayout.setPadding(0, dp(18), 0, 0);
+            } else {
+                rootLayout.setPadding(dp(18), dp(18), dp(18), dp(18));
+            }
+        }
+        resizeRemoteWebView();
     }
 
     private void addBackRow(LinearLayout root) {
@@ -385,6 +513,25 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         TextView spacer = new TextView(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
         row.addView(spacer, params);
+    }
+
+    private void addRemoteWebToolbar(LinearLayout root) {
+        LinearLayout row = buttonRow();
+        root.addView(row);
+        Button back = makeSmallButton("Back");
+        back.setOnClickListener(v -> showScreen("remote"));
+        row.addView(back);
+        Button reload = makeSmallButton("Reload");
+        reload.setOnClickListener(v -> {
+            if (remoteWebView != null) {
+                remoteWebView.reload();
+            }
+        });
+        row.addView(reload);
+        TextView spacer = new TextView(this);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
+        row.addView(spacer, params);
+        row.setPadding(dp(12), 0, dp(12), dp(6));
     }
 
     private Button makeHeroButton(String title, String subtitle) {
@@ -596,6 +743,509 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         params.setMargins(0, dp(10), 0, dp(8));
         textView.setLayoutParams(params);
         return textView;
+    }
+
+    private EditText makeUrlInput() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(loadRemoteBaseUrl());
+        input.setTextColor(COLOR_TEXT);
+        input.setHintTextColor(COLOR_MUTED);
+        input.setHint("http://pifinder.local or http://192.168.8.167:8080");
+        input.setTextSize(14);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setSelectAllOnFocus(false);
+        input.setPadding(dp(14), 0, dp(14), 0);
+        input.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 4));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(52)
+        );
+        params.setMargins(0, dp(10), 0, dp(10));
+        input.setLayoutParams(params);
+        return input;
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private WebView makeRemoteWebView() {
+        WebView webView = new WebView(this);
+        webView.setBackgroundColor(Color.BLACK);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setLoadWithOverviewMode(false);
+        settings.setUseWideViewPort(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setTextZoom(100);
+        webView.setInitialScale(100);
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                updateRemoteStatus("Loaded\n" + url);
+            }
+
+            @Override
+            public void onReceivedError(
+                    WebView view,
+                    WebResourceRequest request,
+                    WebResourceError error
+            ) {
+                if (request != null && request.isForMainFrame()) {
+                    updateRemoteStatus("Connection failed\nCheck PiFinder IP, port, and Wi-Fi.");
+                }
+            }
+        });
+        webView.setOnTouchListener((view, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN
+                    || event.getAction() == MotionEvent.ACTION_MOVE) {
+                view.getParent().requestDisallowInterceptTouchEvent(true);
+            }
+            if (event.getAction() == MotionEvent.ACTION_UP
+                    || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                view.getParent().requestDisallowInterceptTouchEvent(false);
+            }
+            return false;
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                remoteWebViewHeight()
+        );
+        params.setMargins(0, 0, 0, 0);
+        webView.setLayoutParams(params);
+        return webView;
+    }
+
+    private int remoteWebViewHeight() {
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int toolbarAllowance = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE ? dp(60) : dp(72);
+        return Math.max(dp(260), screenHeight - toolbarAllowance);
+    }
+
+    private void resizeRemoteWebView() {
+        if (remoteWebView == null) {
+            return;
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                remoteWebViewHeight()
+        );
+        params.setMargins(0, 0, 0, 0);
+        remoteWebView.setLayoutParams(params);
+        remoteWebView.requestLayout();
+    }
+
+    private void openRemoteWebView() {
+        if (remoteUrlInput == null || remoteWebView == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateRemoteStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        String remoteUrl = baseUrl + "/remote?embedded=1";
+        updateRemoteStatus("Loading\n" + remoteUrl);
+        showScreen("remoteWeb");
+        remoteWebView.clearCache(true);
+        remoteWebView.loadUrl(remoteUrl);
+    }
+
+    private void testPiFinderConnection() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateRemoteStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        updateRemoteStatus("Testing\n" + baseUrl + "/mobile/status");
+        new Thread(() -> {
+            String message = runPiFinderStatusCheck(baseUrl);
+            runOnUiThread(() -> updateRemoteStatus(message));
+        }).start();
+    }
+
+    private void sendProfileToPiFinder() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateRemoteStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        if (latestProfileJson == null || latestProfileJson.trim().length() == 0) {
+            latestProfileJson = buildProfileJson();
+        }
+        updateRemoteStatus("Sending profile\n" + baseUrl + "/mobile/profile");
+        new Thread(() -> {
+            String message = postMobileProfile(baseUrl, latestProfileJson);
+            runOnUiThread(() -> updateRemoteStatus(message));
+        }).start();
+    }
+
+    private void sendGpsToPiFinder() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateRemoteStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        if (!hasLocationPermission()) {
+            requestRuntimePermissions();
+            updateRemoteStatus("GPS permission missing\nGrant location permission, then tap Send GPS again.");
+            return;
+        }
+        Location location = bestAvailableLocation();
+        if (location != null) {
+            postLocationToPiFinder(baseUrl, location);
+            return;
+        }
+        pendingGpsBaseUrl = baseUrl;
+        if (requestSingleLocationForSend()) {
+            updateRemoteStatus("Waiting for GPS\nKeep the app open until Android returns one location fix.");
+        } else {
+            pendingGpsBaseUrl = "";
+            updateRemoteStatus("GPS unavailable\nNo enabled Android location provider returned a fix.");
+        }
+    }
+
+    private void sendImuBatchToPiFinder() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateRemoteStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        if (sensorManager == null) {
+            updateRemoteStatus("IMU unavailable\nAndroid sensor service is not available.");
+            return;
+        }
+        pendingImuBaseUrl = baseUrl;
+        clearImuBatchSamples();
+        stopImuBatchCapture();
+        boolean registered = false;
+        if (liveImuStarted) {
+            registered = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) != null
+                    || sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR) != null;
+        } else {
+            registered = registerImuBatchSensor(Sensor.TYPE_ROTATION_VECTOR) || registered;
+            registered = registerImuBatchSensor(Sensor.TYPE_GAME_ROTATION_VECTOR) || registered;
+        }
+        if (!registered) {
+            pendingImuBaseUrl = "";
+            updateRemoteStatus("IMU unavailable\nNo rotation vector sensors are available.");
+            return;
+        }
+        imuBatchCaptureActive = true;
+        updateRemoteStatus("Capturing IMU\nMove the phone gently for two seconds.");
+        mainHandler.postDelayed(() -> finishImuBatchCapture("timeout"), IMU_BATCH_CAPTURE_MS);
+    }
+
+    private String saveRemoteBaseUrlFromInput() {
+        String baseUrl = normalizeRemoteBaseUrl(remoteUrlInput.getText().toString());
+        if (baseUrl.length() > 0) {
+            prefs().edit().putString(KEY_REMOTE_BASE_URL, baseUrl).apply();
+            remoteUrlInput.setText(baseUrl);
+        }
+        return baseUrl;
+    }
+
+    private String runPiFinderStatusCheck(String baseUrl) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/status");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(4000);
+            connection.setRequestProperty("Accept", "application/json");
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Connection failed\nHTTP " + status + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            }
+            JSONObject json = new JSONObject(body);
+            boolean ok = json.optBoolean("ok", false);
+            String api = json.optString("api", "unknown");
+            String serverTime = json.optString("server_time_utc", "unknown time");
+            JSONObject bridge = json.optJSONObject("mobile_bridge");
+            String profile = bridge != null
+                    ? bridge.optString("profile", "unknown")
+                    : "unknown";
+            if (!ok) {
+                return "Connection failed\n/mobile/status returned ok=false.";
+            }
+            return "Connection OK\nAPI: " + api
+                    + "\nServer: " + serverTime
+                    + "\nProfile bridge: " + profile;
+        } catch (Exception e) {
+            return "Connection failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String postMobileProfile(String baseUrl, String profileJson) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/profile");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(6000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+            byte[] bodyBytes = profileJson.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bodyBytes.length);
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                outputStream.write(bodyBytes);
+            }
+
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Profile send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+            }
+            JSONObject json = new JSONObject(body);
+            if (!json.optBoolean("ok", false)) {
+                return "Profile send failed\nServer returned ok=false.";
+            }
+            return "Profile sent\nStored: " + json.optString("stored_as", "unknown")
+                    + "\nReceived: " + json.optString("received_utc", "unknown time");
+        } catch (Exception e) {
+            return "Profile send failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void postLocationToPiFinder(String baseUrl, Location location) {
+        latestLocation = location;
+        String gpsJson;
+        try {
+            gpsJson = buildGpsPayloadJson(location);
+        } catch (JSONException e) {
+            updateRemoteStatus("GPS send failed\nCould not build GPS JSON.");
+            return;
+        }
+        updateRemoteStatus("Sending GPS\n" + baseUrl + "/mobile/gps");
+        new Thread(() -> {
+            String message = postMobileGps(baseUrl, gpsJson);
+            runOnUiThread(() -> updateRemoteStatus(message));
+        }).start();
+    }
+
+    private String postMobileGps(String baseUrl, String gpsJson) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/gps");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(6000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+            byte[] bodyBytes = gpsJson.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bodyBytes.length);
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                outputStream.write(bodyBytes);
+            }
+
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "GPS send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+            }
+            JSONObject json = new JSONObject(body);
+            if (!json.optBoolean("ok", false)) {
+                return "GPS send failed\nServer returned ok=false.";
+            }
+            return "GPS sent\nStored: " + json.optString("stored_as", "unknown")
+                    + "\nReceived: " + json.optString("received_utc", "unknown time");
+        } catch (Exception e) {
+            return "GPS send failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String buildGpsPayloadJson(Location location) throws JSONException {
+        JSONObject gps = new JSONObject();
+        gps.put("lat", location.getLatitude());
+        gps.put("lon", location.getLongitude());
+        if (location.hasAltitude()) {
+            gps.put("altitude_m", location.getAltitude());
+        }
+        if (location.hasAccuracy()) {
+            gps.put("accuracy_m", location.getAccuracy());
+        }
+        gps.put("time_utc", utcIso(location.getTime()));
+        gps.put("source", "android-gps");
+        gps.put("provider", location.getProvider());
+        gps.put("phone_time_utc", utcIso(System.currentTimeMillis()));
+        return gps.toString();
+    }
+
+    private void postImuBatchToPiFinder(String baseUrl, String imuJson) {
+        updateRemoteStatus("Sending IMU batch\n" + baseUrl + "/mobile/imu");
+        new Thread(() -> {
+            String message = postMobileImu(baseUrl, imuJson);
+            runOnUiThread(() -> updateRemoteStatus(message));
+        }).start();
+    }
+
+    private String postMobileImu(String baseUrl, String imuJson) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/imu");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(6000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+            byte[] bodyBytes = imuJson.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bodyBytes.length);
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                outputStream.write(bodyBytes);
+            }
+
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "IMU send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+            }
+            JSONObject json = new JSONObject(body);
+            if (!json.optBoolean("ok", false)) {
+                return "IMU send failed\nServer returned ok=false.";
+            }
+            return "IMU batch sent\nStored: " + json.optString("stored_as", "unknown")
+                    + "\nSamples: " + json.optInt("sample_count", -1)
+                    + "\nReceived: " + json.optString("received_utc", "unknown time");
+        } catch (Exception e) {
+            return "IMU send failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String buildImuBatchJson(JSONArray samples) throws JSONException {
+        JSONObject batch = new JSONObject();
+        batch.put("schema", "pifinder-mobile-imu-batch-v0");
+        batch.put("device_time_utc", utcIso(System.currentTimeMillis()));
+        batch.put("samples", samples);
+        JSONObject device = new JSONObject();
+        device.put("manufacturer", android.os.Build.MANUFACTURER);
+        device.put("model", android.os.Build.MODEL);
+        device.put("android_api", android.os.Build.VERSION.SDK_INT);
+        batch.put("device", device);
+        return batch.toString();
+    }
+
+    private String responseErrorSummary(String body) {
+        if (body == null || body.trim().length() == 0) {
+            return "No error body returned.";
+        }
+        try {
+            JSONObject json = new JSONObject(body);
+            JSONObject error = json.optJSONObject("error");
+            if (error != null) {
+                return error.optString("code", "error")
+                        + "\n" + error.optString("message", body);
+            }
+            return json.optString("message", body);
+        } catch (JSONException e) {
+            return body.length() > 160 ? body.substring(0, 160) : body;
+        }
+    }
+
+    private String readHttpBody(HttpURLConnection connection, int status) throws IOException {
+        InputStream stream = status >= 200 && status < 400
+                ? connection.getInputStream()
+                : connection.getErrorStream();
+        if (stream == null) {
+            return "";
+        }
+        StringBuilder body = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                body.append(line);
+            }
+        }
+        return body.toString();
+    }
+
+    private String shortError(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.trim().length() == 0) {
+            return e.getClass().getSimpleName();
+        }
+        return message;
+    }
+
+    private String loadRemoteBaseUrl() {
+        return prefs().getString(KEY_REMOTE_BASE_URL, "http://pifinder.local");
+    }
+
+    private String normalizeRemoteBaseUrl(String value) {
+        if (value == null) {
+            return "";
+        }
+        String url = value.trim();
+        if (url.length() == 0) {
+            return "";
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "http://" + url;
+        }
+        int queryIndex = url.indexOf("?");
+        if (queryIndex >= 0) {
+            url = url.substring(0, queryIndex);
+        }
+        int fragmentIndex = url.indexOf("#");
+        if (fragmentIndex >= 0) {
+            url = url.substring(0, fragmentIndex);
+        }
+        while (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        if (url.endsWith("/remote")) {
+            url = url.substring(0, url.length() - "/remote".length());
+        }
+        return url;
+    }
+
+    private void updateRemoteStatus(String message) {
+        if (remoteStatusView != null) {
+            remoteStatusView.setText("Remote\n" + message);
+        }
     }
 
     private TextView readinessBadge() {
@@ -1432,6 +2082,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void stopLiveSensors() {
         sensorManager.unregisterListener(this);
         activeSensors.clear();
+        liveImuStarted = false;
         liveSensorText.setLength(0);
         if (startImuButton != null) {
             startImuButton.setText("START IMU");
@@ -1447,8 +2098,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     @SuppressLint("MissingPermission")
     private void startLocation() {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (!hasLocationPermission()) {
             return;
         }
         try {
@@ -1461,6 +2111,165 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
+    private boolean hasLocationPermission() {
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @SuppressLint("MissingPermission")
+    private Location bestAvailableLocation() {
+        Location best = latestLocation;
+        if (!hasLocationPermission() || locationManager == null) {
+            return best;
+        }
+        best = newerLocation(best, lastKnownLocation(LocationManager.GPS_PROVIDER));
+        best = newerLocation(best, lastKnownLocation(LocationManager.NETWORK_PROVIDER));
+        return best;
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean requestSingleLocationForSend() {
+        if (!hasLocationPermission() || locationManager == null) {
+            return false;
+        }
+        boolean requested = false;
+        requested = requestSingleLocationProvider(LocationManager.GPS_PROVIDER) || requested;
+        requested = requestSingleLocationProvider(LocationManager.NETWORK_PROVIDER) || requested;
+        return requested;
+    }
+
+    @SuppressLint("MissingPermission")
+    private Location lastKnownLocation(String provider) {
+        try {
+            if (!locationManager.isProviderEnabled(provider)) {
+                return null;
+            }
+            return locationManager.getLastKnownLocation(provider);
+        } catch (IllegalArgumentException | SecurityException e) {
+            return null;
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private boolean requestSingleLocationProvider(String provider) {
+        try {
+            if (!locationManager.isProviderEnabled(provider)) {
+                return false;
+            }
+            locationManager.requestSingleUpdate(provider, this, null);
+            return true;
+        } catch (IllegalArgumentException | SecurityException e) {
+            return false;
+        }
+    }
+
+    private Location newerLocation(Location current, Location candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        if (current == null || candidate.getTime() > current.getTime()) {
+            return candidate;
+        }
+        return current;
+    }
+
+    private String utcIso(long timeMs) {
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+        formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return formatter.format(new Date(timeMs));
+    }
+
+    private boolean registerImuBatchSensor(int type) {
+        Sensor sensor = sensorManager.getDefaultSensor(type);
+        if (sensor == null) {
+            return false;
+        }
+        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME);
+        imuBatchSensors.add(sensor);
+        return true;
+    }
+
+    private void stopImuBatchCapture() {
+        for (Sensor sensor : imuBatchSensors) {
+            sensorManager.unregisterListener(this, sensor);
+        }
+        imuBatchSensors.clear();
+        imuBatchCaptureActive = false;
+    }
+
+    private void clearImuBatchSamples() {
+        while (imuBatchSamples.length() > 0) {
+            imuBatchSamples.remove(0);
+        }
+    }
+
+    private void maybeCaptureImuSample(SensorEvent event) {
+        if (!imuBatchCaptureActive) {
+            return;
+        }
+        int type = event.sensor.getType();
+        if (type != Sensor.TYPE_ROTATION_VECTOR
+                && type != Sensor.TYPE_GAME_ROTATION_VECTOR) {
+            return;
+        }
+        try {
+            JSONObject sample = new JSONObject();
+            sample.put("sensor", sensorNameForPayload(type));
+            sample.put("t_android_ns", event.timestamp);
+            sample.put("accuracy", event.accuracy);
+            sample.put("time_utc", utcIso(System.currentTimeMillis()));
+            JSONArray values = new JSONArray();
+            for (float value : event.values) {
+                values.put(value);
+            }
+            sample.put("values", values);
+            imuBatchSamples.put(sample);
+        } catch (JSONException ignored) {
+        }
+        if (imuBatchSamples.length() >= IMU_BATCH_TARGET_SAMPLES) {
+            finishImuBatchCapture("target");
+        }
+    }
+
+    private void finishImuBatchCapture(String reason) {
+        if (!imuBatchCaptureActive) {
+            return;
+        }
+        stopImuBatchCapture();
+        if (pendingImuBaseUrl == null || pendingImuBaseUrl.length() == 0) {
+            return;
+        }
+        if (imuBatchSamples.length() == 0) {
+            pendingImuBaseUrl = "";
+            updateRemoteStatus("IMU unavailable\nNo orientation samples arrived.");
+            return;
+        }
+        String baseUrl = pendingImuBaseUrl;
+        pendingImuBaseUrl = "";
+        try {
+            String imuJson = buildImuBatchJson(imuBatchSamples);
+            updateRemoteStatus(
+                    "Captured IMU batch\nSamples: " + imuBatchSamples.length()
+                            + "\nReason: " + reason
+            );
+            postImuBatchToPiFinder(baseUrl, imuJson);
+        } catch (JSONException e) {
+            updateRemoteStatus("IMU send failed\nCould not build IMU JSON.");
+        } finally {
+            clearImuBatchSamples();
+        }
+    }
+
+    private String sensorNameForPayload(int type) {
+        if (type == Sensor.TYPE_ROTATION_VECTOR) {
+            return "rotation_vector";
+        }
+        if (type == Sensor.TYPE_GAME_ROTATION_VECTOR) {
+            return "game_rotation_vector";
+        }
+        return "sensor_" + type;
+    }
+
     private void stopLocation() {
         try {
             locationManager.removeUpdates(this);
@@ -1471,6 +2280,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     @Override
     public void onSensorChanged(SensorEvent event) {
         liveImuSampleReceived = true;
+        maybeCaptureImuSample(event);
         liveSensorText.setLength(0);
         liveSensorText.append("LIVE SENSOR SAMPLE\n");
         liveSensorText.append(sensorName(event.sensor.getType())).append(": ");
@@ -1499,6 +2309,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     @Override
     public void onLocationChanged(Location location) {
         latestLocation = location;
+        if (pendingGpsBaseUrl != null && pendingGpsBaseUrl.length() > 0) {
+            String baseUrl = pendingGpsBaseUrl;
+            pendingGpsBaseUrl = "";
+            postLocationToPiFinder(baseUrl, location);
+        }
         refreshReport();
     }
 

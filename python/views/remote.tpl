@@ -1,34 +1,47 @@
-% include("header.tpl", title="Remote")
+% if not defined("embedded") or not embedded:
+%   include("header.tpl", title="Remote")
+% else:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0"/>
+  <title>PiFinder - Remote</title>
+  <link href="/css/material_icons.css" rel="stylesheet">
+  <link href="/css/materialize.css" type="text/css" rel="stylesheet" media="screen,projection"/>
+  <link href="/css/style.css?v=20260504-lite-remote-landscape4" type="text/css" rel="stylesheet" media="screen,projection"/>
+</head>
+<body class="grey darken-3 embedded-remote-body">
+  <main class="embedded-remote-main">
+% end
 
 <div id="error" class="error-message"></div>
-<div class="center-align">
-    <img id="image" src="" alt="PiFinder Screen" class="pifinder-screen z-depth-2">
-</div>
-<center>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); margin: 0.5rem; justify-content: center; gap: 0.5rem;">
-        <button class="btn remote-button" onclick="buttonClicked(this, 'A')">←</button>
-        <button class="btn remote-button" onclick="buttonClicked(this, 'B')">↑</button>
-        <button class="btn remote-button" onclick="buttonClicked(this, 'C')">↓</button>
-        <button class="btn remote-button" onclick="buttonClicked(this, 'D')">→</button>
+<div class="remote-shell">
+    <div class="remote-screen-panel">
+        <img id="image" src="" alt="PiFinder Screen" class="pifinder-screen z-depth-2">
+    </div>
+    <div class="remote-grid">
+        <button class="btn remote-button" aria-label="Left" onclick="buttonClicked(this, 'A')">&larr;</button>
+        <button class="btn remote-button" aria-label="Up" onclick="buttonClicked(this, 'B')">&uarr;</button>
+        <button class="btn remote-button" aria-label="Down" onclick="buttonClicked(this, 'C')">&darr;</button>
+        <button class="btn remote-button" aria-label="Right" onclick="buttonClicked(this, 'D')">&rarr;</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '7')">7</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '8')">8</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '9')">9</button>
-        <button class="btn remote-button" onclick="buttonClicked(this, 'UP')">+</button>
+        <button class="btn remote-button" aria-label="Plus" onclick="buttonClicked(this, 'UP')">+</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '4')">4</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '5')">5</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '6')">6</button>
-        <button class="btn remote-button" onclick="buttonClicked(this, 'DN')">-</button>
+        <button class="btn remote-button" aria-label="Minus" onclick="buttonClicked(this, 'DN')">-</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '1')">1</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '2')">2</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '3')">3</button>
-        <button class="btn remote-button" onclick="buttonClicked(this, 'SQUARE')">■</button>
-        <button class="btn remote-button" id="altButton" onclick="buttonPressed(this)">Ent+</button>
+        <button class="btn remote-button" aria-label="Square" onclick="buttonClicked(this, 'SQUARE')">&#9632;</button>
+        <button class="btn remote-button remote-modifier" id="altButton" onclick="buttonPressed(this)">Ent+</button>
         <button class="btn remote-button" onclick="buttonClicked(this, '0')">0</button>
-        <button class="btn remote-button" id="longButton" onclick="buttonPressed(this)">Long</button>
+        <button class="btn remote-button remote-modifier" id="longButton" onclick="buttonPressed(this)">Long</button>
     </div>
-    <div style="display: flex; flex-direction: row; margin: 0px 5px 0px 5px; gap: 1rem; justify-content: center;">
-    </div>
-</center>
+</div>
 <script>
 function fetchImage() {
     const imageElement = document.getElementById('image');
@@ -79,7 +92,6 @@ function buttonPressed(btn) {
 }
 
 function buttonClicked(btn, code) {
-    const button = btn.innerHTML;
     const altButton = document.getElementById("altButton");
     const longButton = document.getElementById("longButton");
 
@@ -106,5 +118,10 @@ function buttonClicked(btn, code) {
 }
 </script>
 
-% include("footer.tpl", title="PiFinder UI")
-
+% if not defined("embedded") or not embedded:
+%   include("footer.tpl", title="PiFinder UI")
+% else:
+  </main>
+</body>
+</html>
+% end

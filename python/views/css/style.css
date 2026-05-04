@@ -8,6 +8,44 @@ main {
  flex: 1 0 auto;
 }
 
+.embedded-remote-body {
+  display: block;
+  font-size: 16px;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.embedded-remote-main {
+  width: 100%;
+}
+
+.embedded-remote-body .remote-shell {
+  width: calc(100vw - 8px);
+  max-width: none;
+  padding: 8px 0 16px;
+}
+
+.embedded-remote-body .pifinder-screen {
+  width: 92vw;
+  max-width: none;
+  margin: 2px 0 12px;
+}
+
+.embedded-remote-body .remote-grid {
+  width: 100%;
+  gap: 8px;
+}
+
+.embedded-remote-body .remote-button {
+  height: clamp(64px, 15vw, 112px);
+  line-height: clamp(64px, 15vw, 112px);
+  font-size: clamp(24px, 6vw, 42px);
+}
+
+.embedded-remote-body .remote-modifier {
+  font-size: clamp(17px, 4.4vw, 30px);
+}
+
 .icon-block {
   padding: 0 15px;
 }
@@ -20,15 +58,51 @@ main {
   height: 50px;   
 }
 
+.remote-shell {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 0.75rem 0 1rem;
+}
+
+.remote-screen-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .pifinder-screen {
   width: 100%;
   max-width: 256px;
-  margin: 1rem;
- 
+  aspect-ratio: 1 / 1;
+  margin: 0.5rem 0 0.75rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background-color: #000;
+}
+
+.remote-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  justify-content: center;
 }
 
 .remote-button {
-  height: 3rem;
+  width: 100%;
+  min-width: 0;
+  height: 3.5rem;
+  min-height: 48px;
+  padding: 0;
+  font-size: 1.35rem;
+  line-height: 3.5rem;
+  text-align: center;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.remote-modifier {
+  font-size: 1rem;
 }
 
 .pressed {
@@ -48,5 +122,70 @@ main {
 @media (hover: none) {
   .btn:hover {
     background-color: #555;
+  }
+}
+
+@media only screen and (max-width: 420px) {
+  main .container {
+    width: 94%;
+  }
+
+  .remote-shell {
+    padding-top: 0.5rem;
+  }
+
+  .remote-grid {
+    gap: 0.45rem;
+  }
+
+  .remote-button {
+    height: 3.35rem;
+    line-height: 3.35rem;
+  }
+}
+
+@media only screen and (orientation: landscape) {
+  .embedded-remote-body {
+    overflow: hidden;
+  }
+
+  .embedded-remote-body .remote-shell {
+    display: grid;
+    grid-template-columns: minmax(280px, 38vw) minmax(420px, 1fr);
+    align-items: start;
+    gap: 12px;
+    width: calc(100vw - 16px);
+    height: calc(100vh - 12px);
+    padding: 4px 8px;
+  }
+
+  .embedded-remote-body .remote-screen-panel {
+    align-items: start;
+  }
+
+  .embedded-remote-body .pifinder-screen {
+    width: min(38vw, calc(100vh - 18px));
+    margin: 0;
+  }
+
+  .embedded-remote-body .remote-grid {
+    align-self: start;
+    height: min(38vw, calc(100vh - 18px));
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .embedded-remote-body .remote-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 0;
+    line-height: 1;
+    font-size: clamp(24px, 3.2vw, 34px);
+  }
+
+  .embedded-remote-body .remote-modifier {
+    font-size: clamp(17px, 2.3vw, 24px);
   }
 }

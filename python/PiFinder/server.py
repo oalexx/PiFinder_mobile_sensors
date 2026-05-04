@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pydeepskylog as pds
 from PIL import Image
-from PiFinder import utils, calc_utils, config
+from PiFinder import utils, calc_utils, config, mobile_bridge
 from PiFinder.db.observations_db import (
     ObservationsDatabase,
 )
@@ -187,7 +187,100 @@ class Server:
         def remote():
             return template(
                 "remote",
+                embedded=request.query.get("embedded", "0") == "1",
             )
+
+        @app.route("/mobile/status")
+        def mobile_status():
+            payload = mobile_bridge.status_payload()
+            mobile_bridge.write_debug_json("status.json", payload)
+            return payload
+
+        @app.route("/mobile/profile", method="POST")
+        def mobile_profile():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            profile_payload = mobile_bridge.profile_payload(payload)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.PROFILE_LATEST_FILENAME,
+                profile_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "profile accepted",
+                "stored_as": mobile_bridge.PROFILE_LATEST_FILENAME,
+                "received_utc": profile_payload["received_utc"],
+            }
+
+        @app.route("/mobile/gps", method="POST")
+        def mobile_gps():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            gps_fix, error_message = mobile_bridge.validate_gps_payload(payload)
+            if error_message:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_gps",
+                    error_message,
+                )
+
+            gps_payload = mobile_bridge.gps_payload(gps_fix)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.GPS_LATEST_FILENAME,
+                gps_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "gps accepted",
+                "stored_as": mobile_bridge.GPS_LATEST_FILENAME,
+                "received_utc": gps_payload["received_utc"],
+            }
+
+        @app.route("/mobile/imu", method="POST")
+        def mobile_imu():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            imu_batch, error_message = mobile_bridge.validate_imu_payload(payload)
+            if error_message:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_imu",
+                    error_message,
+                )
+
+            imu_payload = mobile_bridge.imu_payload(imu_batch)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.IMU_LATEST_FILENAME,
+                imu_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "imu batch accepted for debug",
+                "stored_as": mobile_bridge.IMU_LATEST_FILENAME,
+                "received_utc": imu_payload["received_utc"],
+                "sample_count": imu_batch["sample_count"],
+            }
 
         @app.route("/advanced")
         @auth_required

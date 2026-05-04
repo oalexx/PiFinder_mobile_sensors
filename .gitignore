@@ -108,6 +108,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+python/.conda-py39/
+Test cam/
+
 
 # Spyder project settings
 .spyderproject
