@@ -847,7 +847,8 @@ Integrated compatibility changes:
   default to use `field(default_factory=...)`, because Python 3.13 rejects a
   mutable dataclass default of type `MarkingMenuOption`.
 - Replaced the temporary local `timezonefinder` UTC shim recommendation with
-  `timezonefinder==8.2.4` in the Lite/Trixie requirements. The PC venv verified
+  `timezonefinder==8.2.4` and `flatbuffers==25.12.19` in the Lite/Trixie
+  requirements. The PC venv and Raspberry venv both verified
   `TimezoneFinder().timezone_at(...)` returns `Europe/Madrid` for Madrid
   coordinates on Python 3.13.
 
@@ -869,8 +870,8 @@ Status:
 Keep with follow-up validation.
 
 - Keep the documentation and install recipe.
-- Validate `timezonefinder==8.2.4` on the Raspberry Trixie venv before GPS
-  bridge work depends on local timezone calculation.
+- Keep `flatbuffers==25.12.19` pinned unless piwheels stops serving the old
+  date-versioned build that imports Python's removed `imp` module.
 - Re-run classic PiFinder startup/tests on the original supported runtime before
   proposing these changes upstream.
 

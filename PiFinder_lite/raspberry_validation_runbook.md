@@ -109,9 +109,10 @@ validacion Trixie:
 - `python/PiFinder/ui/marking_menus.py`: usa `field(default_factory=...)` para
   evitar el error de dataclass mutable en Python 3.13.
 
-La solucion para timezone en Python 3.13 es `timezonefinder==8.2.4`, incluida
-en `requirements-trixie-py313.txt`. No uses `timezonefinder==6.1.9` en Trixie;
-esa version intento usar un camino antiguo de `h3` durante la validacion.
+La solucion para timezone en Python 3.13 es `timezonefinder==8.2.4` con
+`flatbuffers==25.12.19`, incluidos en `requirements-trixie-py313.txt`. No uses
+`timezonefinder==6.1.9` en Trixie; esa version intento usar un camino antiguo
+de `h3` durante la validacion.
 
 Estos cambios estan documentados en:
 
@@ -128,6 +129,8 @@ python -c "from google.protobuf import runtime_version; print('protobuf ok')"
 python -c "import grpc; print(grpc.__version__)"
 python -c "import skyfield, numpy; print('skyfield/numpy ok', numpy.__version__)"
 python -c "import luma.core.device, luma.oled.device, luma.lcd.device; print('luma ok')"
+python -c "import flatbuffers; print(flatbuffers.__version__)"
+python -c "from timezonefinder import TimezoneFinder; print(TimezoneFinder().timezone_at(lat=40.4168, lng=-3.7038))"
 python -c "import PiFinder.main; print('main import ok')"
 ```
 

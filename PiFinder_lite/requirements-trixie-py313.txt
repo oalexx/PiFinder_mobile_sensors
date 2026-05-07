@@ -32,4 +32,7 @@ luma.emulator
 
 # Python 3.13 compatible timezone lookup. Older timezonefinder 6.1.9 pulled an
 # old h3 build path; 8.2.4 supports h3 4.x and was verified on the PC venv.
+# Pin flatbuffers because piwheels can otherwise provide an old date-versioned
+# build (`20181003210633`) that imports the removed Python `imp` module.
+flatbuffers==25.12.19
 timezonefinder==8.2.4

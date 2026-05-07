@@ -46,7 +46,9 @@ pip install -r ../PiFinder_lite/requirements-trixie-py313.txt
 
 Do not install the pinned `timezonefinder==6.1.9` on Trixie. It pulls an older
 `h3` build path that failed during validation. The Lite/Trixie requirements use
-`timezonefinder==8.2.4`, which supports the modern `h3` 4.x API.
+`timezonefinder==8.2.4`, which supports the modern `h3` 4.x API. They also pin
+`flatbuffers==25.12.19`, because piwheels can otherwise provide an old
+date-versioned `flatbuffers` build that imports Python's removed `imp` module.
 
 ## 2. Initialize Tetra3/Cedar Solve
 
@@ -92,9 +94,9 @@ first Trixie validation:
 - `MarkingMenu.up` uses `field(default_factory=...)`, which avoids the Python
   3.13 dataclass mutable-default import error.
 
-Timezone lookup should use `timezonefinder==8.2.4` from the Lite/Trixie
-requirements. The first manual validation used a temporary UTC shim before this
-dependency strategy was tested.
+Timezone lookup should use `timezonefinder==8.2.4` plus
+`flatbuffers==25.12.19` from the Lite/Trixie requirements. The first manual
+validation used a temporary UTC shim before this dependency strategy was tested.
 
 ## 5. Validate Imports
 
