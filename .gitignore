@@ -110,6 +110,7 @@ env.bak/
 venv.bak/
 python/.conda-py39/
 Test cam/
+PiFinder_lite/phase2_camera_analysis/
 
 
 # Spyder project settings

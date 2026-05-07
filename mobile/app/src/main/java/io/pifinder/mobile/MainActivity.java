@@ -134,6 +134,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView historyView;
     private TextView liveView;
     private TextView captureView;
+    private TextView cameraDiagnosticGuideView;
     private Button startImuButton;
     private LinearLayout homeScreen;
     private LinearLayout capabilitiesScreen;
@@ -181,10 +182,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String captureRunPrefix = "";
     private String captureDirDocumentId;
     private String captureTestName = "manual";
+    private String activeCaptureCameraId = "";
+    private Size activeCaptureSize;
     private int captureFormat = 256;
     private int captureJpegOrientation = 0;
     private int captureFrameCount = BURST_FRAMES;
     private String captureCameraSelection = "default";
+    private byte[] lastCapturedJpegBytes;
+    private String lastCapturedJpegName = "";
+    private String lastCapturedJpegMetadataJson = "";
     private List<CaptureRequest> queuedRequests = new ArrayList<>();
     private final List<String> queuedLabels = new ArrayList<>();
     private final StringBuilder captureMetadata = new StringBuilder();
@@ -416,6 +422,20 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraFolderStatusView = statusCard();
         cameraScreen.addView(cameraFolderStatusView);
 
+        addAreaTitle(cameraScreen, "MOBILE CAMERA DIAGNOSTIC");
+        cameraDiagnosticGuideView = statusCard();
+        updateMobileCameraDiagnosticGuide("ready");
+        cameraScreen.addView(cameraDiagnosticGuideView);
+
+        LinearLayout diagnosticRow = buttonRow();
+        cameraScreen.addView(diagnosticRow);
+        Button guidedDiagnostic = makeGridButton("Run Diagnostic Burst");
+        guidedDiagnostic.setOnClickListener(v -> startMobileCameraDiagnostic());
+        diagnosticRow.addView(guidedDiagnostic);
+        Button copyDiagnosticPlan = makeGridButton("Copy Diagnostic Plan");
+        copyDiagnosticPlan.setOnClickListener(v -> copyMobileCameraDiagnosticPlan());
+        diagnosticRow.addView(copyDiagnosticPlan);
+
         LinearLayout row3 = buttonRow();
         cameraScreen.addView(row3);
         Button pickFolder = makeGridButton("Save Folder");
@@ -448,6 +468,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button solveCandidateBurst = makeGridButton("Solve Candidate Burst");
         solveCandidateBurst.setOnClickListener(v -> startCaptureTest("solve_candidate_burst", 256));
         row6.addView(solveCandidateBurst);
+        Button uploadLastJpeg = makeGridButton("Upload Last JPEG");
+        uploadLastJpeg.setOnClickListener(v -> uploadLastCapturedJpeg());
+        row6.addView(uploadLastJpeg);
 
         captureView = sectionText();
         captureView.setText("Capture test: waiting for a save folder.");
@@ -1177,6 +1200,202 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         device.put("android_api", android.os.Build.VERSION.SDK_INT);
         batch.put("device", device);
         return batch.toString();
+    }
+
+    private void uploadLastCapturedJpeg() {
+        if (lastCapturedJpegBytes == null || lastCapturedJpegBytes.length == 0) {
+            captureView.setText("No JPEG ready to upload.\nRun Solve Candidate Burst or another JPEG capture first.");
+            updateMobileCameraDiagnosticGuide("capture_needed");
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            captureView.setText("PiFinder URL missing.\nSet it in PiFinder Remote first.");
+            updateMobileCameraDiagnosticGuide("remote_needed");
+            return;
+        }
+        byte[] frameBytes = Arrays.copyOf(lastCapturedJpegBytes, lastCapturedJpegBytes.length);
+        String filename = lastCapturedJpegName;
+        String metadataJson = lastCapturedJpegMetadataJson;
+        captureView.setText("Uploading last JPEG...\n" + filename + "\n" + baseUrl + "/mobile/camera_frame");
+        updateMobileCameraDiagnosticGuide("uploading");
+        new Thread(() -> {
+            String message = postMobileCameraFrame(baseUrl, filename, frameBytes, metadataJson);
+            runOnUiThread(() -> {
+                captureView.setText(message);
+                if (message.startsWith("Camera frame uploaded")) {
+                    updateMobileCameraDiagnosticGuide("uploaded");
+                } else {
+                    updateMobileCameraDiagnosticGuide("upload_failed");
+                }
+            });
+        }).start();
+    }
+
+    private void startMobileCameraDiagnostic() {
+        updateMobileCameraDiagnosticGuide("capturing");
+        startCaptureTest("solve_candidate_burst", 256);
+    }
+
+    private void updateMobileCameraDiagnosticGuide(String stage) {
+        if (cameraDiagnosticGuideView == null) {
+            return;
+        }
+        String text = "Mobile camera diagnostic\n"
+                + "1. Select a save folder.\n"
+                + "2. Run Diagnostic Burst.\n"
+                + "3. Upload Last JPEG to PiFinder.\n"
+                + "4. On PiFinder/Raspberry, run quality score and diagnostic solve.\n\n";
+        if ("capturing".equals(stage)) {
+            text += "Status: capturing a solve-targeted JPEG burst.";
+        } else if ("capture_ready".equals(stage)) {
+            text += "Status: capture complete. Upload Last JPEG when PiFinder is reachable.";
+        } else if ("capture_needed".equals(stage)) {
+            text += "Status: no JPEG is ready. Run Diagnostic Burst first.";
+        } else if ("remote_needed".equals(stage)) {
+            text += "Status: PiFinder URL missing. Set it in PiFinder Remote.";
+        } else if ("uploading".equals(stage)) {
+            text += "Status: uploading the latest JPEG to PiFinder.";
+        } else if ("uploaded".equals(stage)) {
+            text += "Status: uploaded. Next gate is Raspberry scoring and diagnostic solve.";
+        } else if ("upload_failed".equals(stage)) {
+            text += "Status: upload failed. Check PiFinder IP, Wi-Fi, and /mobile/status.";
+        } else {
+            text += "Status: ready. Use this when validating PiFinder Lite camera flow.";
+        }
+        cameraDiagnosticGuideView.setText(text);
+    }
+
+    private String mobileCameraDiagnosticPlanText() {
+        return "PiFinder Lite mobile camera diagnostic\n"
+                + "1. Start PiFinder Lite on Raspberry.\n"
+                + "2. Set the PiFinder base URL in the Android app.\n"
+                + "3. Camera Lab -> Save Folder.\n"
+                + "4. Run Diagnostic Burst / Solve Candidate Burst.\n"
+                + "5. Upload Last JPEG.\n"
+                + "6. On Raspberry run:\n"
+                + "python PiFinder_lite/score_mobile_frame.py --input \"$HOME/PiFinder_data/mobile/frames\"\n"
+                + "python PiFinder_lite/diagnostic_solve_mobile_frame.py --input \"$HOME/PiFinder_data/mobile/frames\" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract\n";
+    }
+
+    private void copyMobileCameraDiagnosticPlan() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder mobile diagnostic plan", mobileCameraDiagnosticPlanText()));
+        Toast.makeText(this, "Diagnostic plan copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private String postMobileCameraFrame(
+            String baseUrl,
+            String filename,
+            byte[] frameBytes,
+            String metadataJson
+    ) {
+        HttpURLConnection connection = null;
+        String boundary = "PiFinderMobileBoundary" + System.currentTimeMillis();
+        try {
+            URL url = new URL(baseUrl + "/mobile/camera_frame");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(15000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+            connection.setChunkedStreamingMode(0);
+
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                writeMultipartText(outputStream, boundary, "metadata", metadataJson);
+                writeMultipartFile(outputStream, boundary, "frame", filename, "image/jpeg", frameBytes);
+                outputStream.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+            }
+
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Camera frame upload failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+            }
+            JSONObject json = new JSONObject(body);
+            if (!json.optBoolean("ok", false)) {
+                return "Camera frame upload failed\nServer returned ok=false.";
+            }
+            return "Camera frame uploaded\nFrame ID: " + json.optString("frame_id", "unknown")
+                    + "\nBytes: " + json.optLong("bytes", frameBytes.length)
+                    + "\nElapsed: " + json.optInt("elapsed_ms", -1) + " ms";
+        } catch (Exception e) {
+            return "Camera frame upload failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void writeMultipartText(
+            OutputStream outputStream,
+            String boundary,
+            String name,
+            String value
+    ) throws IOException {
+        outputStream.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        outputStream.write(("Content-Disposition: form-data; name=\"" + name + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+        outputStream.write("Content-Type: application/json; charset=utf-8\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        outputStream.write(value.getBytes(StandardCharsets.UTF_8));
+        outputStream.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void writeMultipartFile(
+            OutputStream outputStream,
+            String boundary,
+            String name,
+            String filename,
+            String contentType,
+            byte[] bytes
+    ) throws IOException {
+        outputStream.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        outputStream.write((
+                "Content-Disposition: form-data; name=\"" + name + "\"; filename=\""
+                        + safeMultipartFilename(filename) + "\"\r\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        outputStream.write(("Content-Type: " + contentType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        outputStream.write(bytes);
+        outputStream.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String safeMultipartFilename(String filename) {
+        if (filename == null || filename.trim().length() == 0) {
+            return "frame.jpg";
+        }
+        return filename.replace("\\", "_").replace("/", "_").replace("\"", "_");
+    }
+
+    private String buildCameraFrameMetadataJson(String filename, int byteCount) {
+        try {
+            JSONObject metadata = new JSONObject();
+            metadata.put("schema", "pifinder-mobile-camera-frame-v0");
+            metadata.put("created_utc", utcIso(System.currentTimeMillis()));
+            JSONObject device = new JSONObject();
+            device.put("manufacturer", android.os.Build.MANUFACTURER);
+            device.put("model", android.os.Build.MODEL);
+            device.put("android_api", android.os.Build.VERSION.SDK_INT);
+            metadata.put("device", device);
+            metadata.put("camera_id", activeCaptureCameraId);
+            metadata.put("camera_selection", captureCameraSelection);
+            metadata.put("capture_mode", captureTestName);
+            metadata.put("source_file", filename);
+            metadata.put("format", "jpeg");
+            metadata.put("bytes", byteCount);
+            metadata.put("orientation_degrees", captureJpegOrientation);
+            if (activeCaptureSize != null) {
+                metadata.put("width", activeCaptureSize.getWidth());
+                metadata.put("height", activeCaptureSize.getHeight());
+            }
+            metadata.put("storage_only", true);
+            metadata.put("solver_requested", false);
+            return metadata.toString();
+        } catch (JSONException e) {
+            return "{\"schema\":\"pifinder-mobile-camera-frame-v0\",\"storage_only\":true}";
+        }
     }
 
     private String responseErrorSummary(String body) {
@@ -2436,12 +2655,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         try {
             String cameraId = chooseCaptureCameraId();
             CameraCharacteristics c = cameraManager.getCameraCharacteristics(cameraId);
+            activeCaptureCameraId = cameraId;
             captureJpegOrientation = jpegOrientationFor(c);
             Size captureSize = chooseCaptureSize(c, captureFormat);
             if (captureSize == null) {
                 captureView.setText("No capture size available for camera " + cameraId + " format " + captureFormat);
                 return;
             }
+            activeCaptureSize = captureSize;
 
             captureReader = ImageReader.newInstance(
                     captureSize.getWidth(),
@@ -2934,6 +3155,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             String mimeType = captureFormat == 32 ? "application/octet-stream" : "image/jpeg";
             String name = captureRunPrefix + "_" + label + "_" + String.format(Locale.US, "%03d", savedFrames + 1) + extension;
             writeDocument(name, mimeType, bytes);
+            if (captureFormat == 256 && bytes.length > 0) {
+                lastCapturedJpegBytes = Arrays.copyOf(bytes, bytes.length);
+                lastCapturedJpegName = name;
+                lastCapturedJpegMetadataJson = buildCameraFrameMetadataJson(name, bytes.length);
+            }
             captureMetadata.append("savedFile=").append(name)
                     .append(" label=").append(label)
                     .append(" bytes=").append(bytes.length)
@@ -2978,6 +3204,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                         + "\nFailed: " + failedFrames
                         + "\nFolder: " + captureRunPrefix
         ));
+        if ("solve_candidate_burst".equals(captureTestName)) {
+            runOnUiThread(() -> updateMobileCameraDiagnosticGuide("capture_ready"));
+        }
         closeCaptureCamera();
         if ("camera_sweep".equals(captureTestName)) {
             cameraSweepIndex++;

@@ -419,6 +419,354 @@ Status:
 
 Keep.
 
+### 2026-05-04: `/mobile/camera_frame` contract
+
+Files:
+
+- `python/PiFinder/server.py`
+- `python/PiFinder/mobile_bridge.py`
+- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/validate_remote_endpoints.py`
+
+Reason:
+
+The Android companion now has a solve-targeted JPEG burst mode, so PiFinder
+Lite needs a stable upload path. The first step was an API contract and a safe
+placeholder; #33 then replaced the temporary `501` behavior with storage-only
+upload.
+
+Change:
+
+- Added `POST /mobile/camera_frame`.
+- The API contract chooses multipart form upload with a JPEG `frame` part and a
+  UTF-8 JSON `metadata` part.
+- The endpoint does not solve or apply any camera frame data.
+
+Classic PiFinder impact:
+
+Low. This adds a new endpoint only. It does not change classic startup, camera,
+solver, GPS, IMU, integrator, web remote, or pointing behavior.
+
+Validation:
+
+The endpoint validator exercises the storage-only upload from #33.
+
+Status:
+
+Keep. This is the stable v0 contract used by the storage-only implementation.
+
+### 2026-05-04: Storage-only mobile JPEG upload
+
+Files:
+
+- `python/PiFinder/server.py`
+- `python/PiFinder/mobile_bridge.py`
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/mobile_camera_frame_upload.md`
+- `PiFinder_lite/validate_remote_endpoints.py`
+
+Why:
+
+Phase 2 produced at least some mobile JPEG frames that solved offline, and the
+next safe step is to move one Android Camera Lab frame to PiFinder for evidence
+collection. This must remain storage/debug only until quality scoring and
+diagnostic solve work are explicit.
+
+Change:
+
+- `POST /mobile/camera_frame` now accepts multipart form data.
+- Required parts are `metadata` as a JSON object and `frame` as a JPEG file.
+- JPEG uploads are limited to 25 MiB and must start with JPEG magic bytes.
+- PiFinder stores the upload under `~/PiFinder_data/mobile/frames/` as:
+  - `<frame_id>.jpg`
+  - `<frame_id>.json`
+- The JSON sidecar records received time, original filename, content type,
+  byte count, stored paths, and Android metadata.
+- `/mobile/status` reports `camera_frame` as `implemented_storage_only`.
+- Android Camera Lab keeps the latest captured JPEG in memory and adds
+  `Upload Last JPEG` to send it to the configured PiFinder base URL.
+
+Classic PiFinder impact:
+
+Low. This adds one optional mobile endpoint path and one Android debug action.
+It does not change classic startup, camera selection, solving, GPS, IMU,
+integrator, web remote controls, or pointing behavior.
+
+Validation:
+
+- Python syntax check for `server.py`, `mobile_bridge.py`, and the endpoint
+  validator.
+- Direct helper test writes a sample JPEG and JSON sidecar to a temporary test
+  mobile data directory.
+- Full endpoint validator is still blocked in the PC environment by missing
+  PiFinder runtime dependency `pydeepskylog`; use it on the Pi or after the
+  Python environment is complete.
+- Android terminal build remains blocked without a usable JDK in this shell;
+  build/install from Android Studio.
+
+Status:
+
+Keep. This is required evidence plumbing for #40 image quality scoring and #41
+diagnostic solving, while preserving classic PiFinder behavior.
+
+### 2026-05-05: Phase 2 preprocessing and frame-selector analysis
+
+Files:
+
+- `PiFinder_lite/analyze_phase2_camera.py`
+- `PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.md`
+- `PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.csv`
+- `PiFinder_lite/phase2_camera_analysis/phase2_camera_solve_attempts.csv`
+- `PiFinder_lite/phase4_dependency_map.md`
+
+Why:
+
+The first Phase 2 solve pass proved mobile JPEGs can solve, but candidate
+selection was too naive: high-ISO noisy frames ranked above darker ISO 400/800
+frames that actually solved.
+
+Change:
+
+- Added preprocessing variants to the offline analyzer:
+  - baseline;
+  - autocontrast;
+  - percentile stretch;
+  - background subtraction;
+  - denoise plus stretch;
+  - center crop.
+- Added per-attempt CSV output for preprocessing/FOV combinations.
+- Added `solve_preprocess` to the frame-level CSV/Markdown result.
+- Added CLI controls for preprocessing modes, solve timeout, max candidates,
+  and whether to continue after a candidate solves.
+- Adjusted candidate scoring to penalize lifted gray/noisy backgrounds and
+  high mean brightness before spending solver CPU.
+- Re-ran the analysis over 30 ranked candidates using baseline,
+  percentile-stretch, and background-subtract variants.
+
+Result:
+
+- 324 JPG frames analyzed.
+- 30 ranked candidates attempted.
+- 75 solve attempts across preprocessing/FOV variants.
+- 22 successful solves.
+- Baseline JPEG solving was strongest: 21 solves.
+- Background subtraction rescued 1 extra frame.
+- Percentile stretch did not solve any frame in this run.
+
+Classic PiFinder impact:
+
+None. This is an offline analysis script and generated report only. No runtime
+solver, camera, integrator, GPS, IMU, or web remote behavior changes.
+
+Status:
+
+Keep. These findings should feed #40's server-side image quality score:
+baseline first, dark-background preference, and ISO 400/800 candidates before
+noisy ISO 3200 candidates for the tested Samsung run.
+
+### 2026-05-05: Mobile JPEG image quality score
+
+Files:
+
+- `PiFinder_lite/score_mobile_frame.py`
+- `PiFinder_lite/mobile_frame_quality_score.md`
+- `PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.csv`
+- `PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.json`
+- `PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md`
+- `PiFinder_lite/phase4_dependency_map.md`
+
+Why:
+
+Before adding diagnostic solving for uploaded mobile frames, PiFinder Lite needs
+a cheap filter that rejects frames likely to waste solver CPU. #37 showed that
+dark ISO400/ISO800 frames solved better than noisy ISO3200 frames with lifted
+gray backgrounds.
+
+Change:
+
+- Added `score_mobile_frame.py`, an offline/debug scorer for JPEG files or
+  directories.
+- The scorer returns structured metrics:
+  - background mean;
+  - dark percentage;
+  - saturation percentage;
+  - sharpness;
+  - noise proxy;
+  - bright points;
+  - fast connected-component centroid approximation;
+  - score, grade, acceptance flag, reasons, and rejection reasons.
+- The score hard-penalizes lifted gray backgrounds and caps the contribution
+  from many detected points so high-ISO noise does not dominate.
+- Generated CSV, JSON, and Markdown reports for the Phase 2 `Test cam` data.
+
+Result:
+
+- 324 JPEG frames scored.
+- 48 accepted for diagnostic solving.
+- 30 `HIGH`, 18 `MEDIUM`, 276 `LOW`.
+- All accepted frames came from `iso_sweep`, matching #37's evidence.
+
+Classic PiFinder impact:
+
+None. This is a standalone Lite helper and generated report. It does not run
+the solver, update pointing, feed the integrator, or change classic runtime
+behavior.
+
+Status:
+
+Keep. #41 should use this scorer to choose stored mobile JPEGs for explicit
+diagnostic solving.
+
+### 2026-05-05: Diagnostic solve for scored mobile JPEGs
+
+Files:
+
+- `PiFinder_lite/diagnostic_solve_mobile_frame.py`
+- `PiFinder_lite/mobile_frame_diagnostic_solve.md`
+- `PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.csv`
+- `PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.json`
+- `PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md`
+- `PiFinder_lite/phase4_dependency_map.md`
+
+Why:
+
+After #33 storage and #40 scoring, PiFinder Lite needs an explicit diagnostic
+solve path to prove whether accepted mobile JPEGs actually solve before any
+live/runtime integration is considered.
+
+Change:
+
+- Added `diagnostic_solve_mobile_frame.py`.
+- The helper scores frames first using `score_mobile_frame.py`.
+- It attempts Tetra3 only for frames accepted by the quality score and above
+  the selected grade.
+- It records structured solve results:
+  - success/failure;
+  - RA/Dec;
+  - FOV;
+  - roll;
+  - matches;
+  - solve time;
+  - preprocessing mode;
+  - FOV mode;
+  - quality score and grade.
+- It supports baseline and background-subtract diagnostic modes.
+- It reads metadata/FOV hints from Camera Lab metadata files or JSON sidecars
+  when available.
+
+Result:
+
+Run against `Test cam` with 12 top scored candidates:
+
+```text
+Scored 324 JPEG frames
+Attempted diagnostic solve on 12 frames
+Solved 9 unique frames
+```
+
+All successful solves used baseline preprocessing and `metadata_fov_74.0`.
+Successful ISO400 frames typically solved in roughly 90-155 ms, with one around
+239 ms.
+
+Classic PiFinder impact:
+
+None. This is an offline diagnostic helper. It does not update pointing, feed
+the integrator, start a live solver loop, or change classic PiFinder runtime
+behavior.
+
+Status:
+
+Keep. These results provide the evidence needed for #34's mobile camera solver
+path decision.
+
+### 2026-05-05: Mobile camera solver path decision
+
+Files:
+
+- `PiFinder_lite/mobile_camera_solver_path_decision.md`
+- `PiFinder_lite/phase4_dependency_map.md`
+- `PiFinder_lite/upstream_change_log.md`
+
+Why:
+
+#37, #40, and #41 provide enough evidence to decide whether the mobile camera
+path should continue and what guardrails it needs.
+
+Decision:
+
+```text
+PROMISING_TUNE_FIRST
+```
+
+Meaning:
+
+- Continue mobile-camera development.
+- Keep the path diagnostic-only for now.
+- Use quality scoring before diagnostic solving.
+- Prefer baseline JPEG solving first.
+- Prefer metadata/FOV-assisted solve when available.
+- Validate on Raspberry and repeat clearer/fixed-mount captures before any
+  live solver/integrator path is considered.
+
+Evidence:
+
+- Phase 2 analysis: 22 successful solves from 30 ranked candidates.
+- Quality score: 48 accepted candidates from 324 JPEGs.
+- Diagnostic solve: 9 solved frames from 12 top scored candidates.
+- Successful diagnostic solves used baseline preprocessing and
+  `metadata_fov_74.0`.
+
+Classic PiFinder impact:
+
+None. This is a documentation/decision record only.
+
+Status:
+
+Keep. This decision should guide the next mobile-camera milestone:
+capture -> upload -> score -> explicit diagnostic solve.
+
+### 2026-05-05: Guided diagnostic UX and Lite documentation cleanup
+
+Files:
+
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `PiFinder_lite/README.md`
+- `PiFinder_lite/raspberry_lite_install.md`
+- `PiFinder_lite/mobile_camera_profile.md`
+- `PiFinder_lite/configs/mobile_camera_profile.samsung_sm-s948b.example.json`
+- `PiFinder_lite/upstream_change_log.md`
+
+Why:
+
+The camera evidence now supports a diagnostic workflow, but the app and docs
+needed a clearer path for a user validating PiFinder Lite on real hardware.
+
+Change:
+
+- Added a `Mobile camera diagnostic` guide card in Android Camera Lab.
+- Added `Run Diagnostic Burst` as a guided entry point for
+  `solve_candidate_burst`.
+- Added `Copy Diagnostic Plan` so the Raspberry-side commands can be copied from
+  the app.
+- The guide state updates after capture, upload, upload failure, or missing
+  PiFinder URL.
+- Added a Raspberry install/run checklist.
+- Added a first Samsung `SM-S948B` camera recommendation profile JSON.
+- Added a profile-format explainer.
+- Replaced `PiFinder_lite/README.md` with a documentation map and current
+  decision summary.
+
+Classic PiFinder impact:
+
+None. Android UX and Lite docs only. No classic PiFinder runtime behavior
+changes.
+
+Status:
+
+Keep. This prepares issue #42 validation and future guided diagnostic workflow
+work.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

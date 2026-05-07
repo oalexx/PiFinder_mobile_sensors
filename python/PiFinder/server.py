@@ -282,6 +282,58 @@ class Server:
                 "sample_count": imu_batch["sample_count"],
             }
 
+        @app.route("/mobile/camera_frame", method="POST")
+        def mobile_camera_frame():
+            start_time = time.time()
+            upload = request.files.get("frame")
+            if upload is None:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "missing_frame",
+                    "Request must include a multipart JPEG file field named frame.",
+                )
+
+            metadata, metadata_error = mobile_bridge.validate_camera_frame_metadata(
+                request.forms.get("metadata", ""),
+            )
+            if metadata_error:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_metadata",
+                    metadata_error,
+                )
+
+            frame_bytes = upload.file.read(mobile_bridge.MAX_CAMERA_FRAME_BYTES + 1)
+            frame_error = mobile_bridge.validate_camera_frame_bytes(frame_bytes)
+            if frame_error:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_frame",
+                    frame_error,
+                )
+
+            stored_frame = mobile_bridge.store_camera_frame(
+                frame_bytes=frame_bytes,
+                metadata=metadata,
+                original_filename=getattr(upload, "raw_filename", None)
+                or getattr(upload, "filename", None)
+                or "frame.jpg",
+                content_type=getattr(upload, "content_type", None) or "image/jpeg",
+            )
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "camera frame stored for debug",
+                "frame_id": stored_frame["frame_id"],
+                "stored_frame": stored_frame["frame_file"],
+                "stored_metadata": stored_frame["metadata_file"],
+                "bytes": stored_frame["bytes"],
+                "received_utc": stored_frame["received_utc"],
+                "elapsed_ms": elapsed_ms,
+                "solver_invoked": False,
+            }
+
         @app.route("/advanced")
         @auth_required
         def advanced():

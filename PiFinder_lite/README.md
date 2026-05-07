@@ -1,258 +1,149 @@
-# PiFinder Lite Headless Startup
+# PiFinder Lite / Mobile Companion
 
-This document describes the first PiFinder Lite / Mobile Companion startup mode:
-run the existing PiFinder backend without relying on the physical keypad as the
-primary user interface, then control it from a phone, tablet, or browser through
-the existing web remote.
+PiFinder Lite is an additive/mobile companion path for PiFinder. The goal is to
+reuse the original backend, solver, catalogs, web remote, and SkySafari/LX200
+support while adding optional phone-based UI, GPS, IMU, camera diagnostics, and
+configuration workflows.
 
-The goal is not to replace classic PiFinder. Classic hardware startup should
-remain unchanged. PiFinder Lite should be an optional way to reuse the current
-backend, solver, catalogs, web remote, and SkySafari/LX200 support.
+Classic PiFinder should remain unchanged unless a Lite feature is explicitly
+enabled.
 
-Phase 4 mobile bridge endpoints are specified separately in
-`PiFinder_lite/mobile_bridge_api_v0.md`. The recommended Phase 4 order and
-dependency gates are tracked in `PiFinder_lite/phase4_dependency_map.md`.
+## Current Decision
 
-## Current Status
+Mobile camera path:
 
-The current codebase already has most of the pieces needed for a first headless
-workflow:
+```text
+PROMISING_TUNE_FIRST
+```
 
-- `python/PiFinder/main.py` starts the normal multiprocess PiFinder backend.
-- `--keyboard none` selects `keyboard_none.py`, which keeps the keyboard process
-  alive without reading physical keys.
-- The web server starts automatically from `main.py`.
-- `/remote` exposes the existing browser remote.
-- `/image` returns the current PiFinder screen as a PNG.
-- `/key_callback` accepts virtual key presses from the web remote.
-- `pos_server.py` starts the SkySafari/LX200-compatible position server on port
-  `4030`.
+Meaning:
 
-This means Phase 3 can start by documenting and validating the existing behavior
-before adding any new mobile bridge endpoints.
+- continue mobile-camera work;
+- keep it diagnostic-only for now;
+- use quality scoring before solving;
+- validate on Raspberry before live integration;
+- do not feed mobile solves into the integrator yet.
 
-## Recommended Development Startup
+Decision record:
 
-Use this on a development machine or Raspberry Pi when you want to test the
-Lite/headless flow without relying on real GPS/IMU hardware:
+```text
+PiFinder_lite/mobile_camera_solver_path_decision.md
+```
+
+## Quick Start On Raspberry
+
+Install/run checklist:
+
+```text
+PiFinder_lite/raspberry_lite_install.md
+```
+
+Minimal headless/dev startup:
 
 ```bash
-cd python/
-python3.9 -m PiFinder.main -fh --camera debug --keyboard none -x
+cd python
+source .venv/bin/activate
+python -m PiFinder.main -fh --camera debug --keyboard none -x
 ```
 
-What each flag does:
+Open from phone:
 
-- `-fh` / `--fakehardware`: uses fake IMU and fake GPS modules.
-- `--camera debug`: uses the debug camera module instead of Pi camera hardware.
-- `--keyboard none`: starts the no-op keyboard process.
-- `-x` / `--verbose`: enables debug logging.
+```text
+http://<raspberry-ip>:8080/remote
+```
 
-This is the safest first command for validating the web remote because it avoids
-physical hardware dependencies while keeping the normal PiFinder process model.
+## Android Diagnostic Flow
 
-## Recommended Raspberry Pi Startup
+In the Android app:
 
-For a Raspberry Pi with real PiFinder camera/display stack but no physical keypad
-workflow, start with:
+```text
+PiFinder Remote -> set base URL
+Camera Lab -> Save Folder
+Camera Lab -> Run Diagnostic Burst
+Camera Lab -> Upload Last JPEG
+```
+
+Then on Raspberry:
 
 ```bash
-cd python/
-python3.9 -m PiFinder.main --keyboard none -x
+python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
+python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
 ```
 
-For a Raspberry Pi where you want to avoid camera hardware during early headless
-testing:
+## Documentation Map
 
-```bash
-cd python/
-python3.9 -m PiFinder.main -fh --camera debug --keyboard none -x
-```
+### Setup And Runtime
 
-For a Raspberry Pi where GPS hardware is not ready but the rest of the system is
-being tested:
+| Document | Purpose |
+| --- | --- |
+| `raspberry_lite_install.md` | End-to-end Raspberry install/run checklist. |
+| `raspberry_validation_runbook.md` | Step-by-step #42 validation manual. |
+| `lite_config_profile.md` | Optional Lite config profile and startup flags. |
+| `keyboard_none_validation.md` | No-keyboard/headless validation notes. |
+| `remote_endpoint_validation.md` | `/remote`, `/image`, `/key_callback` validation. |
+| `android_webview_remote.md` | Android WebView remote behavior. |
+| `mobile_remote_layout.md` | Mobile-friendly `/remote` layout notes. |
+| `skysafari_split_screen_validation.md` | SkySafari split-screen workflow. |
 
-```bash
-cd python/
-python3.9 -m PiFinder.main --gps fake --keyboard none -x
-```
+### Mobile Bridge
 
-`main.py` currently supports:
+| Document | Purpose |
+| --- | --- |
+| `mobile_bridge_api_v0.md` | API contract for `/mobile/*` endpoints. |
+| `mobile_camera_frame_upload.md` | Storage-only JPEG upload flow. |
+| `phase4_dependency_map.md` | Issue dependency order and current gates. |
+| `upstream_change_log.md` | Changes to original PiFinder and why. |
 
-- `--camera pi`
-- `--camera asi`
-- `--camera debug`
-- `--camera none`
-- `--gps pi`
-- `--gps fake`
-- `--keyboard pi`
-- `--keyboard local`
-- `--keyboard none`
-- `--display <hardware>`
+### Camera Evidence
 
-The default classic behavior remains `--camera pi --gps pi --keyboard pi`.
+| Document | Purpose |
+| --- | --- |
+| `phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
+| `phase2_day_test_validation.md` | Day Test validation notes. |
+| `phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
+| `solve_candidate_burst.md` | Android burst mode tuned for solving. |
+| `mobile_frame_quality_score.md` | Quality score rules and usage. |
+| `mobile_frame_diagnostic_solve.md` | Diagnostic solve workflow. |
+| `mobile_camera_solver_path_decision.md` | Product/technical decision for solver path. |
+| `mobile_camera_profile.md` | Per-device recommendation profile format. |
 
-## Accessing The Web Remote
+### Tools
 
-When PiFinder starts, the web server binds to all interfaces:
+| Tool | Purpose |
+| --- | --- |
+| `analyze_phase2_camera.py` | Offline Phase 2 frame analysis and Tetra3 attempts. |
+| `score_mobile_frame.py` | Score JPEGs before diagnostic solving. |
+| `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
+| `validate_remote_endpoints.py` | Local validation of web/mobile endpoints. |
+| `validate_lx200_server.py` | LX200/SkySafari server validation. |
+
+### Generated Reports
+
+| Report | Purpose |
+| --- | --- |
+| `phase2_camera_analysis/phase2_camera_analysis.md` | Main Phase 2 solve analysis report. |
+| `phase2_camera_analysis/mobile_frame_quality_scores.md` | Quality-score report. |
+| `phase2_camera_analysis/mobile_frame_diagnostic_solves.md` | Diagnostic solve report. |
+
+## Config Examples
+
+| File | Purpose |
+| --- | --- |
+| `configs/pifinder_lite_config.example.json` | Optional PiFinder Lite user config example. |
+| `configs/mobile_camera_profile.samsung_sm-s948b.example.json` | First phone camera recommendation profile. |
+
+## Next Hardware Gate
+
+Issue #42:
 
 ```text
-0.0.0.0:80
+Validate mobile upload, quality score, and diagnostic solve on Raspberry.
 ```
 
-If port `80` is unavailable, it falls back to:
+Required chain:
 
 ```text
-0.0.0.0:8080
+Android -> Upload JPEG -> Raspberry stores frame -> Score -> Diagnostic solve
 ```
 
-From a phone or browser on the same network, open one of:
-
-```text
-http://<pifinder-ip>/remote
-http://<pifinder-ip>:8080/remote
-```
-
-Useful endpoints:
-
-```text
-/remote        Browser remote UI
-/image         Current PiFinder screen as PNG
-/key_callback  POST endpoint used by the remote for virtual keys
-/              Main web interface
-/gps           Web GPS/location page
-/network       Network settings page
-/equipment     Telescope/eyepiece settings page
-/logs          Log viewer
-```
-
-Important: `/remote` is protected by the existing web authentication flow. If
-prompted, log in using the configured PiFinder web password.
-
-## SkySafari / LX200
-
-`pos_server.py` binds a socket server on port:
-
-```text
-4030
-```
-
-This server implements a lightweight LX200-style protocol used by SkySafari and
-similar clients.
-
-SkySafari configuration target:
-
-```text
-Host: <pifinder-ip>
-Port: 4030
-Protocol: LX200 / Meade-compatible telescope
-```
-
-The intended Lite workflow is:
-
-```text
-SkySafari -> LX200 port 4030 -> PiFinder
-PiFinder -> /remote and /image -> phone browser or Android WebView
-Phone browser -> /key_callback -> PiFinder UI queue
-```
-
-## Validation Checklist
-
-Use this checklist for issue #13/#14/#15 validation.
-
-1. Start PiFinder with:
-
-   ```bash
-   cd python/
-   python3.9 -m PiFinder.main -fh --camera debug --keyboard none -x
-   ```
-
-2. Confirm the process reaches the main UI loop without physical keypad input.
-
-3. Find the Raspberry Pi IP address.
-
-4. Open the web UI from another device:
-
-   ```text
-   http://<pifinder-ip>/
-   ```
-
-5. Open the remote:
-
-   ```text
-   http://<pifinder-ip>/remote
-   ```
-
-   If port `80` is unavailable, use:
-
-   ```text
-   http://<pifinder-ip>:8080/remote
-   ```
-
-6. Confirm `/image` returns a PNG:
-
-   ```text
-   http://<pifinder-ip>/image
-   ```
-
-7. Press remote buttons and confirm the PiFinder UI responds.
-
-8. Open SkySafari and connect to:
-
-   ```text
-   <pifinder-ip>:4030
-   ```
-
-9. Record:
-
-   - Startup command used.
-   - PiFinder IP address.
-   - Whether the web server used port `80` or `8080`.
-   - Whether `/remote` loaded.
-   - Whether `/image` updated.
-   - Whether virtual buttons worked.
-   - Whether SkySafari connected to port `4030`.
-   - Any crashes, permission issues, or missing hardware assumptions.
-
-## Known Limitations
-
-This is a first headless workflow, not a finished Lite mode.
-
-- The main process still starts the normal display/UI stack.
-- `--keyboard none` disables physical key input, but it does not remove the UI
-  loop.
-- The web remote UI may need mobile layout improvements.
-- The web remote depends on the current `/image` polling approach.
-- GPS/IMU are still PiFinder-side modules unless fake hardware is selected.
-- Android GPS/IMU/camera bridge endpoints do not exist yet.
-- The mobile app WebView shell is a separate Phase 3 issue.
-
-## What This Phase Should Not Do Yet
-
-Keep Phase 3 narrow:
-
-- Do not add `/mobile/gps`, `/mobile/imu`, or `/mobile/camera_frame` yet.
-- Do not replace the existing solver/integrator.
-- Do not change default classic PiFinder startup.
-- Do not make phone camera solving decisions before Phase 2 night tests.
-
-## Follow-Up Work
-
-The next Phase 3 tasks are:
-
-- Validate `keyboard none` / no physical keypad workflow.
-- Validate `/remote`, `/image`, and `/key_callback` from a phone browser.
-- Improve the `/remote` mobile layout.
-- Validate SkySafari plus PiFinder Remote split-screen usage.
-- Add/use the recommended PiFinder Lite config profile in
-  `PiFinder_lite/lite_config_profile.md`.
-- Add an Android WebView shell that opens the existing `/remote` page.
-
-The next Phase 4 tasks are:
-
-- Define Mobile Bridge API v0.
-- Add `/mobile/status`.
-- Add `/mobile/profile`.
-- Add `/mobile/gps`.
-- Add Android connection/profile/GPS actions.
-- Defer IMU/camera/integrator work until validation data exists.
+Until this passes, mobile camera remains diagnostic-only.

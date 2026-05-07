@@ -16,6 +16,8 @@ PROFILE_LATEST_FILENAME = "profile_latest.json"
 GPS_LATEST_FILENAME = "gps_latest.json"
 IMU_LATEST_FILENAME = "imu_latest.json"
 MAX_IMU_SAMPLES = 512
+FRAMES_DIRNAME = "frames"
+MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 
 
 def utc_now_iso() -> str:
@@ -30,6 +32,12 @@ def utc_now_iso() -> str:
 def ensure_mobile_data_dir() -> Path:
     utils.create_path(MOBILE_DATA_DIR)
     return MOBILE_DATA_DIR
+
+
+def ensure_mobile_frames_dir() -> Path:
+    frames_dir = ensure_mobile_data_dir() / FRAMES_DIRNAME
+    utils.create_path(frames_dir)
+    return frames_dir
 
 
 def write_debug_json(filename: str, payload: Dict[str, Any]) -> Path:
@@ -64,6 +72,67 @@ def error_payload(code: str, message: str) -> Dict[str, Any]:
             "message": message,
         },
     }
+
+
+def validate_camera_frame_metadata(metadata_text: str) -> Tuple[Dict[str, Any], Optional[str]]:
+    if not isinstance(metadata_text, str) or not metadata_text.strip():
+        return {}, "Missing required multipart field: metadata."
+    try:
+        metadata = json.loads(metadata_text)
+    except json.JSONDecodeError as exc:
+        return {}, f"metadata must be valid JSON: {exc.msg}."
+    if not isinstance(metadata, dict):
+        return {}, "metadata must be a JSON object."
+    return metadata, None
+
+
+def validate_camera_frame_bytes(frame_bytes: bytes) -> Optional[str]:
+    if not frame_bytes:
+        return "Missing or empty multipart file field: frame."
+    if len(frame_bytes) > MAX_CAMERA_FRAME_BYTES:
+        return f"frame must be {MAX_CAMERA_FRAME_BYTES} bytes or smaller."
+    if not frame_bytes.startswith(b"\xff\xd8"):
+        return "frame must be a JPEG image."
+    return None
+
+
+def store_camera_frame(
+    frame_bytes: bytes,
+    metadata: Dict[str, Any],
+    original_filename: str,
+    content_type: str,
+) -> Dict[str, Any]:
+    received_utc = utc_now_iso()
+    frame_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{os.urandom(4).hex()}"
+    frames_dir = ensure_mobile_frames_dir()
+    frame_filename = f"{frame_id}.jpg"
+    metadata_filename = f"{frame_id}.json"
+    frame_path = frames_dir / frame_filename
+    metadata_path = frames_dir / metadata_filename
+
+    temp_frame_path = frame_path.with_suffix(".jpg.tmp")
+    with open(temp_frame_path, "wb") as output:
+        output.write(frame_bytes)
+    os.replace(temp_frame_path, frame_path)
+
+    stored_metadata = {
+        "received_utc": received_utc,
+        "frame_id": frame_id,
+        "storage_only": True,
+        "solver_invoked": False,
+        "original_filename": original_filename,
+        "content_type": content_type,
+        "bytes": len(frame_bytes),
+        "frame_file": str(frame_path),
+        "metadata_file": str(metadata_path),
+        "metadata": metadata,
+    }
+    temp_metadata_path = metadata_path.with_suffix(".json.tmp")
+    with open(temp_metadata_path, "w") as output:
+        json.dump(stored_metadata, output, indent=2, sort_keys=True)
+        output.write("\n")
+    os.replace(temp_metadata_path, metadata_path)
+    return stored_metadata
 
 
 def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -181,7 +250,7 @@ def status_payload() -> Dict[str, Any]:
             "profile": "implemented",
             "gps": "implemented",
             "imu": "implemented_debug_only",
-            "camera_frame": "deferred",
+            "camera_frame": "implemented_storage_only",
         },
     }
 

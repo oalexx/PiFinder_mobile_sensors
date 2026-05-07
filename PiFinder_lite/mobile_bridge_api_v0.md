@@ -27,6 +27,8 @@ Endpoint paths are appended to the base URL:
 <base-url>/mobile/status
 <base-url>/mobile/profile
 <base-url>/mobile/gps
+<base-url>/mobile/imu
+<base-url>/mobile/camera_frame
 ```
 
 ## Versioning
@@ -57,7 +59,7 @@ allowed in v0.
 | `/mobile/profile` | `POST` | Implemented | Yes |
 | `/mobile/gps` | `POST` | Implemented | Yes |
 | `/mobile/imu` | `POST` | Implemented, debug only | Yes |
-| `/mobile/camera_frame` | `POST` | Deferred | Blocked by Phase 2 |
+| `/mobile/camera_frame` | `POST` | Implemented, storage only | Yes |
 
 ## Common Response Shape
 
@@ -89,8 +91,7 @@ Recommended HTTP status codes:
 - `200`: request succeeded;
 - `400`: invalid JSON or invalid field values;
 - `404`: endpoint does not exist;
-- `415`: unsupported content type;
-- `501`: documented but intentionally not implemented yet.
+- `415`: unsupported content type.
 
 ## GET `/mobile/status`
 
@@ -124,7 +125,7 @@ Response:
     "profile": "implemented",
     "gps": "implemented",
     "imu": "implemented_debug_only",
-    "camera_frame": "deferred"
+    "camera_frame": "implemented_storage_only"
   }
 }
 ```
@@ -395,15 +396,15 @@ Important:
 
 ## POST `/mobile/camera_frame`
 
-Status: deferred, blocked by Phase 2.
+Status: implemented, storage only.
 
 Purpose:
 
-Future endpoint for uploading a mobile camera frame to PiFinder. The first
-implementation should store frames only. Solving mobile frames is a later
-decision based on night-sky evidence.
+Upload one mobile JPEG frame to PiFinder and persist it for debugging. This
+endpoint intentionally does not solve the image, feed the integrator, update
+pointing, or affect classic PiFinder behavior.
 
-Possible request shape:
+Chosen first request shape:
 
 ```http
 POST /mobile/camera_frame
@@ -413,8 +414,8 @@ Content-Type: multipart/form-data
 Parts:
 
 ```text
-frame: JPEG binary
-metadata: JSON object
+frame: JPEG binary file part
+metadata: JSON object part encoded as UTF-8 text
 ```
 
 Example metadata:
@@ -423,35 +424,66 @@ Example metadata:
 {
   "schema": "pifinder-mobile-camera-frame-v0",
   "created_utc": "2026-05-03T17:00:00Z",
-  "camera_id": "0",
+  "device": {
+    "manufacturer": "samsung",
+    "model": "SM-S948B"
+  },
+  "camera_id": "2",
+  "camera_selection": "recommended_SM-S948B_camera_2",
   "format": "jpeg",
   "width": 4000,
   "height": 3000,
-  "iso": 1600,
-  "exposure_ns": 100000000,
-  "orientation_degrees": 90
+  "iso": 3200,
+  "exposure_ns": 176094495,
+  "focus_diopters": 0.0,
+  "orientation_degrees": 90,
+  "capture_mode": "solve_candidate_burst",
+  "source_file": "pifinder_solve_candidate_burst_20260504_224500_solve_iso3200_001.jpg"
 }
 ```
 
-Expected deferred response:
+Response:
 
 ```json
 {
-  "ok": false,
+  "ok": true,
   "api": "mobile-bridge-v0",
-  "error": {
-    "code": "not_implemented",
-    "message": "Mobile camera frame upload is deferred until Phase 2 validation."
-  }
+  "message": "camera frame stored for debug",
+  "frame_id": "20260504T210000Z_a1b2c3d4",
+  "stored_frame": "/home/pi/PiFinder_data/mobile/frames/20260504T210000Z_a1b2c3d4.jpg",
+  "stored_metadata": "/home/pi/PiFinder_data/mobile/frames/20260504T210000Z_a1b2c3d4.json",
+  "bytes": 1234567,
+  "received_utc": "2026-05-04T21:00:00Z",
+  "elapsed_ms": 42,
+  "solver_invoked": false
 }
 ```
 
-Future persistence:
+HTTP status:
+
+```text
+200 OK
+```
+
+Validation rules:
+
+- Multipart field `metadata` is required and must be a JSON object.
+- Multipart file field `frame` is required and must be non-empty.
+- `frame` must start with the JPEG magic bytes.
+- `frame` must be 25 MiB or smaller.
+
+Persistence:
 
 ```text
 ~/PiFinder_data/mobile/frames/<frame_id>.jpg
 ~/PiFinder_data/mobile/frames/<frame_id>.json
 ```
+
+Rules for this storage-only implementation:
+
+- Do not invoke the solver.
+- Do not feed PiFinder's integrator or live pointing state.
+- Do not assume mobile-camera solving will work.
 
 ## Security And Trust
 

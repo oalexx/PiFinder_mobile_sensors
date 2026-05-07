@@ -1,0 +1,66 @@
+{
+  "schema": "pifinder-mobile-camera-profile-v0",
+  "status": "diagnostic",
+  "decision": "PROMISING_TUNE_FIRST",
+  "created_from": {
+    "phase2_analysis": "PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.md",
+    "quality_score": "PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md",
+    "diagnostic_solve": "PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md",
+    "decision_doc": "PiFinder_lite/mobile_camera_solver_path_decision.md"
+  },
+  "device": {
+    "manufacturer": "samsung",
+    "model": "SM-S948B",
+    "notes": "Initial profile from handheld/cloudy Phase 2 evidence. Repeat with clear/fixed-mount captures before live integration."
+  },
+  "camera": {
+    "recommended_camera_id": "2",
+    "format": "jpeg",
+    "capture_mode": "solve_candidate_burst",
+    "recommended_iso_priority": [
+      400,
+      800
+    ],
+    "avoid_first": [
+      "iso3200_lifted_background",
+      "raw_until_evidence_improves"
+    ],
+    "fov_estimate_deg": 74.0,
+    "orientation_handling": "jpeg_orientation_metadata"
+  },
+  "quality_score": {
+    "required": true,
+    "accept_grades": [
+      "HIGH",
+      "MEDIUM"
+    ],
+    "prefer": [
+      "dark_background_good",
+      "low_background_mean",
+      "bright_points_reasonable",
+      "low_saturation",
+      "sharpness_usable"
+    ],
+    "reject": [
+      "too_bright_background",
+      "lifted_gray_background",
+      "possible_noise_overrank_lifted_background"
+    ]
+  },
+  "diagnostic_solve": {
+    "preprocess_order": [
+      "baseline",
+      "background_subtract"
+    ],
+    "preferred_fov_mode": "metadata_fov",
+    "solve_timeout_ms": 1000,
+    "live_solver_ready": false,
+    "integrator_feed_allowed": false
+  },
+  "next_validation": {
+    "issue": 42,
+    "needs_raspberry_upload_test": true,
+    "needs_clear_sky_repeat": true,
+    "needs_fixed_mount_repeat": true
+  }
+}

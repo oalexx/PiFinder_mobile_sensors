@@ -10,6 +10,7 @@ state, then checks the routes needed by PiFinder Lite:
 - `/mobile/profile`
 - `/mobile/gps`
 - `/mobile/imu`
+- `/mobile/camera_frame`
 
 It is intentionally kept outside `python/PiFinder/` so it does not change the
 classic application runtime.
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import http.cookiejar
+import io
 import json
 import multiprocessing as mp
 import os
@@ -112,6 +114,37 @@ def _read_http_error(exc: urllib.error.HTTPError) -> tuple[int, str]:
     return exc.code, exc.read().decode("utf-8", errors="replace")
 
 
+def _sample_jpeg_bytes() -> bytes:
+    buffer = io.BytesIO()
+    img = Image.new("RGB", (64, 48), color=(2, 3, 5))
+    draw = ImageDraw.Draw(img)
+    draw.point((12, 10), fill=(255, 255, 255))
+    draw.point((44, 25), fill=(230, 230, 230))
+    img.save(buffer, format="JPEG", quality=90)
+    return buffer.getvalue()
+
+
+def _multipart_body(
+    boundary: str,
+    metadata: dict[str, object],
+    frame_bytes: bytes,
+) -> bytes:
+    parts = [
+        f"--{boundary}\r\n".encode(),
+        b'Content-Disposition: form-data; name="metadata"\r\n',
+        b"Content-Type: application/json; charset=utf-8\r\n\r\n",
+        json.dumps(metadata).encode(),
+        b"\r\n",
+        f"--{boundary}\r\n".encode(),
+        b'Content-Disposition: form-data; name="frame"; filename="validator.jpg"\r\n',
+        b"Content-Type: image/jpeg\r\n\r\n",
+        frame_bytes,
+        b"\r\n",
+        f"--{boundary}--\r\n".encode(),
+    ]
+    return b"".join(parts)
+
+
 def _wait_for_server(opener: urllib.request.OpenerDirector, base_url: str) -> bool:
     deadline = time.time() + 30
     while time.time() < deadline:
@@ -178,6 +211,8 @@ def run_validation(port: int) -> list[CheckResult]:
                 == "implemented"
                 and status_json.get("mobile_bridge", {}).get("imu")
                 == "implemented_debug_only"
+                and status_json.get("mobile_bridge", {}).get("camera_frame")
+                == "implemented_storage_only"
                 and status_json.get("pifinder", {}).get("lx200_port") == 4030,
                 f"api {status_json.get('api')}, server_time {status_json.get('server_time_utc')}",
             )
@@ -369,6 +404,41 @@ def run_validation(port: int) -> list[CheckResult]:
                 and invalid_imu_json.get("error", {}).get("code")
                 == "invalid_imu",
                 f"status {invalid_imu_status}, code {invalid_imu_json.get('error', {}).get('code')}",
+            )
+        )
+
+        frame_bytes = _sample_jpeg_bytes()
+        camera_boundary = f"PiFinderValidator{int(time.time() * 1000)}"
+        camera_frame_response = _request(
+            opener,
+            f"{base_url}/mobile/camera_frame",
+            method="POST",
+            data=_multipart_body(
+                camera_boundary,
+                {
+                    "schema": "pifinder-mobile-camera-frame-v0",
+                    "source": "validator",
+                    "storage_only": True,
+                    "solver_requested": False,
+                },
+                frame_bytes,
+            ),
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={camera_boundary}",
+            },
+        )
+        camera_frame_status = camera_frame_response.status
+        camera_frame_body = camera_frame_response.read().decode("utf-8")
+        camera_frame_json = json.loads(camera_frame_body)
+        results.append(
+            CheckResult(
+                "/mobile/camera_frame",
+                camera_frame_status == 200
+                and camera_frame_json.get("ok") is True
+                and camera_frame_json.get("bytes") == len(frame_bytes)
+                and camera_frame_json.get("solver_invoked") is False
+                and camera_frame_json.get("frame_id"),
+                f"status {camera_frame_status}, frame_id {camera_frame_json.get('frame_id')}",
             )
         )
 
