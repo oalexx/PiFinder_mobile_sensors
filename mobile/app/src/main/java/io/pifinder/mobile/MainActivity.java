@@ -67,6 +67,7 @@ import android.webkit.WebViewClient;
 
 import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -1293,20 +1294,24 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         HttpURLConnection connection = null;
         String boundary = "PiFinderMobileBoundary" + System.currentTimeMillis();
         try {
+            byte[] multipartBody = buildCameraFrameMultipartBody(
+                    boundary,
+                    filename,
+                    frameBytes,
+                    metadataJson
+            );
             URL url = new URL(baseUrl + "/mobile/camera_frame");
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(15000);
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(30000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
-            connection.setChunkedStreamingMode(0);
+            connection.setFixedLengthStreamingMode(multipartBody.length);
 
             try (OutputStream outputStream = connection.getOutputStream()) {
-                writeMultipartText(outputStream, boundary, "metadata", metadataJson);
-                writeMultipartFile(outputStream, boundary, "frame", filename, "image/jpeg", frameBytes);
-                outputStream.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                outputStream.write(multipartBody);
             }
 
             int status = connection.getResponseCode();
@@ -1323,12 +1328,26 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     + "\nElapsed: " + json.optInt("elapsed_ms", -1) + " ms";
         } catch (Exception e) {
             return "Camera frame upload failed\n" + shortError(e)
+                    + "\nJPEG bytes: " + frameBytes.length
                     + "\nCheck PiFinder IP, port, and Wi-Fi.";
         } finally {
             if (connection != null) {
                 connection.disconnect();
             }
         }
+    }
+
+    private byte[] buildCameraFrameMultipartBody(
+            String boundary,
+            String filename,
+            byte[] frameBytes,
+            String metadataJson
+    ) throws IOException {
+        ByteArrayOutputStream body = new ByteArrayOutputStream(frameBytes.length + metadataJson.length() + 1024);
+        writeMultipartText(body, boundary, "metadata", metadataJson);
+        writeMultipartFile(body, boundary, "frame", filename, "image/jpeg", frameBytes);
+        body.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return body.toByteArray();
     }
 
     private void writeMultipartText(

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,12 @@ class MobileFrameScore:
     accept_for_diagnostic_solve: bool
     reasons: list[str]
     rejection_reasons: list[str]
+
+
+@dataclass
+class InvalidMobileFrame:
+    path: str
+    error: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -268,6 +274,22 @@ def score_frame(path: Path) -> MobileFrameScore:
     )
 
 
+def score_valid_frames(paths: Iterable[Path]) -> tuple[list[MobileFrameScore], list[InvalidMobileFrame]]:
+    scores: list[MobileFrameScore] = []
+    invalid_frames: list[InvalidMobileFrame] = []
+    for path in paths:
+        try:
+            scores.append(score_frame(path))
+        except (OSError, UnidentifiedImageError) as exc:
+            invalid_frames.append(
+                InvalidMobileFrame(
+                    path=str(path),
+                    error=f"{exc.__class__.__name__}: {exc}",
+                )
+            )
+    return scores, invalid_frames
+
+
 def write_csv(path: Path, scores: list[MobileFrameScore]) -> None:
     fields = list(MobileFrameScore.__dataclass_fields__.keys())
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -280,7 +302,12 @@ def write_csv(path: Path, scores: list[MobileFrameScore]) -> None:
             writer.writerow(row)
 
 
-def write_markdown(path: Path, scores: list[MobileFrameScore]) -> None:
+def write_markdown(
+    path: Path,
+    scores: list[MobileFrameScore],
+    invalid_frames: list[InvalidMobileFrame] | None = None,
+) -> None:
+    invalid_frames = invalid_frames or []
     accepted = [score for score in scores if score.accept_for_diagnostic_solve]
     by_grade = {grade: sum(1 for score in scores if score.grade == grade) for grade in ("HIGH", "MEDIUM", "LOW")}
     lines = [
@@ -291,6 +318,7 @@ def write_markdown(path: Path, scores: list[MobileFrameScore]) -> None:
         "## Summary",
         "",
         f"- Frames scored: {len(scores)}",
+        f"- Invalid frames skipped: {len(invalid_frames)}",
         f"- Accepted for diagnostic solve: {len(accepted)}",
         f"- HIGH: {by_grade['HIGH']}",
         f"- MEDIUM: {by_grade['MEDIUM']}",
@@ -310,6 +338,18 @@ def write_markdown(path: Path, scores: list[MobileFrameScore]) -> None:
         )
     lines += [
         "",
+        "## Invalid Frames",
+        "",
+    ]
+    if invalid_frames:
+        lines.extend(
+            f"- `{Path(frame.path).name}`: {frame.error}"
+            for frame in invalid_frames
+        )
+    else:
+        lines.append("- none")
+    lines += [
+        "",
         "## Scoring Notes",
         "",
         "- The score intentionally prefers a dark background and low mean brightness.",
@@ -327,24 +367,38 @@ def main() -> int:
     input_path = Path(args.input)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    scores = [score_frame(path) for path in iter_jpegs(input_path)]
+    scores, invalid_frames = score_valid_frames(iter_jpegs(input_path))
     scores.sort(key=lambda item: item.quality_score, reverse=True)
 
     csv_path = output_dir / "mobile_frame_quality_scores.csv"
     json_path = output_dir / "mobile_frame_quality_scores.json"
+    invalid_json_path = output_dir / "mobile_frame_quality_invalid.json"
     markdown_path = output_dir / "mobile_frame_quality_scores.md"
     write_csv(csv_path, scores)
     json_path.write_text(
         json.dumps([asdict(score) for score in scores], indent=2),
         encoding="utf-8",
     )
-    write_markdown(markdown_path, scores)
+    invalid_json_path.write_text(
+        json.dumps([asdict(frame) for frame in invalid_frames], indent=2),
+        encoding="utf-8",
+    )
+    write_markdown(markdown_path, scores, invalid_frames)
 
     if args.json:
-        print(json.dumps([asdict(score) for score in scores], indent=2))
+        print(
+            json.dumps(
+                {
+                    "scores": [asdict(score) for score in scores],
+                    "invalid_frames": [asdict(frame) for frame in invalid_frames],
+                },
+                indent=2,
+            )
+        )
     else:
         accepted = sum(1 for score in scores if score.accept_for_diagnostic_solve)
         print(f"Scored {len(scores)} JPEG frames")
+        print(f"Skipped invalid frames: {len(invalid_frames)}")
         print(f"Accepted for diagnostic solve: {accepted}")
         print(markdown_path)
     return 0

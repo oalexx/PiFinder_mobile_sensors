@@ -310,7 +310,9 @@ def main() -> int:
     preprocess_modes = [mode.strip() for mode in args.preprocess_modes.split(",") if mode.strip()]
     min_grade = grade_rank(args.min_grade)
 
-    scores = [score_mobile_frame.score_frame(path) for path in score_mobile_frame.iter_jpegs(input_path)]
+    scores, invalid_frames = score_mobile_frame.score_valid_frames(
+        score_mobile_frame.iter_jpegs(input_path)
+    )
     scores.sort(key=lambda item: item.quality_score, reverse=True)
 
     t3 = tetra3.Tetra3(str(TETRA3_DB))
@@ -352,6 +354,7 @@ def main() -> int:
     else:
         solved = {result.path for result in results if result.solve_ok}
         print(f"Scored {len(scores)} JPEG frames")
+        print(f"Skipped invalid frames: {len(invalid_frames)}")
         print(f"Attempted diagnostic solve on {attempted_frames} frames")
         print(f"Solved {len(solved)} unique frames")
         print(markdown_path)
