@@ -6,27 +6,109 @@ Android mobile companion bridge.
 It keeps classic PiFinder intact: all Lite behavior is optional and should be
 started explicitly.
 
+Validated on:
+
+```text
+Raspberry Pi OS Trixie
+Python 3.13.5
+PiFinder branch: phase4-mobile-camera-diagnostic
+Startup command: python -m PiFinder.main -fh --camera debug --keyboard none -x
+Validated web URL: http://<raspberry-ip>:8080/remote
+```
+
+PiFinder upstream was originally developed against an older Python/runtime
+stack. On Trixie/Python 3.13, use the compatibility notes below instead of
+blindly installing the pinned upstream `requirements.txt`.
+
 ## 1. Prepare The Raspberry
 
-Start from a working PiFinder checkout on the Raspberry.
-
-Recommended Python environment follows the upstream PiFinder setup:
+Install system packages:
 
 ```bash
-cd python
-python3.9 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+sudo apt update
+xargs -a PiFinder_lite/apt-packages-trixie-py313.txt \
+  sudo apt -o Acquire::ForceIPv4=true install -y
 ```
 
-If the environment already exists:
+Create a venv that can use the Raspberry OS packages:
 
 ```bash
-cd python
+cd ~/PiFinder_mobile_sensors/python
+python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 ```
 
-## 2. Optional Lite Config
+Install PiFinder Lite runtime packages that were validated on Trixie:
+
+```bash
+pip install -r ../PiFinder_lite/requirements-trixie-py313.txt
+```
+
+Do not install the pinned `timezonefinder==6.1.9` on Trixie. It pulls an older
+`h3` build path that failed during validation. The Lite/Trixie requirements use
+`timezonefinder==8.2.4`, which supports the modern `h3` 4.x API.
+
+## 2. Initialize Tetra3/Cedar Solve
+
+Initialize the solver submodule with a shallow checkout:
+
+```bash
+cd ~/PiFinder_mobile_sensors
+git submodule update --init --recursive --depth 1 python/PiFinder/tetra3
+```
+
+Install it without dependencies, because NumPy/Pillow are supplied by the
+Raspberry OS packages:
+
+```bash
+cd ~/PiFinder_mobile_sensors/python
+source .venv/bin/activate
+pip install -e PiFinder/tetra3 --no-deps
+python -c "import tetra3; print('tetra3 ok')"
+```
+
+## 3. Download External Star Data
+
+`astro_data/hip_main.dat` is intentionally ignored by Git. PiFinder needs it to
+render the chart module.
+
+```bash
+cd ~/PiFinder_mobile_sensors
+wget -O astro_data/hip_main.dat \
+  https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
+ls -lh astro_data/hip_main.dat
+```
+
+Expected size is about 51 MiB.
+
+## 4. Python 3.13 Compatibility
+
+This branch includes the two source-level compatibility fixes found during the
+first Trixie validation:
+
+- Tetra3 import path resolution now prefers the package parent
+  `python/PiFinder/tetra3` when the submodule has a package layout, with a
+  fallback for the legacy nested layout.
+- `MarkingMenu.up` uses `field(default_factory=...)`, which avoids the Python
+  3.13 dataclass mutable-default import error.
+
+Timezone lookup should use `timezonefinder==8.2.4` from the Lite/Trixie
+requirements. The first manual validation used a temporary UTC shim before this
+dependency strategy was tested.
+
+## 5. Validate Imports
+
+```bash
+cd ~/PiFinder_mobile_sensors/python
+source .venv/bin/activate
+python -c "from google.protobuf import runtime_version; print('protobuf ok')"
+python -c "import grpc; print(grpc.__version__)"
+python -c "import skyfield, numpy; print('skyfield/numpy ok', numpy.__version__)"
+python -c "import luma.core.device, luma.oled.device, luma.lcd.device; print('luma ok')"
+python -c "import PiFinder.main; print('main import ok')"
+```
+
+## 6. Optional Lite Config
 
 Back up the current PiFinder user config first:
 
@@ -44,12 +126,12 @@ cp ../PiFinder_lite/configs/pifinder_lite_config.example.json ~/PiFinder_data/co
 This does not change `default_config.json`; it only changes the local user
 config if you choose to copy it.
 
-## 3. Start Headless/Lite
+## 7. Start Headless/Lite
 
 Hardware-light validation:
 
 ```bash
-cd python
+cd ~/PiFinder_mobile_sensors/python
 source .venv/bin/activate
 python -m PiFinder.main -fh --camera debug --keyboard none -x
 ```
@@ -68,7 +150,15 @@ If GPS hardware is unavailable:
 python -m PiFinder.main --gps fake --keyboard none -x
 ```
 
-## 4. Connect From Android
+Successful validation reaches:
+
+```text
+Web Interface on port 8080
+SkySafari server started and listening
+Event Loop
+```
+
+## 8. Connect From Android
 
 Find the Raspberry IP address:
 
@@ -91,7 +181,14 @@ Test Connection
 Open Remote
 ```
 
-## 5. Validate Mobile Camera Diagnostic
+Browser validation:
+
+```text
+http://<raspberry-ip>:8080/remote
+http://<raspberry-ip>:8080/mobile/status
+```
+
+## 9. Validate Mobile Camera Diagnostic
 
 On Android:
 

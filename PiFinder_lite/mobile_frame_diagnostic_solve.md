@@ -33,10 +33,11 @@ python PiFinder_lite\diagnostic_solve_mobile_frame.py --input "Test cam" --max-f
 Outputs:
 
 ```text
-PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.csv
-PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.json
-PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md
+PiFinder_lite/phase2_camera_analysis/
 ```
+
+The generated analysis directory is ignored by Git because it can contain local
+paths and phone-test artifacts.
 
 ## Flow
 

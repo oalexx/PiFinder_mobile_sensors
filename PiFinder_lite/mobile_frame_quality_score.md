@@ -27,13 +27,14 @@ Score the Phase 2 test set:
 python PiFinder_lite\score_mobile_frame.py --input "Test cam"
 ```
 
-Outputs are written to:
+Outputs are written locally to:
 
 ```text
-PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.csv
-PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.json
-PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md
+PiFinder_lite/phase2_camera_analysis/
 ```
+
+The generated analysis directory is ignored by Git because it can contain local
+paths and phone-test artifacts.
 
 Use `--json` when a caller needs the structured result on stdout.
 

@@ -38,10 +38,14 @@ Install/run checklist:
 PiFinder_lite/raspberry_lite_install.md
 ```
 
+The Raspberry Pi OS Trixie / Python 3.13 path needs the compatibility notes in
+that checklist. Do not assume the original pinned `requirements.txt` is enough
+on a fresh Trixie image.
+
 Minimal headless/dev startup:
 
 ```bash
-cd python
+cd ~/PiFinder_mobile_sensors/python
 source .venv/bin/activate
 python -m PiFinder.main -fh --camera debug --keyboard none -x
 ```
@@ -78,6 +82,8 @@ python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_da
 | --- | --- |
 | `raspberry_lite_install.md` | End-to-end Raspberry install/run checklist. |
 | `raspberry_validation_runbook.md` | Step-by-step #42 validation manual. |
+| `apt-packages-trixie-py313.txt` | Raspberry Pi OS Trixie system packages for Lite validation. |
+| `requirements-trixie-py313.txt` | Pip requirements for the Trixie/Python 3.13 Lite venv. |
 | `lite_config_profile.md` | Optional Lite config profile and startup flags. |
 | `keyboard_none_validation.md` | No-keyboard/headless validation notes. |
 | `remote_endpoint_validation.md` | `/remote`, `/image`, `/key_callback` validation. |
@@ -119,11 +125,14 @@ python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_da
 
 ### Generated Reports
 
-| Report | Purpose |
-| --- | --- |
-| `phase2_camera_analysis/phase2_camera_analysis.md` | Main Phase 2 solve analysis report. |
-| `phase2_camera_analysis/mobile_frame_quality_scores.md` | Quality-score report. |
-| `phase2_camera_analysis/mobile_frame_diagnostic_solves.md` | Diagnostic solve report. |
+Generated Phase 2 reports are intentionally ignored by Git:
+
+```text
+PiFinder_lite/phase2_camera_analysis/
+```
+
+Keep local CSV/JSON/Markdown analysis output there when needed, but do not
+commit phone-test artifacts or local filesystem paths.
 
 ## Config Examples
 

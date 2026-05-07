@@ -515,10 +515,15 @@ diagnostic solving, while preserving classic PiFinder behavior.
 Files:
 
 - `PiFinder_lite/analyze_phase2_camera.py`
-- `PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.md`
-- `PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.csv`
-- `PiFinder_lite/phase2_camera_analysis/phase2_camera_solve_attempts.csv`
 - `PiFinder_lite/phase4_dependency_map.md`
+
+Generated local output:
+
+- `PiFinder_lite/phase2_camera_analysis/`
+
+The generated analysis directory is intentionally ignored by Git because it can
+contain local paths, phone-test filenames, CSV/JSON reports, and other test-run
+artifacts.
 
 Why:
 
@@ -571,10 +576,15 @@ Files:
 
 - `PiFinder_lite/score_mobile_frame.py`
 - `PiFinder_lite/mobile_frame_quality_score.md`
-- `PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.csv`
-- `PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.json`
-- `PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md`
 - `PiFinder_lite/phase4_dependency_map.md`
+
+Generated local output:
+
+- `PiFinder_lite/phase2_camera_analysis/`
+
+The generated analysis directory is intentionally ignored by Git because it can
+contain local paths, phone-test filenames, CSV/JSON reports, and other test-run
+artifacts.
 
 Why:
 
@@ -624,10 +634,15 @@ Files:
 
 - `PiFinder_lite/diagnostic_solve_mobile_frame.py`
 - `PiFinder_lite/mobile_frame_diagnostic_solve.md`
-- `PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.csv`
-- `PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.json`
-- `PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md`
 - `PiFinder_lite/phase4_dependency_map.md`
+
+Generated local output:
+
+- `PiFinder_lite/phase2_camera_analysis/`
+
+The generated analysis directory is intentionally ignored by Git because it can
+contain local paths, phone-test filenames, CSV/JSON reports, and other test-run
+artifacts.
 
 Why:
 
@@ -766,6 +781,98 @@ Status:
 
 Keep. This prepares issue #42 validation and future guided diagnostic workflow
 work.
+
+### 2026-05-07: Raspberry Pi OS Trixie Lite validation
+
+Files:
+
+- `PiFinder_lite/apt-packages-trixie-py313.txt`
+- `PiFinder_lite/raspberry_lite_install.md`
+- `PiFinder_lite/raspberry_validation_runbook.md`
+- `PiFinder_lite/requirements-trixie-py313.txt`
+- `python/PiFinder/utils.py`
+- `python/PiFinder/ui/marking_menus.py`
+- `python/tests/test_lite_runtime_compat.py`
+
+Why:
+
+The first real Raspberry validation of PiFinder Lite used a fresh Raspberry Pi
+OS Trixie install with Python 3.13.5. This is newer than the classic PiFinder
+runtime assumptions, so several dependency and Python compatibility issues had
+to be resolved before the web remote could run.
+
+Validated result:
+
+```text
+PiFinder reached Event Loop
+Web Interface on port 8080
+SkySafari server started and listening
+Mobile browser loaded /remote successfully
+```
+
+Validated startup command:
+
+```bash
+python -m PiFinder.main -fh --camera debug --keyboard none -x
+```
+
+Environment changes:
+
+- Used `python3 -m venv --system-site-packages .venv` so the venv can reuse
+  Raspberry OS packages for NumPy, SciPy, pandas, Pillow, scikit-learn, Bottle,
+  Cheroot, and related heavy dependencies.
+- Installed `protobuf>=5.27` because current `cedar-solve` generated protobuf
+  code imports `google.protobuf.runtime_version`.
+- Installed `grpcio>=1.71.0` from a binary wheel because current
+  `cedar-solve` generated gRPC code requires a newer runtime than
+  `python3-grpcio` from apt.
+- Installed `skyfield>=1.53` because `skyfield==1.45` imports `numpy.float_`,
+  which is no longer available in NumPy 2.x.
+- Installed `luma.core`, `luma.oled`, `luma.lcd`, and `luma.emulator` so the
+  existing PiFinder display imports can load even in debug/headless validation.
+- Installed `tetra3` with `pip install -e PiFinder/tetra3 --no-deps` after a
+  shallow submodule checkout.
+- Downloaded `astro_data/hip_main.dat`, which is intentionally ignored by Git
+  but required by the chart preload path.
+
+Integrated compatibility changes:
+
+- `python/PiFinder/utils.py`: added `resolve_tetra3_dir(...)`, which prefers the
+  package parent `python/PiFinder/tetra3` when the bundled submodule has a
+  package `tetra3/__init__.py`, and falls back to the legacy nested
+  `python/PiFinder/tetra3/tetra3` layout when needed. This avoids treating
+  `tetra3.py` as a standalone module on the validated Trixie setup while keeping
+  a compatibility path for older layouts.
+- `python/PiFinder/ui/marking_menus.py`: changed the `MarkingMenu.up` dataclass
+  default to use `field(default_factory=...)`, because Python 3.13 rejects a
+  mutable dataclass default of type `MarkingMenuOption`.
+- Replaced the temporary local `timezonefinder` UTC shim recommendation with
+  `timezonefinder==8.2.4` in the Lite/Trixie requirements. The PC venv verified
+  `TimezoneFinder().timezone_at(...)` returns `Europe/Madrid` for Madrid
+  coordinates on Python 3.13.
+
+Classic PiFinder impact:
+
+The runtime dependency changes are installation concerns only. The two Python
+source changes are intentionally small compatibility fixes:
+
+- `resolve_tetra3_dir(...)` only affects how the bundled Tetra3 path is added to
+  `sys.path`.
+- `field(default_factory=...)` preserves the existing default HELP option while
+  preventing shared mutable state and Python 3.13 import failure.
+
+They still need normal validation against the classic supported Raspberry
+image/runtime before an upstream PR.
+
+Status:
+
+Keep with follow-up validation.
+
+- Keep the documentation and install recipe.
+- Validate `timezonefinder==8.2.4` on the Raspberry Trixie venv before GPS
+  bridge work depends on local timezone calculation.
+- Re-run classic PiFinder startup/tests on the original supported runtime before
+  proposing these changes upstream.
 
 ## Pre-Merge Checklist
 

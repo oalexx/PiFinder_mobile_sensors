@@ -32,12 +32,13 @@ Files:
 - 48 RAW files.
 - 22 metadata TXT files.
 
-The generated detailed analysis is stored in:
+The generated detailed analysis is stored locally in:
 
 ```text
-PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.md
-PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.csv
+PiFinder_lite/phase2_camera_analysis/
 ```
+
+The generated analysis directory is ignored by Git.
 
 Analysis script:
 

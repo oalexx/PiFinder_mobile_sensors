@@ -1,6 +1,6 @@
 # Raspberry Validation Runbook
 
-Manual para desplegar PiFinder Lite en la Raspberry y ejecutar la prueba de:
+Manual para desplegar PiFinder Lite en la Raspberry y ejecutar la prueba:
 
 ```text
 Android -> upload JPEG -> Raspberry guarda -> quality score -> diagnostic solve
@@ -8,29 +8,38 @@ Android -> upload JPEG -> Raspberry guarda -> quality score -> diagnostic solve
 
 Issue relacionada: #42.
 
-## 0. Punto Importante Antes De Empezar
+## 0. Validacion Base
 
-La Raspberry debe tener el código actualizado con los cambios de esta rama.
+Validacion conseguida el 2026-05-07:
 
-Si todavía no has hecho commit/push desde el PC, la Pi no podrá hacer `git pull`
-de estos cambios. En ese caso, primero haz commit/push desde el PC o copia la
-carpeta actual a la Pi.
+```text
+Raspberry Pi OS Trixie
+Python 3.13.5
+PiFinder branch: phase4-mobile-camera-diagnostic
+Startup command: python -m PiFinder.main -fh --camera debug --keyboard none -x
+Web remote: http://192.168.8.182:8080/remote
+Result: PiFinder reached Event Loop and /remote worked from mobile
+```
 
-## 1. Actualizar Código En La Raspberry
+El puerto observado fue `8080`. Si otra instalacion usa puerto 80, ajusta las
+URLs de este runbook.
+
+## 1. Actualizar Codigo En La Raspberry
 
 En la Raspberry:
 
 ```bash
 cd ~/PiFinder_mobile_sensors
 git fetch
-git checkout <tu-rama>
+git checkout phase4-mobile-camera-diagnostic
 git pull
 ```
 
-Si el repo está en otra carpeta:
+Si la rama remota fue reescrita y Git avisa de ramas divergentes:
 
 ```bash
-cd /ruta/al/repo
+git fetch origin
+git reset --hard origin/phase4-mobile-camera-diagnostic
 ```
 
 Comprueba que existen estos archivos:
@@ -41,66 +50,106 @@ ls PiFinder_lite/diagnostic_solve_mobile_frame.py
 ls PiFinder_lite/mobile_bridge_api_v0.md
 ```
 
-## 2. Preparar Entorno Python
+## 2. Preparar Entorno Python En Trixie
 
-En la Raspberry:
+En Raspberry Pi OS Trixie / Python 3.13, no instales el `requirements.txt`
+original sin revisar: algunas versiones fijadas son antiguas para NumPy 2 y
+Python 3.13. Usa la receta completa de:
+
+```text
+PiFinder_lite/raspberry_lite_install.md
+```
+
+Resumen del entorno validado:
 
 ```bash
-cd python
-python3.9 -m venv .venv
+sudo apt update
+xargs -a PiFinder_lite/apt-packages-trixie-py313.txt \
+  sudo apt -o Acquire::ForceIPv4=true install -y
+
+cd ~/PiFinder_mobile_sensors/python
+python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r ../PiFinder_lite/requirements-trixie-py313.txt
 ```
 
-Si `.venv` ya existía:
+## 3. Inicializar Tetra3
 
 ```bash
-cd python
+cd ~/PiFinder_mobile_sensors
+git submodule update --init --recursive --depth 1 python/PiFinder/tetra3
+
+cd ~/PiFinder_mobile_sensors/python
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e PiFinder/tetra3 --no-deps
+python -c "import tetra3; print('tetra3 ok')"
 ```
 
-Si Tetra3 no está instalado editable y falla el solver:
+## 4. Descargar Catalogo Hipparcos
+
+`astro_data/hip_main.dat` no va en Git. Es necesario para que PiFinder cargue
+el modulo de chart.
 
 ```bash
-pip install -e PiFinder/tetra3
+cd ~/PiFinder_mobile_sensors
+wget -O astro_data/hip_main.dat \
+  https://cdsarc.cds.unistra.fr/ftp/cats/I/239/hip_main.dat
+ls -lh astro_data/hip_main.dat
 ```
 
-Vuelve a la raíz del repo:
+El tamano esperado es aproximadamente 51 MiB.
 
-```bash
-cd ..
+## 5. Compatibilidad Python 3.13
+
+Esta rama ya incluye los dos cambios de codigo encontrados durante la
+validacion Trixie:
+
+- `python/PiFinder/utils.py`: resuelve automaticamente el layout importable de
+  Tetra3.
+- `python/PiFinder/ui/marking_menus.py`: usa `field(default_factory=...)` para
+  evitar el error de dataclass mutable en Python 3.13.
+
+La solucion para timezone en Python 3.13 es `timezonefinder==8.2.4`, incluida
+en `requirements-trixie-py313.txt`. No uses `timezonefinder==6.1.9` en Trixie;
+esa version intento usar un camino antiguo de `h3` durante la validacion.
+
+Estos cambios estan documentados en:
+
+```text
+PiFinder_lite/upstream_change_log.md
 ```
 
-## 3. Arrancar PiFinder Lite
-
-### Opción Segura Para Validar Bridge/Web
-
-Usa fake hardware y cámara debug:
+## 6. Validar Importaciones
 
 ```bash
-cd python
+cd ~/PiFinder_mobile_sensors/python
+source .venv/bin/activate
+python -c "from google.protobuf import runtime_version; print('protobuf ok')"
+python -c "import grpc; print(grpc.__version__)"
+python -c "import skyfield, numpy; print('skyfield/numpy ok', numpy.__version__)"
+python -c "import luma.core.device, luma.oled.device, luma.lcd.device; print('luma ok')"
+python -c "import PiFinder.main; print('main import ok')"
+```
+
+## 7. Arrancar PiFinder Lite
+
+Opcion segura para validar bridge/web:
+
+```bash
+cd ~/PiFinder_mobile_sensors/python
 source .venv/bin/activate
 python -m PiFinder.main -fh --camera debug --keyboard none -x
 ```
 
-### Opción Con Hardware Real Pero Sin Keypad
+Resultado esperado:
 
-Cuando quieras usar la Raspberry más parecida al PiFinder real:
-
-```bash
-cd python
-source .venv/bin/activate
-python -m PiFinder.main --keyboard none -x
+```text
+Web Interface on port 8080
+SkySafari server started and listening
+Event Loop
 ```
 
-Si GPS real no está listo:
-
-```bash
-python -m PiFinder.main --gps fake --keyboard none -x
-```
-
-## 4. Encontrar IP Y Puerto
+## 8. Probar Desde El Movil
 
 En otra terminal de la Raspberry:
 
@@ -108,25 +157,16 @@ En otra terminal de la Raspberry:
 hostname -I
 ```
 
-PiFinder normalmente sirve en:
-
-```text
-http://<ip-raspberry>/
-```
-
-Si no puede usar puerto 80, cae a:
-
-```text
-http://<ip-raspberry>:8080/
-```
-
-Prueba desde el móvil o navegador:
+Desde el movil:
 
 ```text
 http://<ip-raspberry>:8080/remote
+http://<ip-raspberry>:8080/mobile/status
 ```
 
-## 5. Configurar Android
+Si `/remote` carga y responde, la base PiFinder Lite esta validada.
+
+## 9. Configurar Android
 
 Instala la APK debug actual:
 
@@ -137,25 +177,14 @@ mobile/app/build/outputs/apk/debug/app-debug.apk
 En la app:
 
 ```text
-PiFinder Remote -> Base URL
-```
-
-Pon una de estas:
-
-```text
-http://<ip-raspberry>
-http://<ip-raspberry>:8080
-```
-
-Pulsa:
-
-```text
+PiFinder Remote -> Base URL -> http://<ip-raspberry>:8080
 Test Connection
+Open Remote
 ```
 
 Debe responder OK y mostrar `mobile-bridge-v0`.
 
-## 6. Capturar Y Subir JPEG Desde Android
+## 10. Capturar Y Subir JPEG Desde Android
 
 En la app:
 
@@ -175,12 +204,14 @@ Bytes: ...
 Elapsed: ... ms
 ```
 
-## 7. Confirmar Que La Raspberry Guardó El Frame
+## 11. Confirmar Que La Raspberry Guardo El Frame
 
 En la Raspberry:
 
 ```bash
 ls -lh ~/PiFinder_data/mobile/frames
+ls -t ~/PiFinder_data/mobile/frames/*.json | head -1
+python -m json.tool "$(ls -t ~/PiFinder_data/mobile/frames/*.json | head -1)"
 ```
 
 Debes ver pares:
@@ -190,23 +221,12 @@ Debes ver pares:
 <frame_id>.json
 ```
 
-Ver el último JSON:
+## 12. Ejecutar Quality Score En La Raspberry
+
+Desde la raiz del repo:
 
 ```bash
-ls -t ~/PiFinder_data/mobile/frames/*.json | head -1
-```
-
-Opcional:
-
-```bash
-python -m json.tool "$(ls -t ~/PiFinder_data/mobile/frames/*.json | head -1)"
-```
-
-## 8. Ejecutar Quality Score En La Raspberry
-
-Desde la raíz del repo:
-
-```bash
+cd ~/PiFinder_mobile_sensors
 source python/.venv/bin/activate
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 ```
@@ -216,20 +236,14 @@ Resultados esperados:
 ```text
 Scored N JPEG frames
 Accepted for diagnostic solve: N
-PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md
 ```
 
-Lee el informe:
+## 13. Ejecutar Diagnostic Solve
+
+Desde la raiz del repo:
 
 ```bash
-cat PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md
-```
-
-## 9. Ejecutar Diagnostic Solve
-
-Desde la raíz del repo:
-
-```bash
+cd ~/PiFinder_mobile_sensors
 source python/.venv/bin/activate
 python PiFinder_lite/diagnostic_solve_mobile_frame.py \
   --input "$HOME/PiFinder_data/mobile/frames" \
@@ -244,21 +258,16 @@ Resultados esperados:
 Scored N JPEG frames
 Attempted diagnostic solve on N frames
 Solved N unique frames
-PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md
 ```
 
-Lee el informe:
-
-```bash
-cat PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md
-```
-
-## 10. Qué Datos Apuntar En La Issue #42
+## 14. Datos Para La Issue #42
 
 Copia en la issue:
 
 ```text
 Pi model:
+Pi OS:
+Python:
 PiFinder branch/commit:
 Startup command:
 Android model:
@@ -279,9 +288,9 @@ Sky conditions:
 Notes/errors:
 ```
 
-## 11. Interpretación Rápida
+## 15. Interpretacion Rapida
 
-### Caso Bueno
+Caso bueno:
 
 ```text
 Upload OK
@@ -290,31 +299,21 @@ Diagnostic solve OK
 Solve time razonable
 ```
 
-Conclusión:
+Conclusion:
 
 ```text
 La cadena Android -> Pi -> score -> solve funciona.
 ```
 
-Siguiente paso:
+Caso upload falla:
 
-```text
-Crear workflow guiado más automático.
-```
-
-### Caso Upload Falla
-
-Revisar:
-
-- móvil y Pi en la misma red;
+- movil y Pi en la misma red;
 - IP/puerto correctos;
 - `/mobile/status`;
 - firewall/red;
 - logs de PiFinder.
 
-### Caso Score LOW
-
-Posibles causas:
+Caso score LOW:
 
 - nubes;
 - frame movido;
@@ -323,26 +322,20 @@ Posibles causas:
 - enfoque pobre;
 - farolas/obstrucciones.
 
-Repetir con cielo más oscuro o mejor apoyo.
+Caso score HIGH/MEDIUM pero solve falla:
 
-### Caso Score HIGH/MEDIUM Pero Solve Falla
-
-Revisar:
-
-- FOV metadata;
-- camera ID;
-- orientación;
-- si el frame tiene estrellas reales;
+- revisar FOV metadata;
 - probar `--solve-timeout-ms 3000`;
-- repetir con móvil fijo.
+- repetir con movil fijo;
+- probar cielo mas oscuro.
 
-## 12. Guardrail
+## 16. Guardrail
 
-Esta prueba es diagnóstica.
+Esta prueba es diagnostica.
 
 No debe:
 
 - alimentar el integrator;
 - actualizar apuntado vivo;
-- reemplazar el solver clásico;
-- asumir todavía que la cámara móvil ya es producción.
+- reemplazar el solver clasico;
+- asumir todavia que la camara movil ya es produccion.

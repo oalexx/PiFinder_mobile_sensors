@@ -13,12 +13,13 @@ Runs:
 - `pifinder_day_test_20260504_135847`
 - `pifinder_day_test_20260504_135852`
 
-Generated outputs:
+Generated local outputs:
 
 ```text
-PiFinder_lite/phase2_camera_analysis/day_test_metrics.csv
-PiFinder_lite/phase2_camera_analysis/day_test_contact_sheet.jpg
+PiFinder_lite/phase2_camera_analysis/
 ```
+
+The generated analysis directory is ignored by Git.
 
 ## Result
 
