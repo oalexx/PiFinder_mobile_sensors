@@ -53,6 +53,8 @@ python -m PiFinder.main --mode mobile-lite
 
 Goal: make the current Android app a reliable compatibility tester.
 
+Status: completed.
+
 Tasks:
 
 - Polish the current Home, Check Capabilities, and Camera Lab UI.
@@ -71,6 +73,9 @@ PiFinder Lite readiness result: `HIGH`, `MEDIUM`, or `LOW`.
 Goal: determine whether phone camera frames are actually useful for plate
 solving.
 
+Status: still active. Day-test and cloudy/partial-sky evidence exists, but the
+remaining decision needs clearer night captures.
+
 Tests:
 
 - `DAY TEST`: framing and focus.
@@ -87,6 +92,10 @@ Validation criteria:
 - Stability.
 - Whether Tetra3/PiFinder can solve the frame.
 - Solve time.
+- Whether the image quality score accepts the frame without being fooled by a
+  raised ISO/noise floor.
+- Whether the solve-candidate burst produces better frames than the older
+  manual burst.
 
 Decision:
 
@@ -98,6 +107,8 @@ Decision:
 ## Phase 3: PiFinder Lite Headless
 
 Goal: run PiFinder without a physical screen or keypad.
+
+Status: completed and Raspberry-validated.
 
 Reuse existing pieces:
 
@@ -128,6 +139,8 @@ Android app -> GPS/IMU/camera -> PiFinder
 
 Goal: allow the Android app to send phone data to PiFinder.
 
+Status: completed and Raspberry-validated.
+
 Suggested endpoints:
 
 ```text
@@ -150,15 +163,35 @@ Phone data:
 
 PiFinder implementation candidates:
 
-- `gps_mobile.py`.
-- `imu_mobile.py`.
-- `camera_mobile.py`.
-- New mobile API module or a small extension to `server.py`.
+- Mobile API module plus a small `server.py` extension.
+- Runtime mobile GPS injection through the existing GPS queue.
+- IMU batch storage for confidence analysis.
+- Storage-only camera frame upload for diagnostics.
+
+Validated behavior:
+
+- `/mobile/status` reports bridge capabilities.
+- `/mobile/profile` stores app/device profile data.
+- `/mobile/gps` updates the running PiFinder GPS state.
+- `/mobile/imu` stores diagnostic rotation-vector batches.
+- `/mobile/camera_frame` stores uploaded JPEG frames and metadata.
+
+Deferred from Phase 4:
+
+- Mobile IMU is not yet integrated into the PiFinder integrator.
+- Mobile camera frames are not yet integrated into the live solver loop.
+- Mobile camera solving remains a diagnostic script flow until Phase 2 validates
+  reliable clear-sky frames.
 
 ## Phase 5: Phone-To-Telescope Calibration
 
 Goal: when the phone is mounted to the telescope, align the phone axes with the
 optical tube axis.
+
+Input from Phase 4: `game_rotation_vector` produced the best stationary
+confidence in the first Raspberry tests, so it should be the first sensor path
+considered for calibration experiments. `rotation_vector` remains useful for
+comparison but may show more magnetic/noise sensitivity.
 
 Workflow:
 
@@ -167,6 +200,12 @@ Workflow:
 3. Resolve an image or use a known position.
 4. Calculate the offset between phone orientation and optical axis.
 5. Save the mount profile.
+
+Recommended first implementation:
+
+- Store labeled IMU batches: `stationary`, `slew`, `mounted_reference`.
+- Add a mount-profile JSON editor/export in the Android app.
+- Keep calibration output advisory until repeatability is proven.
 
 Persisted data example:
 
@@ -187,6 +226,10 @@ Persisted data example:
 Goal: send Android frames to the Raspberry Pi and solve them with the existing
 PiFinder solver path.
 
+Input from Phase 4: upload/storage works, quality scoring works, and diagnostic
+solve tooling runs on Raspberry. The missing gate is reliable night-sky evidence
+from Phase 2.
+
 Steps:
 
 - Send JPEG frames from the app.
@@ -196,6 +239,15 @@ Steps:
 - Test bursts.
 - Automatically choose the best frame.
 - Evaluate RAW only if real sky data shows that it adds enough value.
+
+Recommended first implementation after Phase 2 passes:
+
+- Trigger solve only for frames accepted by the quality score.
+- Prefer dark background, sufficient centroid count, low saturation, and low
+  noise floor.
+- Avoid selecting high-ISO frames whose lifted background mimics useful signal.
+- Record upload latency, quality-score latency, solve latency, and solve result
+  in one per-frame report.
 
 ## Optional AI Layer
 
@@ -244,28 +296,42 @@ Suggested configuration:
 }
 ```
 
+Current AI/process status:
+
+- The first image-quality score is classic image processing, not ML.
+- IMU confidence analysis is classic quaternion/statistical analysis.
+- Keep ML/ONNX/TFLite experiments behind explicit flags and only after the
+  simple metrics fail on real data.
+
 ## Recommended Issues
 
-1. Polish Android Compatibility Tester UI.
-2. Add structured compatibility result.
-3. Add mobile profile JSON export.
-4. Improve camera test metadata.
-5. Run night sky validation.
-6. Document existing PiFinder web remote.
-7. Create PiFinder Lite headless startup mode.
-8. Add PiFinder Remote WebView to Android app.
-9. Add mobile connection settings.
-10. Add mobile GPS bridge endpoint.
-11. Add mobile IMU bridge endpoint.
-12. Add mobile profile endpoint.
-13. Implement mobile-to-telescope calibration.
-14. Upload mobile JPEG frames to PiFinder.
-15. Run plate solve on mobile camera frames.
-16. Add image quality score.
-17. Add burst frame selector.
-18. Add exposure advisor.
-19. Add IMU confidence filter.
-20. Validate SkySafari split-screen workflow.
+Implemented or closed:
+
+- Polish Android Compatibility Tester UI.
+- Add structured compatibility result.
+- Add mobile profile JSON export.
+- Improve camera test metadata.
+- Document existing PiFinder web remote.
+- Create PiFinder Lite headless startup mode.
+- Add PiFinder Remote WebView to Android app.
+- Add mobile connection settings.
+- Add mobile GPS bridge endpoint and runtime GPS feed.
+- Add mobile IMU bridge endpoint and confidence analysis.
+- Add mobile profile endpoint.
+- Upload mobile JPEG frames to PiFinder.
+- Add image quality score.
+- Add burst frame selector / solve-candidate burst.
+- Validate SkySafari split-screen workflow.
+
+Still open / next:
+
+- Complete Phase 2 night-sky validation.
+- Compare Manual Burst, ISO Sweep, Cam Sweep, and RAW Burst under clearer sky.
+- Summarize the mobile camera solve decision from real night evidence.
+- Implement phone-to-telescope calibration.
+- Promote mobile camera frames from diagnostic scripts to live solving only if
+  Phase 2 evidence supports it.
+- Add exposure advisor after enough accepted/rejected night frames exist.
 
 ## Main Risks
 

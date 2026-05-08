@@ -8,7 +8,37 @@ configuration workflows.
 Classic PiFinder should remain unchanged unless a Lite feature is explicitly
 enabled.
 
-## Current Decision
+## Current Status
+
+Phase 4 is implemented and validated on Raspberry Pi OS Trixie/Python 3.13.
+The Android app can talk to PiFinder Lite through the mobile bridge, upload a
+JPEG frame, send GPS into the running PiFinder process, and send IMU diagnostic
+batches for confidence analysis.
+
+Validated chain:
+
+```text
+Android app -> PiFinder /mobile/* endpoints -> Raspberry storage/runtime state
+```
+
+Validated capabilities:
+
+- Headless PiFinder startup with `--keyboard none`.
+- Phone access to `/remote`.
+- SkySafari/LX200 server startup alongside the web remote.
+- `/mobile/status`, `/mobile/profile`, `/mobile/gps`, `/mobile/imu`, and
+  `/mobile/camera_frame`.
+- Runtime GPS updates from Android GPS.
+- IMU batch capture and confidence scoring.
+- Mobile JPEG upload, quality scoring, and diagnostic solve tooling.
+
+Still intentionally diagnostic-only:
+
+- Mobile camera frames are not fed into the live solver/integrator loop.
+- Mobile IMU is not fed into the integrator.
+- RAW is not promoted until Phase 2 night evidence shows value.
+
+## Current Camera Decision
 
 Mobile camera path:
 
@@ -62,6 +92,8 @@ In the Android app:
 
 ```text
 PiFinder Remote -> set base URL
+PiFinder Remote -> Test Connection
+PiFinder Remote -> Send Profile / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
 Camera Lab -> Run Diagnostic Burst
 Camera Lab -> Upload Last JPEG
@@ -99,6 +131,7 @@ python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_da
 | `mobile_camera_frame_upload.md` | Storage-only JPEG upload flow. |
 | `phase4_dependency_map.md` | Issue dependency order and current gates. |
 | `upstream_change_log.md` | Changes to original PiFinder and why. |
+| `phase4_imu_analysis/mobile_imu_confidence.md` | Generated local IMU analysis output. |
 
 ### Camera Evidence
 
@@ -120,6 +153,7 @@ python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_da
 | `analyze_phase2_camera.py` | Offline Phase 2 frame analysis and Tetra3 attempts. |
 | `score_mobile_frame.py` | Score JPEGs before diagnostic solving. |
 | `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
+| `analyze_mobile_imu.py` | Analyze stored `/mobile/imu` batches. |
 | `validate_remote_endpoints.py` | Local validation of web/mobile endpoints. |
 | `validate_lx200_server.py` | LX200/SkySafari server validation. |
 
@@ -143,16 +177,19 @@ commit phone-test artifacts or local filesystem paths.
 
 ## Next Hardware Gate
 
-Issue #42:
+Phase 4 hardware validation has passed. The next real gate is Phase 2 clear-sky
+camera validation:
 
 ```text
-Validate mobile upload, quality score, and diagnostic solve on Raspberry.
+Manual Burst / ISO Sweep / Cam Sweep / RAW Burst under clearer sky.
 ```
 
-Required chain:
+Required evidence:
 
 ```text
-Android -> Upload JPEG -> Raspberry stores frame -> Score -> Diagnostic solve
+dark sky frame -> enough star-like centroids -> accepted quality score -> diagnostic solve attempt
 ```
 
-Until this passes, mobile camera remains diagnostic-only.
+Until that evidence is reliable, mobile camera remains diagnostic-only and
+PiFinder Lite should continue to use the original PiFinder camera path for live
+solving.

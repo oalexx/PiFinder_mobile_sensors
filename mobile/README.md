@@ -3,10 +3,22 @@
 Native Android companion prototype for exploring whether a phone can be used as
 part of a PiFinder Lite setup.
 
-The current app is focused on compatibility testing. It checks what the phone
-actually exposes through public Android APIs, then runs capture tests that help
-decide whether the phone can provide GPS, IMU/orientation, and experimental
-camera data to a Raspberry Pi running PiFinder.
+The current app now covers the Phase 1 tester plus the Phase 4 bridge
+prototype. It checks what the phone actually exposes through public Android
+APIs, runs capture tests, loads the existing PiFinder `/remote` page, and can
+send GPS, IMU batches, profile data, and JPEG diagnostic frames to a Raspberry
+Pi running PiFinder Lite.
+
+Current validated bridge status:
+
+- `/mobile/status` connection check works.
+- `SEND PROFILE` posts the structured phone profile.
+- `SEND GPS` can feed the running PiFinder process.
+- `SEND IMU BATCH` stores a short diagnostic batch for confidence analysis.
+- `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
+
+Camera and IMU data are still diagnostic paths. Live mobile camera solving and
+mobile IMU integration are intentionally deferred until later phases.
 
 ## Current Screens
 
@@ -53,6 +65,8 @@ Available tests:
 - `ISO SWEEP`: multiple ISO groups for exposure comparison.
 - `RAW BURST`: raw sensor byte captures for technical experiments.
 - `CAM SWEEP`: tests the available rear camera IDs.
+- `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
+- `UPLOAD LAST JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
 
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:
@@ -63,6 +77,22 @@ pifinder_camera_sweep_20260429_223538_metadata.txt
 
 The metadata includes the camera ID, format, size, frame count, orientation,
 ISO/exposure settings, saved frame count, and failures.
+
+### PiFinder Remote
+
+Connects the app to a Raspberry/PiFinder Lite instance.
+
+Available actions:
+
+- `TEST CONNECTION`: checks `/mobile/status`.
+- `OPEN REMOTE`: opens the existing PiFinder `/remote` page full-screen.
+- `SEND PROFILE`: sends the phone capability/profile JSON.
+- `SEND GPS`: posts the current Android location to PiFinder.
+- `SEND IMU BATCH`: captures and uploads a short rotation-vector batch.
+
+The embedded remote is a wrapper around the existing PiFinder web UI. If layout
+issues appear, compare it with the same URL in a normal browser before changing
+PiFinder server-side CSS.
 
 ## Why This Exists
 
@@ -92,6 +122,17 @@ the phone.
 If Android keeps showing an old launcher icon, uninstall the previous build from
 the phone and run again.
 
+Android Studio may suggest an Android Gradle Plugin upgrade. Leave that alone
+unless the task is specifically to upgrade the build tooling; the current build
+has been validated as-is.
+
+Command-line debug APK build:
+
+```powershell
+cd mobile
+.\gradlew.bat assembleDebug
+```
+
 ## Suggested Test Flow
 
 1. Open the app.
@@ -104,7 +145,14 @@ the phone and run again.
 8. Go to `CAMERA LAB`.
 9. Tap `SAVE FOLDER`.
 10. Run `DAY TEST` indoors to check framing.
-11. Run the sky tests outdoors at night:
+11. Go to `PIFINDER REMOTE`, set the Raspberry base URL, then run:
+    - `TEST CONNECTION`
+    - `SEND PROFILE`
+    - `SEND GPS`
+    - `SEND IMU BATCH`
+12. Go back to `CAMERA LAB`, run `SOLVE CANDIDATE BURST`, then tap
+    `UPLOAD LAST JPEG`.
+13. Run the sky tests outdoors at night when conditions allow:
     - `MANUAL BURST`
     - `ISO SWEEP`
     - `CAM SWEEP`
@@ -118,7 +166,7 @@ The intended long-term architecture is:
 Android app
   - Compatibility tester
   - GPS/IMU bridge
-  - Camera bridge
+  - Diagnostic camera bridge
   - PiFinder remote WebView
   - Calibration workflow
 
@@ -127,11 +175,17 @@ Raspberry Pi / PiFinder Lite
   - Catalogs and solver
   - Existing web remote
   - Existing SkySafari/LX200 server
-  - New mobile API endpoints
+  - Mobile API endpoints
 ```
 
 The classic PiFinder hardware mode should remain unchanged. Mobile/Lite behavior
 should be added as optional modules and configuration.
+
+Next gates:
+
+- Complete Phase 2 clear-sky camera validation.
+- Use the IMU confidence evidence to design phone-to-telescope calibration.
+- Keep uploaded frames diagnostic until mobile captures solve reliably.
 
 See [ROADMAP.md](ROADMAP.md) for the phased PiFinder Mobile / PiFinder Lite
 development plan.

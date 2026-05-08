@@ -2,6 +2,38 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
+## Current Project Context
+
+This fork is adding PiFinder Lite / Mobile Companion capabilities while keeping
+classic PiFinder behavior intact by default. Treat mobile work as additive:
+new endpoints, optional flows, diagnostics, and documented runtime profiles
+should not disturb the original hardware mode unless explicitly requested.
+
+Current status:
+
+- Phase 1 Android compatibility tester is implemented.
+- Phase 3 PiFinder Lite headless/web remote workflow is implemented.
+- Phase 4 mobile bridge is implemented and Raspberry-validated.
+- Phase 2 night-sky camera validation remains the active evidence gate.
+
+Validated Phase 4 capabilities:
+
+- `/mobile/status`, `/mobile/profile`, `/mobile/gps`, `/mobile/imu`, and
+  `/mobile/camera_frame` exist.
+- Mobile GPS can feed PiFinder runtime state when the Android app sends GPS.
+- Mobile IMU batches are stored for diagnostics and confidence analysis.
+- Mobile JPEG upload is storage/diagnostic-only, with quality scoring and
+  diagnostic solve tooling.
+
+Guardrails:
+
+- Do not feed mobile camera solves into the integrator yet.
+- Do not feed mobile IMU into the integrator yet.
+- Keep mobile camera work diagnostic until Phase 2 produces reliable clear-sky
+  evidence.
+- Do not commit phone captures, generated analysis output, local paths, or
+  precise private GPS coordinates.
+
 ## Development Commands
 
 **Development workflow uses Nox for task automation:**
@@ -44,6 +76,34 @@ Usual startup:
 python3.9 -m PiFinder.main -fh --camera debug --keyboard local -x
 ```
 
+**PiFinder Lite Raspberry validation startup:**
+```bash
+cd ~/PiFinder_mobile_sensors/python
+source .venv/bin/activate
+python -m PiFinder.main -fh --camera debug --keyboard none -x
+```
+
+For Raspberry Pi OS Trixie / Python 3.13, use the Lite-specific install files:
+
+- `PiFinder_lite/raspberry_lite_install.md`
+- `PiFinder_lite/apt-packages-trixie-py313.txt`
+- `PiFinder_lite/requirements-trixie-py313.txt`
+
+**Android app:**
+```powershell
+cd mobile
+.\gradlew.bat assembleDebug
+```
+
+Opening the `mobile` folder in Android Studio is also supported. Do not run the
+Android Gradle Plugin upgrade assistant unless the task is specifically about
+upgrading the Android build.
+
+**Focused Lite/mobile tests:**
+```powershell
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_imu_analysis.py python\tests\test_lite_runtime_compat.py -q
+```
+
 ## Architecture Overview
 
 **Multi-Process Design:** PiFinder uses a process-based architecture where each major subsystem runs in its own process, communicating via queues and shared state objects:
@@ -84,6 +144,8 @@ python3.9 -m PiFinder.main -fh --camera debug --keyboard local -x
 - `python/tests/` - Test suite (smoke, unit, integration markers)
 - `case/` - 3D printable enclosure files
 - `docs/` - Documentation and build guides
+- `PiFinder_lite/` - Lite setup, validation runbooks, mobile camera/IMU tools
+- `mobile/` - Android companion app
 
 ## Configuration
 
@@ -99,6 +161,14 @@ python3.9 -m PiFinder.main -fh --camera debug --keyboard local -x
 - Input method: hardware keypad, local keyboard, web interface
 - GPS receiver: GPSD daemon vs direct UBlox protocol
 
+**PiFinder Lite Runtime Notes:**
+- Use `--keyboard none` for headless/mobile tests.
+- `/remote` remains the primary phone UI surface.
+- `/mobile/gps` is live runtime input once posted by the app.
+- `/mobile/imu` is currently diagnostic/confidence data only.
+- `/mobile/camera_frame` stores JPEGs for analysis; live solving is not wired
+  into the main runtime yet.
+
 ## Testing Strategy
 
 Tests use pytest with custom markers for different test types. The smoke tests provide quick validation while unit tests cover isolated functionality. Integration tests validate end-to-end workflows including the multi-process architecture.
@@ -109,6 +179,16 @@ Tests use pytest with custom markers for different test types. The smoke tests p
 - Menu structure and navigation logic
 - Multi-process logging and communication
 - Hardware interface abstractions
+- Mobile bridge endpoint behavior and storage
+- Raspberry/Python 3.13 Lite compatibility shims
+- Mobile IMU confidence analysis
+
+**Useful Raspberry diagnostics:**
+```bash
+python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
+python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
+python PiFinder_lite/analyze_mobile_imu.py --input "$HOME/PiFinder_data/mobile/imu_latest.json"
+```
 
 ## Code Quality
 
