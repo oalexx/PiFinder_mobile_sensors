@@ -136,6 +136,13 @@ Primary output:
 The schema above is intentionally a design sketch. Issue #45 should turn it
 into the canonical JSON example and storage rule.
 
+Canonical schema documentation and example:
+
+```text
+PiFinder_lite/documentation/mobile_mount_profile.md
+PiFinder_lite/configs/mobile_mount_profile.example.json
+```
+
 ## Failure Modes
 
 - Phone is not rigidly mounted.

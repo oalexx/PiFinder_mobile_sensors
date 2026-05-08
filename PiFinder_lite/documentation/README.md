@@ -44,3 +44,4 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | Document | Purpose |
 | --- | --- |
 | `phase5_mobile_telescope_calibration_design.md` | Mobile-to-telescope calibration design and runtime boundaries. |
+| `mobile_mount_profile.md` | Mount profile schema, storage path, lifecycle, and safety flags. |
