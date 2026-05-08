@@ -102,7 +102,9 @@ changing PiFinder pointing state.
 
 Acceptance:
 
-- A user can view calibrated mobile IMU diagnostic data when explicitly enabled.
+- Implemented by #50: Android Calibration exposes `CHECK PROFILE`, which reads
+  `GET /mobile/mount_profile` and displays the profile as a read-only overlay
+  status.
 - Classic PiFinder behavior is unchanged by default.
 - Profiles with invalid/uncalibrated status are not shown as usable.
 - Documentation and `upstream_change_log.md` are updated if original PiFinder

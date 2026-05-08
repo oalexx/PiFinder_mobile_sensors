@@ -445,6 +445,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button calibrationProfile = makeGridButton("Send Profile");
         calibrationProfile.setOnClickListener(v -> sendProfileToPiFinder());
         calibrationConnectionRow.addView(calibrationProfile);
+        Button calibrationCheckProfile = makeGridButton("Check Profile");
+        calibrationCheckProfile.setOnClickListener(v -> checkMobileMountProfile());
+        calibrationConnectionRow.addView(calibrationCheckProfile);
         LinearLayout calibrationDataRow = buttonRow();
         calibrationScreen.addView(calibrationDataRow);
         Button calibrationGps = makeGridButton("Send GPS");
@@ -999,6 +1002,22 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }).start();
     }
 
+    private void checkMobileMountProfile() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateCalibrationStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        updateCalibrationStatus("Checking mount profile\n" + baseUrl + "/mobile/mount_profile");
+        new Thread(() -> {
+            String message = getMobileMountProfile(baseUrl);
+            runOnUiThread(() -> updateCalibrationStatus(message));
+        }).start();
+    }
+
     private void sendGpsToPiFinder() {
         if (remoteUrlInput == null) {
             return;
@@ -1128,6 +1147,85 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.disconnect();
             }
         }
+    }
+
+    private String getMobileMountProfile(String baseUrl) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/mount_profile");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(4000);
+            connection.setRequestProperty("Accept", "application/json");
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Mount profile check failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+            }
+            JSONObject json = new JSONObject(body);
+            if (!json.optBoolean("ok", false)) {
+                return "Mount profile check failed\n/mobile/mount_profile returned ok=false.";
+            }
+            return formatMountProfileOverlay(json);
+        } catch (Exception e) {
+            return "Mount profile check failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String formatMountProfileOverlay(JSONObject json) {
+        JSONArray warnings = json.optJSONArray("warnings");
+        if (!json.optBoolean("profile_available", false)) {
+            return "Mount profile overlay\nNo profile available"
+                    + "\nWarnings: " + formatJsonStringArray(warnings)
+                    + "\nRead-only: true"
+                    + "\nIntegrator: blocked";
+        }
+
+        JSONObject profile = json.optJSONObject("profile");
+        if (profile == null) {
+            return "Mount profile overlay\nProfile payload missing"
+                    + "\nWarnings: " + formatJsonStringArray(warnings)
+                    + "\nRead-only: true"
+                    + "\nIntegrator: blocked";
+        }
+
+        JSONObject safety = profile.optJSONObject("safety");
+        JSONObject runtime = profile.optJSONObject("runtime");
+        JSONObject validation = profile.optJSONObject("validation");
+        boolean overlayCandidate = safety != null && safety.optBoolean("overlay_candidate", false);
+        boolean runtimeUsable = safety != null && safety.optBoolean("runtime_usable", false);
+        boolean readOnly = safety == null || safety.optBoolean("read_only", true);
+        boolean integratorBlocked = safety == null || safety.optBoolean("integrator_blocked", true);
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("Mount profile overlay\n");
+        builder.append("Profile: ").append(profile.optString("profile_id", "unknown")).append("\n");
+        builder.append("Status: ").append(profile.optString("status", "unknown")).append("\n");
+        builder.append("Phone: ").append(profile.optString("device_model", "unknown")).append("\n");
+        builder.append("Overlay candidate: ").append(overlayCandidate).append("\n");
+        builder.append("Runtime usable: ").append(runtimeUsable).append("\n");
+        builder.append("Read-only: ").append(readOnly).append("\n");
+        builder.append("Integrator blocked: ").append(integratorBlocked);
+        if (validation != null) {
+            builder.append("\nValidation: ").append(validation.optString("state", "unknown"));
+            if (!validation.isNull("max_repeat_error_deg")) {
+                builder.append("\nMax repeat error: ")
+                        .append(format(validation.optDouble("max_repeat_error_deg")))
+                        .append(" deg");
+            }
+        }
+        if (runtime != null) {
+            builder.append("\nGuidance flag: ")
+                    .append(runtime.optBoolean("allow_guidance_overlay", false));
+        }
+        builder.append("\nWarnings: ").append(formatJsonStringArray(warnings));
+        return builder.toString();
     }
 
     private String postMobileProfile(String baseUrl, String profileJson) {
@@ -1565,6 +1663,23 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } catch (JSONException e) {
             return body.length() > 160 ? body.substring(0, 160) : body;
         }
+    }
+
+    private String formatJsonStringArray(JSONArray array) {
+        if (array == null || array.length() == 0) {
+            return "none";
+        }
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            String value = array.optString(i, "").trim();
+            if (value.length() > 0) {
+                values.add(value);
+            }
+        }
+        if (values.isEmpty()) {
+            return "none";
+        }
+        return TextUtils.join(", ", values);
     }
 
     private String readHttpBody(HttpURLConnection connection, int status) throws IOException {

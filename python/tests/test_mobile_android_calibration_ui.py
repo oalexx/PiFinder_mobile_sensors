@@ -29,3 +29,16 @@ def test_android_calibration_screen_exposes_all_phase5_batch_labels():
     assert 'makeGridButton("Repeat Check")' in source
     assert "private boolean isCalibrationBatchLabel(String batchLabel)" in source
     assert "updateCalibrationStatus(message)" in source
+
+
+def test_android_calibration_screen_exposes_read_only_mount_profile_overlay():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert 'makeGridButton("Check Profile")' in source
+    assert "checkMobileMountProfile()" in source
+    assert '"/mobile/mount_profile"' in source
+    assert "formatMountProfileOverlay" in source
+    assert '"overlay_candidate"' in source
+    assert '"runtime_usable"' in source
+    assert '"read_only"' in source
+    assert "updateCalibrationStatus(message)" in source

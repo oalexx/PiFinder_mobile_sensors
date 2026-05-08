@@ -108,6 +108,8 @@ Available actions:
 
 - `TEST CONNECTION`: checks the saved PiFinder base URL.
 - `SEND PROFILE`: uploads the current phone capability profile.
+- `CHECK PROFILE`: reads `GET /mobile/mount_profile` and shows the mounted
+  profile as a read-only overlay/status card.
 - `SEND GPS`: uploads the current Android location.
 - `STATIONARY`: uploads a labeled `stationary` IMU batch while the mounted
   phone and tube remain still.
@@ -121,6 +123,10 @@ Available actions:
 Use the reference field for the star/object/manual pointing note used during
 the capture. The flow is intentionally manual and diagnostic-only; the uploaded
 batches do not feed PiFinder pointing or the integrator.
+
+`CHECK PROFILE` is also diagnostic-only. It can show whether the loaded mount
+profile is an overlay candidate, but `runtime_usable` remains false during
+Phase 5 and the integrator stays blocked.
 
 ## Why This Exists
 
