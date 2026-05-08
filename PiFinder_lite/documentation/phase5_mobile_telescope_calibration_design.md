@@ -86,6 +86,9 @@ Implementation note:
 - Android `SEND IMU BATCH` sends `batch_label: diagnostic`.
 - Android `MOUNT REF IMU` sends `batch_label: mounted_reference` and should be
   captured while the mounted phone and telescope tube are still.
+- Android `CALIBRATION` provides the first guided collection screen with
+  connection check, profile/GPS upload, manual reference note, mounted-reference
+  capture, and copied evidence JSON.
 - PiFinder stores the accepted label in
   `~/PiFinder_data/mobile/imu_latest.json`, and `analyze_mobile_imu.py`
   includes the label in its report.

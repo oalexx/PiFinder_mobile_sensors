@@ -142,16 +142,20 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private LinearLayout cameraScreen;
     private LinearLayout historyScreen;
     private LinearLayout remoteScreen;
+    private LinearLayout calibrationScreen;
     private LinearLayout remoteWebScreen;
     private LinearLayout rootLayout;
     private TextView titleView;
     private TextView subtitleView;
     private EditText remoteUrlInput;
     private TextView remoteStatusView;
+    private TextView calibrationStatusView;
+    private EditText calibrationTargetInput;
     private WebView remoteWebView;
     private String latestCheckResult = "";
     private String latestProfileJson = "";
     private String latestHistoryJson = "";
+    private String latestCalibrationEvidenceJson = "";
     private String latestReport = "";
     private String latestReadinessGrade = "NOT RUN";
     private int latestReadinessPercent = -1;
@@ -242,6 +246,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     @Override
     public void onBackPressed() {
+        if (calibrationScreen != null && calibrationScreen.getVisibility() == View.VISIBLE) {
+            showScreen("home");
+            return;
+        }
         if (remoteScreen != null && remoteScreen.getVisibility() == View.VISIBLE) {
             showScreen("home");
             return;
@@ -300,6 +308,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button remoteNav = makeHeroButton("PIFINDER REMOTE", "Open the existing PiFinder web remote inside the app");
         remoteNav.setOnClickListener(v -> showScreen("remote"));
         homeScreen.addView(remoteNav);
+        Button calibrationNav = makeHeroButton("CALIBRATION", "Collect mounted phone reference evidence");
+        calibrationNav.setOnClickListener(v -> showScreen("calibration"));
+        homeScreen.addView(calibrationNav);
 
         capabilitiesScreen = screenContainer();
         root.addView(capabilitiesScreen);
@@ -309,6 +320,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(historyScreen);
         remoteScreen = screenContainer();
         root.addView(remoteScreen);
+        calibrationScreen = screenContainer();
+        root.addView(calibrationScreen);
         remoteWebScreen = screenContainer();
         root.addView(remoteWebScreen);
 
@@ -418,6 +431,34 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         sendMountReferenceImu.setOnClickListener(v -> sendImuBatchToPiFinder("mounted_reference"));
         remoteImuRow.addView(sendMountReferenceImu);
 
+        addBackRow(calibrationScreen);
+        addSectionHeader(calibrationScreen, "01", "CALIBRATION", "Collect phone-to-telescope reference evidence.");
+        calibrationStatusView = statusCard();
+        calibrationScreen.addView(calibrationStatusView);
+        calibrationTargetInput = makeTextInput("Reference target or note");
+        calibrationScreen.addView(calibrationTargetInput);
+        LinearLayout calibrationConnectionRow = buttonRow();
+        calibrationScreen.addView(calibrationConnectionRow);
+        Button calibrationTestConnection = makeGridButton("Test Connection");
+        calibrationTestConnection.setOnClickListener(v -> testPiFinderConnection());
+        calibrationConnectionRow.addView(calibrationTestConnection);
+        Button calibrationProfile = makeGridButton("Send Profile");
+        calibrationProfile.setOnClickListener(v -> sendProfileToPiFinder());
+        calibrationConnectionRow.addView(calibrationProfile);
+        LinearLayout calibrationDataRow = buttonRow();
+        calibrationScreen.addView(calibrationDataRow);
+        Button calibrationGps = makeGridButton("Send GPS");
+        calibrationGps.setOnClickListener(v -> sendGpsToPiFinder());
+        calibrationDataRow.addView(calibrationGps);
+        Button calibrationMountReference = makeGridButton("Capture Mount Ref");
+        calibrationMountReference.setOnClickListener(v -> sendCalibrationMountReferenceBatch());
+        calibrationDataRow.addView(calibrationMountReference);
+        LinearLayout calibrationEvidenceRow = buttonRow();
+        calibrationScreen.addView(calibrationEvidenceRow);
+        Button copyCalibrationEvidence = makeGridButton("Copy Evidence");
+        copyCalibrationEvidence.setOnClickListener(v -> copyCalibrationEvidence());
+        calibrationEvidenceRow.addView(copyCalibrationEvidence);
+
         addRemoteWebToolbar(remoteWebScreen);
         remoteWebView = makeRemoteWebView();
         remoteWebScreen.addView(remoteWebView);
@@ -490,6 +531,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         updateHomeStatus();
         updateHistoryView();
         updateRemoteStatus("Enter the PiFinder base URL, then open the remote.");
+        updateCalibrationStatus("Mount the phone rigidly, choose a reference, then capture Mount Ref IMU.");
 
         return scrollView;
     }
@@ -516,7 +558,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private void showScreen(String screenName) {
         if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null
-                || historyScreen == null || remoteScreen == null || remoteWebScreen == null) {
+                || historyScreen == null || remoteScreen == null || calibrationScreen == null
+                || remoteWebScreen == null) {
             return;
         }
         currentScreenName = screenName;
@@ -525,6 +568,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraScreen.setVisibility("camera".equals(screenName) ? View.VISIBLE : View.GONE);
         historyScreen.setVisibility("history".equals(screenName) ? View.VISIBLE : View.GONE);
         remoteScreen.setVisibility("remote".equals(screenName) ? View.VISIBLE : View.GONE);
+        calibrationScreen.setVisibility("calibration".equals(screenName) ? View.VISIBLE : View.GONE);
         remoteWebScreen.setVisibility("remoteWeb".equals(screenName) ? View.VISIBLE : View.GONE);
         boolean fullRemote = "remoteWeb".equals(screenName);
         titleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
@@ -805,6 +849,25 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return input;
     }
 
+    private EditText makeTextInput(String hint) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(COLOR_TEXT);
+        input.setHintTextColor(COLOR_MUTED);
+        input.setHint(hint);
+        input.setTextSize(14);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setPadding(dp(14), 0, dp(14), 0);
+        input.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 4));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(52)
+        );
+        params.setMargins(0, dp(10), 0, dp(10));
+        input.setLayoutParams(params);
+        return input;
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private WebView makeRemoteWebView() {
         WebView webView = new WebView(this);
@@ -992,6 +1055,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             updateRemoteStatus("Capturing IMU\nMove the phone gently for two seconds.");
         }
         mainHandler.postDelayed(() -> finishImuBatchCapture("timeout"), IMU_BATCH_CAPTURE_MS);
+    }
+
+    private void sendCalibrationMountReferenceBatch() {
+        updateCalibrationEvidenceJson("mounted_reference");
+        updateCalibrationStatus(
+                "Capturing mounted reference\nKeep the phone and telescope tube still."
+        );
+        sendImuBatchToPiFinder("mounted_reference");
     }
 
     private String saveRemoteBaseUrlFromInput() {
@@ -1524,6 +1595,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         if (remoteStatusView != null) {
             remoteStatusView.setText("Remote\n" + message);
         }
+        if (calibrationStatusView != null && "calibration".equals(currentScreenName)) {
+            updateCalibrationStatus(message);
+        }
+    }
+
+    private void updateCalibrationStatus(String message) {
+        if (calibrationStatusView != null) {
+            calibrationStatusView.setText("Calibration\n" + message);
+        }
     }
 
     private TextView readinessBadge() {
@@ -1715,6 +1795,40 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         device.put("android_release", android.os.Build.VERSION.RELEASE);
         device.put("android_api", android.os.Build.VERSION.SDK_INT);
         return device;
+    }
+
+    private String buildCalibrationEvidenceJson(String batchLabel) {
+        try {
+            JSONObject evidence = new JSONObject();
+            evidence.put("schema", "pifinder-mobile-calibration-evidence-v0");
+            evidence.put("created_utc", utcIso(System.currentTimeMillis()));
+            evidence.put("reference_target", calibrationReferenceText());
+            evidence.put("batch_label", batchLabel);
+            evidence.put("expected_imu_endpoint", "/mobile/imu");
+            evidence.put("remote_base_url", normalizeRemoteBaseUrl(loadRemoteBaseUrl()));
+            evidence.put("app", appJson());
+            evidence.put("device", deviceJson());
+            evidence.put("readiness", readinessJson());
+            if (latestLocation != null) {
+                evidence.put("location", locationJson());
+            }
+            evidence.put("screen_orientation", screenOrientationName());
+            return evidence.toString(2);
+        } catch (JSONException e) {
+            return "{\"error\":\"calibration_evidence_failed\",\"message\":\""
+                    + e.getMessage() + "\"}";
+        }
+    }
+
+    private String calibrationReferenceText() {
+        if (calibrationTargetInput == null) {
+            return "";
+        }
+        return calibrationTargetInput.getText().toString().trim();
+    }
+
+    private void updateCalibrationEvidenceJson(String batchLabel) {
+        latestCalibrationEvidenceJson = buildCalibrationEvidenceJson(batchLabel);
     }
 
     private JSONObject readinessJson() throws JSONException {
@@ -2622,6 +2736,17 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder check history JSON", latestHistoryJson));
         Toast.makeText(this, "Check history copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void copyCalibrationEvidence() {
+        updateCalibrationEvidenceJson("mounted_reference");
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText(
+                "PiFinder calibration evidence JSON",
+                latestCalibrationEvidenceJson
+        ));
+        updateCalibrationStatus("Evidence copied\nReference: " + calibrationReferenceText());
+        Toast.makeText(this, "Calibration evidence copied", Toast.LENGTH_SHORT).show();
     }
 
     private void pickOutputFolder() {

@@ -17,6 +17,7 @@ Current validated bridge status:
 - `SEND IMU BATCH` stores a short diagnostic batch for confidence analysis.
 - `MOUNT REF IMU` stores a labeled `mounted_reference` calibration batch.
 - `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
+- `CALIBRATION` starts the Phase 5 phone-to-telescope evidence flow.
 
 Camera and IMU data are still diagnostic paths. Live mobile camera solving and
 mobile IMU integration are intentionally deferred until later phases.
@@ -96,6 +97,23 @@ Available actions:
 The embedded remote is a wrapper around the existing PiFinder web UI. If layout
 issues appear, compare it with the same URL in a normal browser before changing
 PiFinder server-side CSS.
+
+### Calibration
+
+Collects Phase 5 phone-to-telescope evidence without enabling mobile IMU
+pointing.
+
+Available actions:
+
+- `TEST CONNECTION`: checks the saved PiFinder base URL.
+- `SEND PROFILE`: uploads the current phone capability profile.
+- `SEND GPS`: uploads the current Android location.
+- `CAPTURE MOUNT REF`: uploads a labeled `mounted_reference` IMU batch.
+- `COPY EVIDENCE`: copies a calibration evidence JSON with the reference note,
+  app/device metadata, readiness, optional location, and expected batch label.
+
+Use the reference field for the star/object/manual pointing note used during
+the capture. The first version is intentionally manual and diagnostic-only.
 
 ## Why This Exists
 
