@@ -102,7 +102,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int SWEEP_FRAMES_PER_ISO = 8;
     private static final int RAW_BURST_FRAMES = 12;
     private static final int DAY_TEST_FRAMES = 8;
-    private static final int IMU_BATCH_TARGET_SAMPLES = 24;
+    private static final int IMU_BATCH_MAX_SAMPLES = 256;
     private static final int IMU_BATCH_CAPTURE_MS = 2000;
     private static final int COLOR_BG = Color.rgb(3, 5, 10);
     private static final int COLOR_PANEL = Color.rgb(17, 20, 28);
@@ -2475,8 +2475,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             imuBatchSamples.put(sample);
         } catch (JSONException ignored) {
         }
-        if (imuBatchSamples.length() >= IMU_BATCH_TARGET_SAMPLES) {
-            finishImuBatchCapture("target");
+        if (imuBatchSamples.length() >= IMU_BATCH_MAX_SAMPLES) {
+            finishImuBatchCapture("max_samples");
         }
     }
 
