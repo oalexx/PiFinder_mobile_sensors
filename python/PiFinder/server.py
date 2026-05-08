@@ -242,6 +242,8 @@ class Server:
                 mobile_bridge.GPS_LATEST_FILENAME,
                 gps_payload,
             )
+            self.gps_queue.put(("fix", mobile_bridge.mobile_gps_queue_fix(gps_fix)))
+            self.gps_queue.put(("time", mobile_bridge.mobile_gps_queue_time(gps_fix)))
             return {
                 "ok": True,
                 "api": mobile_bridge.API_VERSION,

@@ -18,6 +18,7 @@ IMU_LATEST_FILENAME = "imu_latest.json"
 MAX_IMU_SAMPLES = 512
 FRAMES_DIRNAME = "frames"
 MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
+DEFAULT_MOBILE_GPS_ERROR_M = 9999
 
 
 def utc_now_iso() -> str:
@@ -188,6 +189,35 @@ def gps_payload(gps_fix: Dict[str, Any]) -> Dict[str, Any]:
         "received_utc": utc_now_iso(),
         "gps": gps_fix,
     }
+
+
+def mobile_gps_queue_fix(gps_fix: Dict[str, Any]) -> Dict[str, Any]:
+    source = str(gps_fix.get("source") or "mobile").strip() or "mobile"
+    altitude = gps_fix.get("altitude_m")
+    accuracy = gps_fix.get("accuracy_m")
+    queue_fix = {
+        "lat": gps_fix["lat"],
+        "lon": gps_fix["lon"],
+        "altitude": 0 if altitude is None else altitude,
+        "source": f"MOBILE:{source}",
+        "error_in_m": DEFAULT_MOBILE_GPS_ERROR_M if accuracy is None else accuracy,
+        "lock": True,
+        "lock_type": 2,
+        "time_utc": gps_fix["time_utc"],
+    }
+    if "provider" in gps_fix:
+        queue_fix["provider"] = gps_fix["provider"]
+    return queue_fix
+
+
+def mobile_gps_queue_time(gps_fix: Dict[str, Any]) -> datetime:
+    time_utc = str(gps_fix["time_utc"]).strip()
+    if time_utc.endswith("Z"):
+        time_utc = time_utc[:-1] + "+00:00"
+    gps_time = datetime.fromisoformat(time_utc)
+    if gps_time.tzinfo is None:
+        gps_time = gps_time.replace(tzinfo=timezone.utc)
+    return gps_time.astimezone(timezone.utc)
 
 
 def validate_imu_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
