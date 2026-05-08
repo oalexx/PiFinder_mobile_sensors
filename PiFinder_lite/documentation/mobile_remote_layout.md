@@ -14,7 +14,7 @@ Files changed:
 - `python/views/header.tpl`
 - `python/views/remote.tpl`
 - `python/views/css/style.css`
-- `PiFinder_lite/upstream_change_log.md`
+- `PiFinder_lite/documentation/upstream_change_log.md`
 
 The layout update:
 

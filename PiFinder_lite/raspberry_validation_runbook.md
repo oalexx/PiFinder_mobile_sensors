@@ -47,7 +47,7 @@ Comprueba que existen estos archivos:
 ```bash
 ls PiFinder_lite/score_mobile_frame.py
 ls PiFinder_lite/diagnostic_solve_mobile_frame.py
-ls PiFinder_lite/mobile_bridge_api_v0.md
+ls PiFinder_lite/documentation/mobile_bridge_api_v0.md
 ```
 
 ## 2. Preparar Entorno Python En Trixie
@@ -117,7 +117,7 @@ de `h3` durante la validacion.
 Estos cambios estan documentados en:
 
 ```text
-PiFinder_lite/upstream_change_log.md
+PiFinder_lite/documentation/upstream_change_log.md
 ```
 
 ## 6. Validar Importaciones

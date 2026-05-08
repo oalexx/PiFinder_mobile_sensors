@@ -171,7 +171,7 @@ flowchart TD
 - Persist debug payloads, but do not silently apply them to PiFinder state.
 - Add flags/config before any mobile GPS or IMU data affects live behavior.
 - Document every original PiFinder code change in
-  `PiFinder_lite/upstream_change_log.md`.
+  `PiFinder_lite/documentation/upstream_change_log.md`.
 - Prefer small endpoint/helper changes over rewiring existing processes.
 
 ## Next Best Issue

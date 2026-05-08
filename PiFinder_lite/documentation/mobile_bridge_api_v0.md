@@ -510,7 +510,7 @@ Risks to revisit:
 - Use `~/PiFinder_data/mobile/` for received mobile bridge data.
 - Do not alter classic startup defaults.
 - Record every original PiFinder code change in
-  `PiFinder_lite/upstream_change_log.md`.
+  `PiFinder_lite/documentation/upstream_change_log.md`.
 
 ## Phase 4 Order
 

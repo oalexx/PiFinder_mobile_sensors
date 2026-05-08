@@ -28,7 +28,7 @@ Files:
 
 - `python/PiFinder/keyboard_none.py`
 - `python/tests/test_keyboard_none.py`
-- `PiFinder_lite/keyboard_none_validation.md`
+- `PiFinder_lite/documentation/keyboard_none_validation.md`
 
 Reason:
 
@@ -81,7 +81,7 @@ Result:
 
 A local startup test with `--keyboard none` also stayed alive for 25 seconds
 after bypassing a Windows-only logging config issue documented in
-`PiFinder_lite/keyboard_none_validation.md`.
+`PiFinder_lite/documentation/keyboard_none_validation.md`.
 
 Status:
 
@@ -131,7 +131,7 @@ Files:
 - `python/views/header.tpl`
 - `python/views/remote.tpl`
 - `python/views/css/style.css`
-- `PiFinder_lite/remote_endpoint_validation.md`
+- `PiFinder_lite/documentation/remote_endpoint_validation.md`
 
 Reason:
 
@@ -224,7 +224,7 @@ Keep if device validation confirms the embedded view is more usable.
 Files:
 
 - `python/PiFinder/server.py`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
 - `PiFinder_lite/validate_remote_endpoints.py`
 
 Reason:
@@ -263,7 +263,7 @@ Files:
 
 - `python/PiFinder/mobile_bridge.py`
 - `python/PiFinder/server.py`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
 
 Reason:
 
@@ -301,7 +301,7 @@ Files:
 
 - `python/PiFinder/server.py`
 - `python/PiFinder/mobile_bridge.py`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
 - `PiFinder_lite/validate_remote_endpoints.py`
 
 Reason:
@@ -341,7 +341,7 @@ Files:
 
 - `python/PiFinder/server.py`
 - `python/PiFinder/mobile_bridge.py`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
 - `PiFinder_lite/validate_remote_endpoints.py`
 
 Reason:
@@ -382,7 +382,7 @@ Files:
 
 - `python/PiFinder/server.py`
 - `python/PiFinder/mobile_bridge.py`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
 - `PiFinder_lite/validate_remote_endpoints.py`
 
 Reason:
@@ -425,7 +425,7 @@ Files:
 
 - `python/PiFinder/server.py`
 - `python/PiFinder/mobile_bridge.py`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
 - `PiFinder_lite/validate_remote_endpoints.py`
 
 Reason:
@@ -462,8 +462,8 @@ Files:
 - `python/PiFinder/server.py`
 - `python/PiFinder/mobile_bridge.py`
 - `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
-- `PiFinder_lite/mobile_bridge_api_v0.md`
-- `PiFinder_lite/mobile_camera_frame_upload.md`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_camera_frame_upload.md`
 - `PiFinder_lite/validate_remote_endpoints.py`
 
 Why:
@@ -515,7 +515,7 @@ diagnostic solving, while preserving classic PiFinder behavior.
 Files:
 
 - `PiFinder_lite/analyze_phase2_camera.py`
-- `PiFinder_lite/phase4_dependency_map.md`
+- `PiFinder_lite/documentation/phase4_dependency_map.md`
 
 Generated local output:
 
@@ -575,8 +575,8 @@ noisy ISO 3200 candidates for the tested Samsung run.
 Files:
 
 - `PiFinder_lite/score_mobile_frame.py`
-- `PiFinder_lite/mobile_frame_quality_score.md`
-- `PiFinder_lite/phase4_dependency_map.md`
+- `PiFinder_lite/documentation/mobile_frame_quality_score.md`
+- `PiFinder_lite/documentation/phase4_dependency_map.md`
 
 Generated local output:
 
@@ -633,8 +633,8 @@ diagnostic solving.
 Files:
 
 - `PiFinder_lite/diagnostic_solve_mobile_frame.py`
-- `PiFinder_lite/mobile_frame_diagnostic_solve.md`
-- `PiFinder_lite/phase4_dependency_map.md`
+- `PiFinder_lite/documentation/mobile_frame_diagnostic_solve.md`
+- `PiFinder_lite/documentation/phase4_dependency_map.md`
 
 Generated local output:
 
@@ -699,9 +699,9 @@ path decision.
 
 Files:
 
-- `PiFinder_lite/mobile_camera_solver_path_decision.md`
-- `PiFinder_lite/phase4_dependency_map.md`
-- `PiFinder_lite/upstream_change_log.md`
+- `PiFinder_lite/documentation/mobile_camera_solver_path_decision.md`
+- `PiFinder_lite/documentation/phase4_dependency_map.md`
+- `PiFinder_lite/documentation/upstream_change_log.md`
 
 Why:
 
@@ -748,9 +748,9 @@ Files:
 - `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
 - `PiFinder_lite/README.md`
 - `PiFinder_lite/raspberry_lite_install.md`
-- `PiFinder_lite/mobile_camera_profile.md`
+- `PiFinder_lite/documentation/mobile_camera_profile.md`
 - `PiFinder_lite/configs/mobile_camera_profile.samsung_sm-s948b.example.json`
-- `PiFinder_lite/upstream_change_log.md`
+- `PiFinder_lite/documentation/upstream_change_log.md`
 
 Why:
 

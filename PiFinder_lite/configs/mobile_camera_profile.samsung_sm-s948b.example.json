@@ -6,7 +6,7 @@
     "phase2_analysis": "PiFinder_lite/phase2_camera_analysis/phase2_camera_analysis.md",
     "quality_score": "PiFinder_lite/phase2_camera_analysis/mobile_frame_quality_scores.md",
     "diagnostic_solve": "PiFinder_lite/phase2_camera_analysis/mobile_frame_diagnostic_solves.md",
-    "decision_doc": "PiFinder_lite/mobile_camera_solver_path_decision.md"
+    "decision_doc": "PiFinder_lite/documentation/mobile_camera_solver_path_decision.md"
   },
   "device": {
     "manufacturer": "samsung",
@@ -58,8 +58,8 @@
     "integrator_feed_allowed": false
   },
   "next_validation": {
-    "issue": 42,
-    "needs_raspberry_upload_test": true,
+    "issue": "Phase 2 clear-sky validation",
+    "needs_raspberry_upload_test": false,
     "needs_clear_sky_repeat": true,
     "needs_fixed_mount_repeat": true
   }

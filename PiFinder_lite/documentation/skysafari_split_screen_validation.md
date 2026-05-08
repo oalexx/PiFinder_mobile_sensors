@@ -111,7 +111,7 @@ Exact labels vary between SkySafari versions.
 - `/remote` has already been validated from an Android phone browser using the
   development PC server.
 - The mobile remote layout has been improved and documented in
-  `PiFinder_lite/mobile_remote_layout.md`.
+  `PiFinder_lite/documentation/mobile_remote_layout.md`.
 - This issue still needs a real SkySafari app validation because the app itself
   is not available in the local automation environment.
 

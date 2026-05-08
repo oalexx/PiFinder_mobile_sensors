@@ -32,7 +32,7 @@ The mode runs:
 
 For Samsung `SM-S948B`, the app prefers rear `cameraId=2`, based on the
 successful Phase 2 solves documented in
-`PiFinder_lite/phase2_camera_id_recommendation.md`.
+`PiFinder_lite/documentation/phase2_camera_id_recommendation.md`.
 
 If that camera ID is not available or is not rear-facing, the app falls back to
 the existing best rear-camera selection.

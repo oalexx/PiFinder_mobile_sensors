@@ -57,7 +57,7 @@ Meaning:
 Decision record:
 
 ```text
-PiFinder_lite/mobile_camera_solver_path_decision.md
+PiFinder_lite/documentation/mobile_camera_solver_path_decision.md
 ```
 
 ## Quick Start On Raspberry
@@ -108,6 +108,10 @@ python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_da
 
 ## Documentation Map
 
+The root of `PiFinder_lite/` is kept for active setup files and executable
+diagnostic tools. Longer design notes, validation history, and decision records
+live under `documentation/`.
+
 ### Setup And Runtime
 
 | Document | Purpose |
@@ -116,35 +120,35 @@ python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_da
 | `raspberry_validation_runbook.md` | Step-by-step #42 validation manual. |
 | `apt-packages-trixie-py313.txt` | Raspberry Pi OS Trixie system packages for Lite validation. |
 | `requirements-trixie-py313.txt` | Pip requirements for the Trixie/Python 3.13 Lite venv. |
-| `lite_config_profile.md` | Optional Lite config profile and startup flags. |
-| `keyboard_none_validation.md` | No-keyboard/headless validation notes. |
-| `remote_endpoint_validation.md` | `/remote`, `/image`, `/key_callback` validation. |
-| `android_webview_remote.md` | Android WebView remote behavior. |
-| `mobile_remote_layout.md` | Mobile-friendly `/remote` layout notes. |
-| `skysafari_split_screen_validation.md` | SkySafari split-screen workflow. |
+| `documentation/lite_config_profile.md` | Optional Lite config profile and startup flags. |
+| `documentation/keyboard_none_validation.md` | No-keyboard/headless validation notes. |
+| `documentation/remote_endpoint_validation.md` | `/remote`, `/image`, `/key_callback` validation. |
+| `documentation/android_webview_remote.md` | Android WebView remote behavior. |
+| `documentation/mobile_remote_layout.md` | Mobile-friendly `/remote` layout notes. |
+| `documentation/skysafari_split_screen_validation.md` | SkySafari split-screen workflow. |
 
 ### Mobile Bridge
 
 | Document | Purpose |
 | --- | --- |
-| `mobile_bridge_api_v0.md` | API contract for `/mobile/*` endpoints. |
-| `mobile_camera_frame_upload.md` | Storage-only JPEG upload flow. |
-| `phase4_dependency_map.md` | Issue dependency order and current gates. |
-| `upstream_change_log.md` | Changes to original PiFinder and why. |
+| `documentation/mobile_bridge_api_v0.md` | API contract for `/mobile/*` endpoints. |
+| `documentation/mobile_camera_frame_upload.md` | Storage-only JPEG upload flow. |
+| `documentation/phase4_dependency_map.md` | Issue dependency order and current gates. |
+| `documentation/upstream_change_log.md` | Changes to original PiFinder and why. |
 | `phase4_imu_analysis/mobile_imu_confidence.md` | Generated local IMU analysis output. |
 
 ### Camera Evidence
 
 | Document | Purpose |
 | --- | --- |
-| `phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
-| `phase2_day_test_validation.md` | Day Test validation notes. |
-| `phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
-| `solve_candidate_burst.md` | Android burst mode tuned for solving. |
-| `mobile_frame_quality_score.md` | Quality score rules and usage. |
-| `mobile_frame_diagnostic_solve.md` | Diagnostic solve workflow. |
-| `mobile_camera_solver_path_decision.md` | Product/technical decision for solver path. |
-| `mobile_camera_profile.md` | Per-device recommendation profile format. |
+| `documentation/phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
+| `documentation/phase2_day_test_validation.md` | Day Test validation notes. |
+| `documentation/phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
+| `documentation/solve_candidate_burst.md` | Android burst mode tuned for solving. |
+| `documentation/mobile_frame_quality_score.md` | Quality score rules and usage. |
+| `documentation/mobile_frame_diagnostic_solve.md` | Diagnostic solve workflow. |
+| `documentation/mobile_camera_solver_path_decision.md` | Product/technical decision for solver path. |
+| `documentation/mobile_camera_profile.md` | Per-device recommendation profile format. |
 
 ### Tools
 
