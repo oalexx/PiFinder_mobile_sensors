@@ -450,9 +450,17 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button calibrationGps = makeGridButton("Send GPS");
         calibrationGps.setOnClickListener(v -> sendGpsToPiFinder());
         calibrationDataRow.addView(calibrationGps);
-        Button calibrationMountReference = makeGridButton("Capture Mount Ref");
-        calibrationMountReference.setOnClickListener(v -> sendCalibrationMountReferenceBatch());
-        calibrationDataRow.addView(calibrationMountReference);
+        Button calibrationStationary = makeGridButton("Stationary");
+        calibrationStationary.setOnClickListener(v -> sendCalibrationImuBatch("stationary"));
+        calibrationDataRow.addView(calibrationStationary);
+        LinearLayout calibrationBatchRow = buttonRow();
+        calibrationScreen.addView(calibrationBatchRow);
+        Button calibrationMountReference = makeGridButton("Mount Ref");
+        calibrationMountReference.setOnClickListener(v -> sendCalibrationImuBatch("mounted_reference"));
+        calibrationBatchRow.addView(calibrationMountReference);
+        Button calibrationRepeatCheck = makeGridButton("Repeat Check");
+        calibrationRepeatCheck.setOnClickListener(v -> sendCalibrationImuBatch("repeat_check"));
+        calibrationBatchRow.addView(calibrationRepeatCheck);
         LinearLayout calibrationEvidenceRow = buttonRow();
         calibrationScreen.addView(calibrationEvidenceRow);
         Button copyCalibrationEvidence = makeGridButton("Copy Evidence");
@@ -531,7 +539,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         updateHomeStatus();
         updateHistoryView();
         updateRemoteStatus("Enter the PiFinder base URL, then open the remote.");
-        updateCalibrationStatus("Mount the phone rigidly, choose a reference, then capture Mount Ref IMU.");
+        updateCalibrationStatus(
+                "Mount the phone rigidly, choose a reference, then capture Stationary, Mount Ref, and Repeat Check."
+        );
 
         return scrollView;
     }
@@ -1057,12 +1067,20 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         mainHandler.postDelayed(() -> finishImuBatchCapture("timeout"), IMU_BATCH_CAPTURE_MS);
     }
 
-    private void sendCalibrationMountReferenceBatch() {
-        updateCalibrationEvidenceJson("mounted_reference");
-        updateCalibrationStatus(
-                "Capturing mounted reference\nKeep the phone and telescope tube still."
-        );
-        sendImuBatchToPiFinder("mounted_reference");
+    private void sendCalibrationImuBatch(String batchLabel) {
+        updateCalibrationEvidenceJson(batchLabel);
+        updateCalibrationStatus(calibrationCaptureStatus(batchLabel));
+        sendImuBatchToPiFinder(batchLabel);
+    }
+
+    private String calibrationCaptureStatus(String batchLabel) {
+        if ("stationary".equals(batchLabel)) {
+            return "Capturing stationary baseline\nKeep the mounted phone and telescope tube still.";
+        }
+        if ("repeat_check".equals(batchLabel)) {
+            return "Capturing repeat check\nReturn to the same reference and keep the tube still.";
+        }
+        return "Capturing mounted reference\nKeep the phone and telescope tube still.";
     }
 
     private String saveRemoteBaseUrlFromInput() {
@@ -1223,12 +1241,27 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return gps.toString();
     }
 
-    private void postImuBatchToPiFinder(String baseUrl, String imuJson) {
-        updateRemoteStatus("Sending IMU batch\n" + baseUrl + "/mobile/imu");
+    private void postImuBatchToPiFinder(String baseUrl, String imuJson, String batchLabel) {
+        String sendingMessage = "Sending IMU batch\nLabel: " + batchLabel + "\n" + baseUrl + "/mobile/imu";
+        updateRemoteStatus(sendingMessage);
+        if (isCalibrationBatchLabel(batchLabel)) {
+            updateCalibrationStatus(sendingMessage);
+        }
         new Thread(() -> {
             String message = postMobileImu(baseUrl, imuJson);
-            runOnUiThread(() -> updateRemoteStatus(message));
+            runOnUiThread(() -> {
+                updateRemoteStatus(message);
+                if (isCalibrationBatchLabel(batchLabel)) {
+                    updateCalibrationStatus(message);
+                }
+            });
         }).start();
+    }
+
+    private boolean isCalibrationBatchLabel(String batchLabel) {
+        return "stationary".equals(batchLabel)
+                || "mounted_reference".equals(batchLabel)
+                || "repeat_check".equals(batchLabel);
     }
 
     private String postMobileImu(String baseUrl, String imuJson) {
@@ -2632,9 +2665,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         if (imuBatchSamples.length() == 0) {
+            String failedLabel = pendingImuBatchLabel;
             pendingImuBaseUrl = "";
             pendingImuBatchLabel = "diagnostic";
-            updateRemoteStatus("IMU unavailable\nNo orientation samples arrived.");
+            String message = "IMU unavailable\nNo orientation samples arrived.";
+            updateRemoteStatus(message);
+            if (isCalibrationBatchLabel(failedLabel)) {
+                updateCalibrationStatus(message);
+            }
             return;
         }
         String baseUrl = pendingImuBaseUrl;
@@ -2648,9 +2686,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                             + "\nSamples: " + imuBatchSamples.length()
                             + "\nReason: " + reason
             );
-            postImuBatchToPiFinder(baseUrl, imuJson);
+            postImuBatchToPiFinder(baseUrl, imuJson, batchLabel);
         } catch (JSONException e) {
-            updateRemoteStatus("IMU send failed\nCould not build IMU JSON.");
+            String message = "IMU send failed\nCould not build IMU JSON.";
+            updateRemoteStatus(message);
+            if (isCalibrationBatchLabel(batchLabel)) {
+                updateCalibrationStatus(message);
+            }
         } finally {
             clearImuBatchSamples();
         }

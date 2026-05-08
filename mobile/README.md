@@ -15,7 +15,8 @@ Current validated bridge status:
 - `SEND PROFILE` posts the structured phone profile.
 - `SEND GPS` can feed the running PiFinder process.
 - `SEND IMU BATCH` stores a short diagnostic batch for confidence analysis.
-- `MOUNT REF IMU` stores a labeled `mounted_reference` calibration batch.
+- `CALIBRATION` stores labeled `stationary`, `mounted_reference`, and
+  `repeat_check` IMU batches.
 - `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
 - `CALIBRATION` starts the Phase 5 phone-to-telescope evidence flow.
 
@@ -92,7 +93,7 @@ Available actions:
 - `SEND GPS`: posts the current Android location to PiFinder.
 - `SEND IMU BATCH`: captures and uploads a short rotation-vector batch.
 - `MOUNT REF IMU`: captures a still phone/tube reference batch for Phase 5
-  calibration experiments.
+  calibration experiments from the remote tools screen.
 
 The embedded remote is a wrapper around the existing PiFinder web UI. If layout
 issues appear, compare it with the same URL in a normal browser before changing
@@ -108,12 +109,18 @@ Available actions:
 - `TEST CONNECTION`: checks the saved PiFinder base URL.
 - `SEND PROFILE`: uploads the current phone capability profile.
 - `SEND GPS`: uploads the current Android location.
-- `CAPTURE MOUNT REF`: uploads a labeled `mounted_reference` IMU batch.
+- `STATIONARY`: uploads a labeled `stationary` IMU batch while the mounted
+  phone and tube remain still.
+- `MOUNT REF`: uploads a labeled `mounted_reference` IMU batch against the
+  selected reference target/note.
+- `REPEAT CHECK`: uploads a labeled `repeat_check` IMU batch after returning
+  to the same reference.
 - `COPY EVIDENCE`: copies a calibration evidence JSON with the reference note,
   app/device metadata, readiness, optional location, and expected batch label.
 
 Use the reference field for the star/object/manual pointing note used during
-the capture. The first version is intentionally manual and diagnostic-only.
+the capture. The flow is intentionally manual and diagnostic-only; the uploaded
+batches do not feed PiFinder pointing or the integrator.
 
 ## Why This Exists
 

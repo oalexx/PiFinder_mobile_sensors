@@ -161,8 +161,8 @@ operator does not have to rely on generic IMU diagnostics.
 
 Acceptance:
 
-- The Calibration screen can send `stationary`, `mounted_reference`, and
-  `repeat_check` batches.
+- Implemented by #53: the Calibration screen can send `stationary`,
+  `mounted_reference`, and `repeat_check` batches.
 - The Raspberry stores the correct label for each uploaded batch.
 - The UI reports success/failure clearly for each capture type.
 - No integrator or runtime pointing behavior changes.
