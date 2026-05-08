@@ -159,6 +159,7 @@ live under `documentation/`.
 | `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
 | `analyze_mobile_imu.py` | Analyze stored `/mobile/imu` batches. |
 | `compute_mobile_mount_offset.py` | Compute a diagnostic candidate phone-to-tube offset profile. |
+| `validate_mobile_mount_repeatability.py` | Compare candidate offsets and recommend proceed/recalibrate/reject. |
 | `validate_remote_endpoints.py` | Local validation of web/mobile endpoints. |
 | `validate_lx200_server.py` | LX200/SkySafari server validation. |
 

@@ -95,6 +95,9 @@ Implementation note:
 - `compute_mobile_mount_offset.py` consumes that IMU batch plus an explicit
   `q_tube_reference` quaternion and writes a disabled candidate mount profile
   with `q_phone_to_tube`, confidence, and warnings.
+- `validate_mobile_mount_repeatability.py` compares multiple candidate profiles
+  and reports `proceed`, `recalibrate`, or `reject` from repeat error and source
+  warnings.
 
 ## Inputs
 

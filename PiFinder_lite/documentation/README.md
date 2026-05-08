@@ -46,3 +46,4 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | `phase5_mobile_telescope_calibration_design.md` | Mobile-to-telescope calibration design and runtime boundaries. |
 | `mobile_mount_profile.md` | Mount profile schema, storage path, lifecycle, and safety flags. |
 | `mobile_mount_offset_tool.md` | Offline tool for computing a candidate phone-to-tube orientation offset. |
+| `mobile_mount_repeatability.md` | Offline repeatability validation for candidate mount profiles. |
