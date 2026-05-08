@@ -92,6 +92,9 @@ Implementation note:
 - PiFinder stores the accepted label in
   `~/PiFinder_data/mobile/imu_latest.json`, and `analyze_mobile_imu.py`
   includes the label in its report.
+- `compute_mobile_mount_offset.py` consumes that IMU batch plus an explicit
+  `q_tube_reference` quaternion and writes a disabled candidate mount profile
+  with `q_phone_to_tube`, confidence, and warnings.
 
 ## Inputs
 

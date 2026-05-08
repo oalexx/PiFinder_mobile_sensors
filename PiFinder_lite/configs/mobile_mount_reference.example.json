@@ -1,0 +1,10 @@
+{
+  "type": "manual_target",
+  "target_name": "example-reference",
+  "source": "manual_or_pifinder_solve",
+  "ra_hours": null,
+  "dec_degrees": null,
+  "alt_degrees": null,
+  "az_degrees": null,
+  "q_tube_reference": [1.0, 0.0, 0.0, 0.0]
+}

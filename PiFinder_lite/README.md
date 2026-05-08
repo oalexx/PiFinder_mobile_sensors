@@ -158,6 +158,7 @@ live under `documentation/`.
 | `score_mobile_frame.py` | Score JPEGs before diagnostic solving. |
 | `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
 | `analyze_mobile_imu.py` | Analyze stored `/mobile/imu` batches. |
+| `compute_mobile_mount_offset.py` | Compute a diagnostic candidate phone-to-tube offset profile. |
 | `validate_remote_endpoints.py` | Local validation of web/mobile endpoints. |
 | `validate_lx200_server.py` | LX200/SkySafari server validation. |
 
@@ -178,6 +179,8 @@ commit phone-test artifacts or local filesystem paths.
 | --- | --- |
 | `configs/pifinder_lite_config.example.json` | Optional PiFinder Lite user config example. |
 | `configs/mobile_camera_profile.samsung_sm-s948b.example.json` | First phone camera recommendation profile. |
+| `configs/mobile_mount_profile.example.json` | Disabled mobile mount profile schema example. |
+| `configs/mobile_mount_reference.example.json` | Reference quaternion input example for offset calculation. |
 
 ## Next Hardware Gate
 
