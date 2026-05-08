@@ -21,6 +21,7 @@ DEFAULT_INPUT = Path.home() / "PiFinder_data" / "mobile" / "imu_latest.json"
 
 @dataclass
 class ImuSensorAnalysis:
+    batch_label: str
     sensor: str
     sample_count: int
     duration_ms: float
@@ -103,7 +104,11 @@ def median(values: list[float]) -> float | None:
     return (ordered[middle - 1] + ordered[middle]) / 2.0
 
 
-def analyze_sensor(sensor: str, samples: list[dict[str, Any]]) -> ImuSensorAnalysis:
+def analyze_sensor(
+    sensor: str,
+    samples: list[dict[str, Any]],
+    batch_label: str = "diagnostic",
+) -> ImuSensorAnalysis:
     warnings: list[str] = []
     times = [int(sample["t_android_ns"]) for sample in samples if "t_android_ns" in sample]
     duration_ms = 0.0
@@ -174,6 +179,7 @@ def analyze_sensor(sensor: str, samples: list[dict[str, Any]]) -> ImuSensorAnaly
         recommendation = "do_not_use_for_integrator_yet"
 
     return ImuSensorAnalysis(
+        batch_label=batch_label,
         sensor=sensor,
         sample_count=len(samples),
         duration_ms=round(duration_ms, 3),
@@ -192,8 +198,9 @@ def analyze_sensor(sensor: str, samples: list[dict[str, Any]]) -> ImuSensorAnaly
 
 
 def analyze_batch(batch: dict[str, Any]) -> list[ImuSensorAnalysis]:
+    batch_label = str(batch.get("batch_label") or "diagnostic")
     return [
-        analyze_sensor(sensor, samples)
+        analyze_sensor(sensor, samples, batch_label=batch_label)
         for sensor, samples in sorted(grouped_samples(batch).items())
     ]
 
@@ -219,12 +226,12 @@ def write_markdown(path: Path, analyses: list[ImuSensorAnalysis]) -> None:
         "",
         f"- Sensors analyzed: {len(analyses)}",
         "",
-        "| sensor | samples | duration ms | confidence | max step deg | drift deg/s | warnings | recommendation |",
-        "| --- | ---: | ---: | --- | ---: | ---: | --- | --- |",
+        "| batch label | sensor | samples | duration ms | confidence | max step deg | drift deg/s | warnings | recommendation |",
+        "| --- | --- | ---: | ---: | --- | ---: | ---: | --- | --- |",
     ]
     for analysis in analyses:
         lines.append(
-            f"| {analysis.sensor} | {analysis.sample_count} | {analysis.duration_ms:.1f} | "
+            f"| {analysis.batch_label} | {analysis.sensor} | {analysis.sample_count} | {analysis.duration_ms:.1f} | "
             f"{analysis.confidence} | {analysis.max_step_deg if analysis.max_step_deg is not None else ''} | "
             f"{analysis.drift_deg_per_s if analysis.drift_deg_per_s is not None else ''} | "
             f"{', '.join(analysis.warnings) or 'none'} | {analysis.recommendation} |"

@@ -16,6 +16,13 @@ PROFILE_LATEST_FILENAME = "profile_latest.json"
 GPS_LATEST_FILENAME = "gps_latest.json"
 IMU_LATEST_FILENAME = "imu_latest.json"
 MAX_IMU_SAMPLES = 512
+IMU_BATCH_LABELS = {
+    "diagnostic",
+    "mounted_reference",
+    "repeat_check",
+    "slew",
+    "stationary",
+}
 FRAMES_DIRNAME = "frames"
 MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 DEFAULT_MOBILE_GPS_ERROR_M = 9999
@@ -233,6 +240,20 @@ def validate_imu_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optio
     if len(samples) > MAX_IMU_SAMPLES:
         return {}, f"samples must contain {MAX_IMU_SAMPLES} items or fewer."
 
+    batch_label = str(payload.get("batch_label") or "diagnostic").strip()
+    if batch_label not in IMU_BATCH_LABELS:
+        labels = ", ".join(sorted(IMU_BATCH_LABELS))
+        return {}, f"batch_label must be one of: {labels}."
+
+    capture_duration_ms, duration_error = _optional_number_field(
+        payload,
+        "capture_duration_ms",
+    )
+    if duration_error:
+        return {}, duration_error
+    if capture_duration_ms is not None and capture_duration_ms < 0:
+        return {}, "capture_duration_ms must be zero or greater."
+
     normalized_samples = []
     for index, sample in enumerate(samples):
         if not isinstance(sample, dict):
@@ -244,7 +265,9 @@ def validate_imu_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optio
 
     normalized = {
         "schema": payload.get("schema", "pifinder-mobile-imu-batch-v0"),
+        "batch_label": batch_label,
         "device_time_utc": payload.get("device_time_utc"),
+        "capture_duration_ms": capture_duration_ms,
         "sample_count": len(normalized_samples),
         "samples": normalized_samples,
         "coordinate_frame_note": (
@@ -254,6 +277,10 @@ def validate_imu_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optio
     }
     if "device" in payload:
         normalized["device"] = payload["device"]
+    if "screen_orientation" in payload:
+        normalized["screen_orientation"] = payload["screen_orientation"]
+    if "app_version" in payload:
+        normalized["app_version"] = payload["app_version"]
     return normalized, None
 
 

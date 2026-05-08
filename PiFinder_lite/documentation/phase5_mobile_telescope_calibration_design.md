@@ -81,6 +81,15 @@ Android calibration UI
 Existing generic IMU uploads should keep working. Labeled calibration batches
 extend the payload; they do not replace the Phase 4 diagnostic endpoint.
 
+Implementation note:
+
+- Android `SEND IMU BATCH` sends `batch_label: diagnostic`.
+- Android `MOUNT REF IMU` sends `batch_label: mounted_reference` and should be
+  captured while the mounted phone and telescope tube are still.
+- PiFinder stores the accepted label in
+  `~/PiFinder_data/mobile/imu_latest.json`, and `analyze_mobile_imu.py`
+  includes the label in its report.
+
 ## Inputs
 
 Required:

@@ -15,6 +15,7 @@ Current validated bridge status:
 - `SEND PROFILE` posts the structured phone profile.
 - `SEND GPS` can feed the running PiFinder process.
 - `SEND IMU BATCH` stores a short diagnostic batch for confidence analysis.
+- `MOUNT REF IMU` stores a labeled `mounted_reference` calibration batch.
 - `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
 
 Camera and IMU data are still diagnostic paths. Live mobile camera solving and
@@ -89,6 +90,8 @@ Available actions:
 - `SEND PROFILE`: sends the phone capability/profile JSON.
 - `SEND GPS`: posts the current Android location to PiFinder.
 - `SEND IMU BATCH`: captures and uploads a short rotation-vector batch.
+- `MOUNT REF IMU`: captures a still phone/tube reference batch for Phase 5
+  calibration experiments.
 
 The embedded remote is a wrapper around the existing PiFinder web UI. If layout
 issues appear, compare it with the same URL in a normal browser before changing

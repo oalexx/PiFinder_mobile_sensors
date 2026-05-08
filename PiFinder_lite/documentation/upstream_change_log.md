@@ -875,6 +875,58 @@ Keep with follow-up validation.
 - Re-run classic PiFinder startup/tests on the original supported runtime before
   proposing these changes upstream.
 
+### 2026-05-08: Labeled mobile IMU calibration batches
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/PiFinder/server.py`
+- `PiFinder_lite/analyze_mobile_imu.py`
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `python/tests/test_mobile_bridge.py`
+- `python/tests/test_mobile_imu_analysis.py`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/phase5_mobile_telescope_calibration_design.md`
+- `mobile/README.md`
+
+Why:
+
+Phase 5 needs IMU captures that can be distinguished by calibration intent:
+generic diagnostics, stationary stability checks, mount reference captures,
+slews, and repeatability checks. Without an explicit label, the Raspberry can
+store samples but cannot tell which calibration step produced them.
+
+Change:
+
+- `/mobile/imu` accepts an optional `batch_label`, defaulting to `diagnostic`
+  for backwards compatibility.
+- Accepted labels are `diagnostic`, `stationary`, `slew`, `mounted_reference`,
+  and `repeat_check`.
+- `/mobile/imu` preserves optional capture metadata such as duration, app
+  version, device details, and screen orientation.
+- `/mobile/imu` returns the accepted `batch_label` in its response.
+- Android keeps the existing `SEND IMU BATCH` diagnostic action and adds
+  `MOUNT REF IMU` for the first Phase 5 calibration capture.
+- `analyze_mobile_imu.py` reports the batch label when present.
+
+Classic PiFinder impact:
+
+Low. The endpoint remains debug/storage only and still does not feed the
+integrator, solver, GPS, or classic UI. Existing IMU uploads without
+`batch_label` keep working as `diagnostic`.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_imu_analysis.py -q
+8 passed
+```
+
+Status:
+
+Keep. This is required for Phase 5 calibration experiments while preserving the
+Phase 4 generic IMU upload behavior.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

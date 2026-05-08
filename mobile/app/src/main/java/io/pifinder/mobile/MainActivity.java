@@ -163,6 +163,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String pendingGpsBaseUrl = "";
     private boolean imuBatchCaptureActive = false;
     private String pendingImuBaseUrl = "";
+    private String pendingImuBatchLabel = "diagnostic";
 
     private final List<Sensor> activeSensors = new ArrayList<>();
     private final List<Sensor> imuBatchSensors = new ArrayList<>();
@@ -411,8 +412,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout remoteImuRow = buttonRow();
         remoteScreen.addView(remoteImuRow);
         Button sendImu = makeGridButton("Send IMU Batch");
-        sendImu.setOnClickListener(v -> sendImuBatchToPiFinder());
+        sendImu.setOnClickListener(v -> sendImuBatchToPiFinder("diagnostic"));
         remoteImuRow.addView(sendImu);
+        Button sendMountReferenceImu = makeGridButton("Mount Ref IMU");
+        sendMountReferenceImu.setOnClickListener(v -> sendImuBatchToPiFinder("mounted_reference"));
+        remoteImuRow.addView(sendMountReferenceImu);
 
         addRemoteWebToolbar(remoteWebScreen);
         remoteWebView = makeRemoteWebView();
@@ -950,7 +954,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
-    private void sendImuBatchToPiFinder() {
+    private void sendImuBatchToPiFinder(String batchLabel) {
         if (remoteUrlInput == null) {
             return;
         }
@@ -964,6 +968,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         pendingImuBaseUrl = baseUrl;
+        pendingImuBatchLabel = batchLabel;
         clearImuBatchSamples();
         stopImuBatchCapture();
         boolean registered = false;
@@ -976,11 +981,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (!registered) {
             pendingImuBaseUrl = "";
+            pendingImuBatchLabel = "diagnostic";
             updateRemoteStatus("IMU unavailable\nNo rotation vector sensors are available.");
             return;
         }
         imuBatchCaptureActive = true;
-        updateRemoteStatus("Capturing IMU\nMove the phone gently for two seconds.");
+        if ("mounted_reference".equals(batchLabel)) {
+            updateRemoteStatus("Capturing mount reference IMU\nKeep the phone and tube still for two seconds.");
+        } else {
+            updateRemoteStatus("Capturing IMU\nMove the phone gently for two seconds.");
+        }
         mainHandler.postDelayed(() -> finishImuBatchCapture("timeout"), IMU_BATCH_CAPTURE_MS);
     }
 
@@ -1177,7 +1187,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             if (!json.optBoolean("ok", false)) {
                 return "IMU send failed\nServer returned ok=false.";
             }
-            return "IMU batch sent\nStored: " + json.optString("stored_as", "unknown")
+            return "IMU batch sent\nLabel: " + json.optString("batch_label", "diagnostic")
+                    + "\nStored: " + json.optString("stored_as", "unknown")
                     + "\nSamples: " + json.optInt("sample_count", -1)
                     + "\nReceived: " + json.optString("received_utc", "unknown time");
         } catch (Exception e) {
@@ -1190,17 +1201,35 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
-    private String buildImuBatchJson(JSONArray samples) throws JSONException {
+    private String buildImuBatchJson(JSONArray samples, String batchLabel) throws JSONException {
         JSONObject batch = new JSONObject();
         batch.put("schema", "pifinder-mobile-imu-batch-v0");
+        batch.put("batch_label", batchLabel);
         batch.put("device_time_utc", utcIso(System.currentTimeMillis()));
+        batch.put("capture_duration_ms", IMU_BATCH_CAPTURE_MS);
+        batch.put("screen_orientation", screenOrientationName());
         batch.put("samples", samples);
+        batch.put("app_version", appJson());
         JSONObject device = new JSONObject();
         device.put("manufacturer", android.os.Build.MANUFACTURER);
         device.put("model", android.os.Build.MODEL);
+        device.put("brand", android.os.Build.BRAND);
+        device.put("device", android.os.Build.DEVICE);
+        device.put("android_release", android.os.Build.VERSION.RELEASE);
         device.put("android_api", android.os.Build.VERSION.SDK_INT);
         batch.put("device", device);
         return batch.toString();
+    }
+
+    private String screenOrientationName() {
+        int orientation = getResources().getConfiguration().orientation;
+        if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            return "landscape";
+        }
+        if (orientation == Configuration.ORIENTATION_PORTRAIT) {
+            return "portrait";
+        }
+        return "unknown";
     }
 
     private void uploadLastCapturedJpeg() {
@@ -2490,15 +2519,19 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (imuBatchSamples.length() == 0) {
             pendingImuBaseUrl = "";
+            pendingImuBatchLabel = "diagnostic";
             updateRemoteStatus("IMU unavailable\nNo orientation samples arrived.");
             return;
         }
         String baseUrl = pendingImuBaseUrl;
+        String batchLabel = pendingImuBatchLabel;
         pendingImuBaseUrl = "";
+        pendingImuBatchLabel = "diagnostic";
         try {
-            String imuJson = buildImuBatchJson(imuBatchSamples);
+            String imuJson = buildImuBatchJson(imuBatchSamples, batchLabel);
             updateRemoteStatus(
-                    "Captured IMU batch\nSamples: " + imuBatchSamples.length()
+                    "Captured IMU batch\nLabel: " + batchLabel
+                            + "\nSamples: " + imuBatchSamples.length()
                             + "\nReason: " + reason
             );
             postImuBatchToPiFinder(baseUrl, imuJson);

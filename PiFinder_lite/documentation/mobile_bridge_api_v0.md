@@ -335,7 +335,20 @@ Example body:
 ```json
 {
   "schema": "pifinder-mobile-imu-batch-v0",
+  "batch_label": "mounted_reference",
   "device_time_utc": "2026-05-03T17:00:00Z",
+  "capture_duration_ms": 2000,
+  "screen_orientation": "portrait",
+  "app_version": {
+    "package": "io.pifinder.mobile",
+    "version_name": "0.1.0",
+    "version_code": 1
+  },
+  "device": {
+    "manufacturer": "samsung",
+    "model": "SM-S948B",
+    "android_api": 35
+  },
   "samples": [
     {
       "t_android_ns": 1234567890,
@@ -362,6 +375,7 @@ Response:
   "message": "imu batch accepted for debug",
   "stored_as": "imu_latest.json",
   "received_utc": "2026-05-03T17:00:01Z",
+  "batch_label": "mounted_reference",
   "sample_count": 2
 }
 ```
@@ -371,6 +385,11 @@ Validation rules:
 - Body must be a JSON object.
 - Either `samples` or `sample` must be present.
 - `samples` must be a non-empty list with 512 items or fewer.
+- `batch_label` is optional for backwards compatibility and defaults to
+  `diagnostic`.
+- Accepted `batch_label` values are `diagnostic`, `stationary`, `slew`,
+  `mounted_reference`, and `repeat_check`.
+- `capture_duration_ms`, when present, must be a non-negative number.
 - Each sample must include:
   - `sensor`: non-empty string, for example `rotation_vector` or
     `game_rotation_vector`.

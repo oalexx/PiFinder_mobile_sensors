@@ -51,3 +51,18 @@ def test_large_orientation_jump_is_rejected_for_integrator():
     assert analysis.confidence == "LOW"
     assert analysis.recommendation == "do_not_use_for_integrator_yet"
     assert "orientation_jump" in analysis.warnings
+
+
+def test_analyze_batch_reports_calibration_batch_label():
+    batch = {
+        "batch_label": "mounted_reference",
+        "samples": [
+            rotation_sample(index, [0.0, 0.0, 0.001 * index, 0.999999])
+            for index in range(12)
+        ],
+    }
+
+    analyses = analyze_mobile_imu.analyze_batch(batch)
+
+    assert len(analyses) == 1
+    assert analyses[0].batch_label == "mounted_reference"

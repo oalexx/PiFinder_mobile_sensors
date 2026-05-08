@@ -282,6 +282,7 @@ class Server:
                 "stored_as": mobile_bridge.IMU_LATEST_FILENAME,
                 "received_utc": imu_payload["received_utc"],
                 "sample_count": imu_batch["sample_count"],
+                "batch_label": imu_batch["batch_label"],
             }
 
         @app.route("/mobile/camera_frame", method="POST")
