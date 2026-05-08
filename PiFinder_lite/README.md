@@ -38,6 +38,13 @@ Still intentionally diagnostic-only:
 - Mobile IMU is not fed into the integrator.
 - RAW is not promoted until Phase 2 night evidence shows value.
 
+Phase 5 decision:
+
+```text
+calibrated mobile IMU -> diagnostic overlay/read-only guidance aid next
+calibrated mobile IMU -> integrator input blocked
+```
+
 ## Current Camera Decision
 
 Mobile camera path:

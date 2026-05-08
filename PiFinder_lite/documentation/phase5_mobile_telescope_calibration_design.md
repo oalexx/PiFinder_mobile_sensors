@@ -217,9 +217,10 @@ allowed: collect -> analyze -> candidate profile -> repeatability report
 blocked: candidate profile -> live integrator input
 ```
 
-Only #49 should decide whether calibrated mobile IMU data becomes documentation
-only, a diagnostic overlay, an optional guidance aid, or a true integrator
-input.
+Issue #49 decides that calibrated mobile IMU data should next become a
+diagnostic overlay / read-only guidance aid only. True integrator input remains
+blocked until future field validation proves long-session stability, remount
+repeatability, and safe failure behavior.
 
 ## Upstream Change Log Rule
 

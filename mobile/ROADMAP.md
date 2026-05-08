@@ -206,6 +206,8 @@ Recommended first implementation:
 - Store labeled IMU batches: `stationary`, `slew`, `mounted_reference`.
 - Add a mount-profile JSON editor/export in the Android app.
 - Keep calibration output advisory until repeatability is proven.
+- Phase 5 decision: calibrated mobile IMU may move next to a diagnostic
+  overlay/read-only guidance aid, but must not feed the PiFinder integrator yet.
 
 Persisted data example:
 
