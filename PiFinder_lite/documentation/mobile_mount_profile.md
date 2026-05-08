@@ -31,6 +31,16 @@ Runtime/user profiles should live outside the repository on Raspberry:
 ~/PiFinder_data/mobile/mount_profiles/
 ```
 
+PiFinder Lite exposes the latest profile metadata through:
+
+```text
+GET /mobile/mount_profile
+```
+
+The endpoint is read-only. It summarizes profile status, validation warnings,
+offset metadata, runtime flags, and safety state, but it does not activate the
+profile or feed the integrator.
+
 Recommended filename:
 
 ```text
@@ -149,6 +159,7 @@ runtime inputs.
 This schema and example do not change original PiFinder behavior, so no
 `upstream_change_log.md` entry is required.
 
-Future work must update the upstream change log if profile loading changes
-`python/PiFinder/`, startup flags, shared runtime state, or classic PiFinder
-behavior.
+The read-only profile status endpoint is tracked in
+`upstream_change_log.md`. Future work must update the upstream change log again
+if profile loading changes startup flags, shared runtime state, or classic
+PiFinder behavior.

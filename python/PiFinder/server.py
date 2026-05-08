@@ -196,6 +196,13 @@ class Server:
             mobile_bridge.write_debug_json("status.json", payload)
             return payload
 
+        @app.route("/mobile/mount_profile")
+        def mobile_mount_profile():
+            return mobile_bridge.mount_profile_status(
+                mobile_profile_path=mobile_bridge.MOBILE_DATA_DIR
+                / mobile_bridge.PROFILE_LATEST_FILENAME,
+            )
+
         @app.route("/mobile/profile", method="POST")
         def mobile_profile():
             payload = request.json

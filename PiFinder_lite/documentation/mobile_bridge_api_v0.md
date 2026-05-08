@@ -26,6 +26,7 @@ Endpoint paths are appended to the base URL:
 ```text
 <base-url>/mobile/status
 <base-url>/mobile/profile
+<base-url>/mobile/mount_profile
 <base-url>/mobile/gps
 <base-url>/mobile/imu
 <base-url>/mobile/camera_frame
@@ -57,6 +58,7 @@ allowed in v0.
 | --- | --- | --- | --- |
 | `/mobile/status` | `GET` | Implemented | Yes |
 | `/mobile/profile` | `POST` | Implemented | Yes |
+| `/mobile/mount_profile` | `GET` | Implemented, read-only | Yes |
 | `/mobile/gps` | `POST` | Implemented | Yes |
 | `/mobile/imu` | `POST` | Implemented, debug only | Yes |
 | `/mobile/camera_frame` | `POST` | Implemented, storage only | Yes |
@@ -123,6 +125,7 @@ Response:
   },
   "mobile_bridge": {
     "profile": "implemented",
+    "mount_profile": "implemented_read_only",
     "gps": "implemented",
     "imu": "implemented_debug_only",
     "camera_frame": "implemented_storage_only"
@@ -216,6 +219,76 @@ Persistence:
 ~/PiFinder_data/mobile/profile_latest.json
 ```
 
+## GET `/mobile/mount_profile`
+
+Status: implemented, read-only.
+
+Purpose:
+
+Expose the latest mobile mount profile metadata for diagnostics without feeding
+the profile into PiFinder runtime state.
+
+Request:
+
+```http
+GET /mobile/mount_profile
+```
+
+Runtime profile location:
+
+```text
+~/PiFinder_data/mobile/mount_profiles/*.json
+```
+
+Response with no profiles:
+
+```json
+{
+  "ok": true,
+  "api": "mobile-bridge-v0",
+  "profile_available": false,
+  "profile": null,
+  "warnings": ["no_mount_profiles_found"]
+}
+```
+
+Response with a profile:
+
+```json
+{
+  "ok": true,
+  "api": "mobile-bridge-v0",
+  "profile_available": true,
+  "profile": {
+    "profile_id": "SM-S948B-tube-clamp",
+    "status": "usable",
+    "device_model": "SM-S948B",
+    "runtime": {
+      "allow_integrator_feed": false,
+      "allow_guidance_overlay": false,
+      "requires_manual_enable": true
+    },
+    "safety": {
+      "integrator_blocked": true,
+      "runtime_usable": false,
+      "overlay_candidate": true,
+      "read_only": true
+    }
+  },
+  "warnings": []
+}
+```
+
+Guardrails:
+
+- The endpoint is read-only.
+- `allow_integrator_feed` is always reported as `false` even if a profile file
+  requests it.
+- `runtime_usable` remains `false` in Phase 5.
+- Unsafe or incomplete profiles are surfaced through `warnings`.
+- This endpoint does not change solver, GPS, IMU, integrator, camera, or
+  classic UI behavior.
+
 ## Mobile Bridge Debug Persistence
 
 Status: implemented.
@@ -232,6 +305,7 @@ Current and planned files:
 ```text
 status.json
 profile_latest.json
+mount_profiles/<profile-id>.json
 gps_latest.json
 imu_latest.json
 frames/<frame_id>.jpg

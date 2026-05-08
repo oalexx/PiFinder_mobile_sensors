@@ -119,8 +119,10 @@ flags disabled by default.
 
 Acceptance:
 
-- A profile can be loaded from `~/PiFinder_data/mobile/mount_profiles/`.
-- The loaded profile is exposed through a read-only status/report path.
+- Implemented by #51: a profile can be loaded from
+  `~/PiFinder_data/mobile/mount_profiles/`.
+- Implemented by #51: the loaded profile is exposed through
+  `GET /mobile/mount_profile`.
 - Profiles for a mismatched phone or invalid state are rejected or clearly
   warned.
 - No integrator, solver, GPS, or classic UI behavior changes unless explicitly

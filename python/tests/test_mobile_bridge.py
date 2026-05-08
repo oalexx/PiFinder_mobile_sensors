@@ -1,6 +1,11 @@
+import json
 from datetime import timezone
+from pathlib import Path
 
 from PiFinder import mobile_bridge
+
+ROOT = Path(__file__).resolve().parents[2]
+SERVER = ROOT / "python/PiFinder/server.py"
 
 
 def test_mobile_gps_queue_fix_maps_payload_to_pifinder_gps_fix():
@@ -101,6 +106,12 @@ def test_validate_imu_payload_preserves_calibration_label_and_metadata():
     assert imu_batch["device"]["model"] == "SM-S948B"
 
 
+def test_status_payload_advertises_read_only_mount_profile_loader():
+    status = mobile_bridge.status_payload()
+
+    assert status["mobile_bridge"]["mount_profile"] == "implemented_read_only"
+
+
 def test_validate_imu_payload_rejects_unknown_batch_label():
     payload = {
         "batch_label": "surprise_mode",
@@ -120,3 +131,106 @@ def test_validate_imu_payload_rejects_unknown_batch_label():
         "batch_label must be one of: diagnostic, mounted_reference, "
         "repeat_check, slew, stationary."
     )
+
+
+def _mount_profile(profile_id="profile-ok", **overrides):
+    profile = {
+        "schema": "pifinder-mobile-mount-profile-v0",
+        "profile_id": profile_id,
+        "status": "usable",
+        "enabled": False,
+        "created_utc": "2026-05-08T00:00:00Z",
+        "updated_utc": "2026-05-08T00:00:00Z",
+        "device": {
+            "manufacturer": "samsung",
+            "model": "SM-S948B",
+            "app_version": "debug",
+        },
+        "mount": {
+            "name": "tube clamp",
+        },
+        "sensor": {
+            "primary": "game_rotation_vector",
+        },
+        "reference": {
+            "type": "manual_target",
+            "target_name": "Vega",
+        },
+        "axis_mapping": {
+            "confidence": "MEDIUM",
+        },
+        "offset": {
+            "representation": "quaternion",
+            "q_phone_to_tube": [1.0, 0.0, 0.0, 0.0],
+        },
+        "validation": {
+            "state": "passed",
+            "max_repeat_error_deg": 0.8,
+            "warnings": [],
+        },
+        "runtime": {
+            "allow_integrator_feed": False,
+            "allow_guidance_overlay": False,
+            "requires_manual_enable": True,
+        },
+    }
+    profile.update(overrides)
+    return profile
+
+
+def test_mount_profile_status_reports_latest_profile_without_runtime_enable(tmp_path):
+    profiles_dir = tmp_path / "mount_profiles"
+    profiles_dir.mkdir()
+    profile_path = profiles_dir / "profile-ok.json"
+    profile_path.write_text(json.dumps(_mount_profile()), encoding="utf-8")
+
+    status = mobile_bridge.mount_profile_status(profiles_dir)
+
+    assert status["ok"] is True
+    assert status["profile_available"] is True
+    assert status["profile"]["profile_id"] == "profile-ok"
+    assert status["profile"]["status"] == "usable"
+    assert status["profile"]["device_model"] == "SM-S948B"
+    assert status["profile"]["runtime"]["allow_integrator_feed"] is False
+    assert status["profile"]["runtime"]["allow_guidance_overlay"] is False
+    assert status["profile"]["safety"]["integrator_blocked"] is True
+    assert status["profile"]["safety"]["runtime_usable"] is False
+    assert status["warnings"] == []
+
+
+def test_mount_profile_status_blocks_integrator_feed_flag(tmp_path):
+    profiles_dir = tmp_path / "mount_profiles"
+    profiles_dir.mkdir()
+    profile = _mount_profile(
+        runtime={
+            "allow_integrator_feed": True,
+            "allow_guidance_overlay": True,
+            "requires_manual_enable": False,
+        }
+    )
+    (profiles_dir / "unsafe.json").write_text(json.dumps(profile), encoding="utf-8")
+
+    status = mobile_bridge.mount_profile_status(profiles_dir)
+
+    assert status["ok"] is True
+    assert status["profile_available"] is True
+    assert status["profile"]["safety"]["integrator_blocked"] is True
+    assert status["profile"]["safety"]["runtime_usable"] is False
+    assert "integrator_feed_requested_but_blocked" in status["warnings"]
+    assert "manual_enable_required_missing" in status["warnings"]
+
+
+def test_mount_profile_status_handles_missing_profiles(tmp_path):
+    status = mobile_bridge.mount_profile_status(tmp_path / "missing")
+
+    assert status["ok"] is True
+    assert status["profile_available"] is False
+    assert status["profile"] is None
+    assert status["warnings"] == ["no_mount_profiles_found"]
+
+
+def test_server_exposes_read_only_mount_profile_endpoint():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert '@app.route("/mobile/mount_profile")' in source
+    assert "mobile_bridge.mount_profile_status(" in source

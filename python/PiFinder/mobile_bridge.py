@@ -6,7 +6,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PiFinder import utils
 
@@ -15,6 +15,7 @@ MOBILE_DATA_DIR = utils.data_dir / "mobile"
 PROFILE_LATEST_FILENAME = "profile_latest.json"
 GPS_LATEST_FILENAME = "gps_latest.json"
 IMU_LATEST_FILENAME = "imu_latest.json"
+MOUNT_PROFILES_DIRNAME = "mount_profiles"
 MAX_IMU_SAMPLES = 512
 IMU_BATCH_LABELS = {
     "diagnostic",
@@ -26,6 +27,14 @@ IMU_BATCH_LABELS = {
 FRAMES_DIRNAME = "frames"
 MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 DEFAULT_MOBILE_GPS_ERROR_M = 9999
+MOUNT_PROFILE_SCHEMA = "pifinder-mobile-mount-profile-v0"
+MOUNT_PROFILE_STATUSES = {"uncalibrated", "candidate", "usable", "invalidated"}
+MOUNT_PROFILE_VALIDATION_STATES = {
+    "not_validated",
+    "repeatability_pending",
+    "passed",
+    "failed",
+}
 
 
 def utc_now_iso() -> str:
@@ -46,6 +55,12 @@ def ensure_mobile_frames_dir() -> Path:
     frames_dir = ensure_mobile_data_dir() / FRAMES_DIRNAME
     utils.create_path(frames_dir)
     return frames_dir
+
+
+def ensure_mobile_mount_profiles_dir() -> Path:
+    profiles_dir = ensure_mobile_data_dir() / MOUNT_PROFILES_DIRNAME
+    utils.create_path(profiles_dir)
+    return profiles_dir
 
 
 def write_debug_json(filename: str, payload: Dict[str, Any]) -> Path:
@@ -291,6 +306,58 @@ def imu_payload(imu_batch: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def mount_profile_status(
+    profiles_dir: Optional[Path] = None,
+    mobile_profile_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    profiles_path = profiles_dir or ensure_mobile_mount_profiles_dir()
+    warnings: List[str] = []
+    profile_files = _mount_profile_files(profiles_path)
+    if not profile_files:
+        return {
+            "ok": True,
+            "api": API_VERSION,
+            "profile_available": False,
+            "profile": None,
+            "warnings": ["no_mount_profiles_found"],
+            "profiles_dir": str(profiles_path),
+        }
+
+    selected_path = profile_files[0]
+    profile, load_error = _load_json_object(selected_path)
+    if load_error:
+        return {
+            "ok": True,
+            "api": API_VERSION,
+            "profile_available": False,
+            "profile": None,
+            "warnings": [load_error],
+            "profiles_dir": str(profiles_path),
+            "selected_profile": str(selected_path),
+        }
+
+    expected_device_model = (
+        _latest_mobile_device_model(mobile_profile_path)
+        if mobile_profile_path is not None
+        else None
+    )
+    summary, validation_warnings = _summarize_mount_profile(
+        profile,
+        selected_path,
+        expected_device_model,
+    )
+    warnings.extend(validation_warnings)
+    return {
+        "ok": True,
+        "api": API_VERSION,
+        "profile_available": summary is not None,
+        "profile": summary,
+        "warnings": warnings,
+        "profiles_dir": str(profiles_path),
+        "selected_profile": str(selected_path),
+    }
+
+
 def status_payload() -> Dict[str, Any]:
     return {
         "ok": True,
@@ -308,8 +375,186 @@ def status_payload() -> Dict[str, Any]:
             "gps": "implemented",
             "imu": "implemented_debug_only",
             "camera_frame": "implemented_storage_only",
+            "mount_profile": "implemented_read_only",
         },
     }
+
+
+def _mount_profile_files(profiles_dir: Path) -> List[Path]:
+    if not profiles_dir.exists() or not profiles_dir.is_dir():
+        return []
+    return sorted(
+        [path for path in profiles_dir.glob("*.json") if path.is_file()],
+        key=lambda path: (path.stat().st_mtime, path.name),
+        reverse=True,
+    )
+
+
+def _load_json_object(path: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+    try:
+        with open(path) as input_file:
+            payload = json.load(input_file)
+    except json.JSONDecodeError as exc:
+        return {}, f"invalid_mount_profile_json:{path.name}:{exc.msg}"
+    except OSError as exc:
+        return {}, f"mount_profile_read_failed:{path.name}:{exc}"
+    if not isinstance(payload, dict):
+        return {}, f"invalid_mount_profile_json:{path.name}:expected_object"
+    return payload, None
+
+
+def _latest_mobile_device_model(mobile_profile_path: Optional[Path]) -> Optional[str]:
+    if mobile_profile_path is None:
+        return None
+    profile_path = mobile_profile_path
+    if not profile_path.exists():
+        return None
+    payload, error = _load_json_object(profile_path)
+    if error:
+        return None
+    profile = payload.get("profile")
+    if not isinstance(profile, dict):
+        return None
+    device = profile.get("device")
+    if not isinstance(device, dict):
+        return None
+    model = device.get("model")
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    return None
+
+
+def _summarize_mount_profile(
+    profile: Dict[str, Any],
+    path: Path,
+    expected_device_model: Optional[str],
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    warnings: List[str] = []
+    if profile.get("schema") != MOUNT_PROFILE_SCHEMA:
+        return None, ["invalid_mount_profile_schema"]
+
+    profile_id = _string_value(profile, "profile_id")
+    if not profile_id:
+        warnings.append("missing_profile_id")
+
+    status = _string_value(profile, "status") or "unknown"
+    if status not in MOUNT_PROFILE_STATUSES:
+        warnings.append("invalid_status")
+    if status in {"uncalibrated", "invalidated"}:
+        warnings.append(f"profile_status_{status}")
+
+    device = profile.get("device") if isinstance(profile.get("device"), dict) else {}
+    device_model = str(device.get("model") or "").strip()
+    if not device_model:
+        warnings.append("missing_device_model")
+    if (
+        expected_device_model
+        and device_model
+        and device_model != expected_device_model
+    ):
+        warnings.append("phone_model_mismatch")
+
+    validation = (
+        profile.get("validation")
+        if isinstance(profile.get("validation"), dict)
+        else {}
+    )
+    validation_state = str(validation.get("state") or "unknown").strip()
+    if validation_state not in MOUNT_PROFILE_VALIDATION_STATES:
+        warnings.append("invalid_validation_state")
+    if validation_state != "passed":
+        warnings.append("profile_not_repeatability_validated")
+    for warning in validation.get("warnings") or []:
+        if isinstance(warning, str) and warning.strip():
+            warnings.append(warning.strip())
+
+    offset = profile.get("offset") if isinstance(profile.get("offset"), dict) else {}
+    q_phone_to_tube = offset.get("q_phone_to_tube")
+    has_offset = (
+        isinstance(q_phone_to_tube, list)
+        and len(q_phone_to_tube) == 4
+        and all(isinstance(value, (int, float)) for value in q_phone_to_tube)
+    )
+    if not has_offset:
+        warnings.append("missing_valid_offset")
+
+    runtime = profile.get("runtime") if isinstance(profile.get("runtime"), dict) else {}
+    allow_integrator_feed = bool(runtime.get("allow_integrator_feed", False))
+    allow_guidance_overlay = bool(runtime.get("allow_guidance_overlay", False))
+    requires_manual_enable = bool(runtime.get("requires_manual_enable", True))
+    if allow_integrator_feed:
+        warnings.append("integrator_feed_requested_but_blocked")
+    if not requires_manual_enable:
+        warnings.append("manual_enable_required_missing")
+
+    overlay_candidate = (
+        status == "usable"
+        and validation_state == "passed"
+        and has_offset
+        and not allow_integrator_feed
+        and requires_manual_enable
+    )
+    summary = {
+        "profile_id": profile_id,
+        "path": str(path),
+        "status": status,
+        "enabled": bool(profile.get("enabled", False)),
+        "device_model": device_model or None,
+        "mount_name": _nested_string(profile, "mount", "name"),
+        "sensor_primary": _nested_string(profile, "sensor", "primary"),
+        "reference": profile.get("reference", {}),
+        "axis_mapping_confidence": _nested_string(
+            profile,
+            "axis_mapping",
+            "confidence",
+        ),
+        "offset": {
+            "representation": offset.get("representation"),
+            "q_phone_to_tube": q_phone_to_tube if has_offset else None,
+            "yaw_deg": offset.get("yaw_deg"),
+            "pitch_deg": offset.get("pitch_deg"),
+            "roll_deg": offset.get("roll_deg"),
+        },
+        "validation": {
+            "state": validation_state,
+            "max_repeat_error_deg": validation.get("max_repeat_error_deg"),
+            "median_repeat_error_deg": validation.get("median_repeat_error_deg"),
+            "warnings": validation.get("warnings") or [],
+        },
+        "runtime": {
+            "allow_integrator_feed": False,
+            "allow_guidance_overlay": allow_guidance_overlay,
+            "requires_manual_enable": requires_manual_enable,
+        },
+        "safety": {
+            "integrator_blocked": True,
+            "runtime_usable": False,
+            "overlay_candidate": overlay_candidate,
+            "read_only": True,
+        },
+    }
+    return summary, sorted(set(warnings))
+
+
+def _string_value(payload: Dict[str, Any], field: str) -> Optional[str]:
+    value = payload.get(field)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _nested_string(
+    payload: Dict[str, Any],
+    parent: str,
+    child: str,
+) -> Optional[str]:
+    nested = payload.get(parent)
+    if not isinstance(nested, dict):
+        return None
+    value = nested.get(child)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def _number_field(payload: Dict[str, Any], field: str) -> Tuple[float, Optional[str]]:

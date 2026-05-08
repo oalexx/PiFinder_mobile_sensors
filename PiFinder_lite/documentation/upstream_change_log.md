@@ -927,6 +927,53 @@ Status:
 Keep. This is required for Phase 5 calibration experiments while preserving the
 Phase 4 generic IMU upload behavior.
 
+### 2026-05-08: Read-only mobile mount profile status endpoint
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/PiFinder/server.py`
+- `python/tests/test_mobile_bridge.py`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+- `PiFinder_lite/documentation/mobile_mount_profile.md`
+
+Why:
+
+Phase 5 needs a safe way to load and inspect mobile mount profile metadata
+before any overlay, guidance, or integrator work. The profile loader must make
+unsafe runtime flags visible, but it must not activate them.
+
+Change:
+
+- Added `GET /mobile/mount_profile`.
+- Added read-only mount profile loading from
+  `~/PiFinder_data/mobile/mount_profiles/*.json`.
+- The loader summarizes profile id, status, device model, mount metadata,
+  offset, validation state, runtime flags, and safety state.
+- The loader blocks integrator use by reporting `allow_integrator_feed: false`
+  and `runtime_usable: false` in Phase 5, even if a profile file requests
+  runtime behavior.
+- Unsafe or incomplete profiles surface warnings such as
+  `integrator_feed_requested_but_blocked`, `manual_enable_required_missing`,
+  or `profile_not_repeatability_validated`.
+
+Classic PiFinder impact:
+
+Low. This adds one optional read-only mobile endpoint. It does not change
+classic startup, solver, GPS, IMU, integrator, camera, web remote controls, or
+pointing behavior.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py -q
+10 passed
+```
+
+Status:
+
+Keep. This is required before implementing a calibrated mobile IMU overlay.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:
