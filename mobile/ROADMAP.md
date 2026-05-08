@@ -188,6 +188,9 @@ Deferred from Phase 4:
 Goal: when the phone is mounted to the telescope, align the phone axes with the
 optical tube axis.
 
+Status: implemented up to diagnostic/read-only overlay. Field validation remains
+open in #52 before any optional guidance or integrator-adjacent work.
+
 Input from Phase 4: `game_rotation_vector` produced the best stationary
 confidence in the first Raspberry tests, so it should be the first sensor path
 considered for calibration experiments. `rotation_vector` remains useful for
@@ -208,6 +211,21 @@ Recommended first implementation:
 - Keep calibration output advisory until repeatability is proven.
 - Phase 5 decision: calibrated mobile IMU may move next to a diagnostic
   overlay/read-only guidance aid, but must not feed the PiFinder integrator yet.
+
+Implemented in Phase 5:
+
+- Android Calibration workflow for labeled IMU evidence.
+- Raspberry scripts for candidate offset calculation and repeatability checks.
+- Mount profile schema and disabled-by-default example config.
+- `/mobile/mount_profile` read-only profile endpoint.
+- Android `CHECK PROFILE` read-only overlay/status view.
+
+Remaining Phase 5 gate:
+
+- #52: Field-validate the calibrated mobile IMU overlay with a real mounted
+  session. A cloudy or poor night can validate remount/drift logging and UI
+  workflow, but it cannot promote the overlay beyond diagnostic/read-only. A
+  clear enough observing session is still needed before optional guidance.
 
 Persisted data example:
 
@@ -250,6 +268,28 @@ Recommended first implementation after Phase 2 passes:
 - Avoid selecting high-ISO frames whose lifted background mimics useful signal.
 - Record upload latency, quality-score latency, solve latency, and solve result
   in one per-frame report.
+
+Phase 6 issue plan:
+
+- #54: Add a diagnostic mobile frame solve job endpoint.
+- #55: Add an Android guided upload-and-diagnostic-solve workflow.
+- #56: Persist mobile camera diagnostic solve reports.
+- #57: Tune mobile camera quality thresholds from accepted/rejected night
+  frames.
+- #58: Evaluate RAW mobile frames for diagnostic solving.
+- #59: Decide the mobile camera runtime path after diagnostic solves.
+
+Work that can proceed before a good night:
+
+- Diagnostic endpoint/job scaffolding using existing uploaded frames.
+- Android result UI and timeout/error handling.
+- Local report persistence and sanitization rules.
+
+Work blocked by Phase 2 clear-sky evidence:
+
+- Quality threshold tuning.
+- RAW value decision.
+- Any decision to promote mobile camera beyond diagnostic/manual solve.
 
 ## Optional AI Layer
 
@@ -324,15 +364,18 @@ Implemented or closed:
 - Add image quality score.
 - Add burst frame selector / solve-candidate burst.
 - Validate SkySafari split-screen workflow.
+- Implement phone-to-telescope calibration tooling.
+- Add read-only calibrated mobile IMU overlay.
 
 Still open / next:
 
 - Complete Phase 2 night-sky validation.
 - Compare Manual Burst, ISO Sweep, Cam Sweep, and RAW Burst under clearer sky.
 - Summarize the mobile camera solve decision from real night evidence.
-- Implement phone-to-telescope calibration.
-- Promote mobile camera frames from diagnostic scripts to live solving only if
-  Phase 2 evidence supports it.
+- Field-validate the calibrated mobile IMU overlay (#52).
+- Build the Phase 6 diagnostic mobile camera solve workflow (#54-#56).
+- Tune/promote mobile camera frames only if Phase 2 evidence supports it
+  (#57-#59).
 - Add exposure advisor after enough accepted/rejected night frames exist.
 
 ## Main Risks
@@ -353,5 +396,6 @@ Still open / next:
 5. Add the GPS bridge.
 6. Add the IMU bridge.
 7. Add calibration.
-8. Add mobile camera frame upload and solve path.
-9. Add optional AI helpers after real sky data exists.
+8. Field-validate calibration as read-only overlay.
+9. Add mobile camera diagnostic solve path.
+10. Add optional AI helpers after real sky data exists.

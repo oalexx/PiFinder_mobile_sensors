@@ -14,7 +14,14 @@ Current status:
 - Phase 1 Android compatibility tester is implemented.
 - Phase 3 PiFinder Lite headless/web remote workflow is implemented.
 - Phase 4 mobile bridge is implemented and Raspberry-validated.
+- Phase 5 phone-to-telescope calibration tooling is implemented up to
+  read-only calibrated profile overlay.
 - Phase 2 night-sky camera validation remains the active evidence gate.
+- Phase 5 field validation (#52) remains open as the mounted/real-sky evidence
+  gate before any guidance or integrator work.
+- Phase 6 mobile camera work has been planned as diagnostic-only issues
+  (#54-#59). Some scaffolding can proceed before Phase 2, but threshold tuning
+  and runtime decisions remain blocked by clear-sky Phase 2 evidence.
 
 Validated Phase 4 capabilities:
 
@@ -25,12 +32,25 @@ Validated Phase 4 capabilities:
 - Mobile JPEG upload is storage/diagnostic-only, with quality scoring and
   diagnostic solve tooling.
 
+Validated Phase 5 capabilities:
+
+- Android Calibration screen can collect `stationary`, `mounted_reference`, and
+  `repeat_check` IMU batches.
+- Raspberry tools can compute candidate mobile mount offsets and validate
+  repeatability.
+- `/mobile/mount_profile` exposes a loaded mount profile as diagnostic metadata.
+- Android can display the loaded mount profile as a read-only overlay/status.
+- The Phase 5 decision is documented: mobile IMU may be used as diagnostic
+  overlay/read-only guidance, but not as integrator input.
+
 Guardrails:
 
 - Do not feed mobile camera solves into the integrator yet.
 - Do not feed mobile IMU into the integrator yet.
 - Keep mobile camera work diagnostic until Phase 2 produces reliable clear-sky
   evidence.
+- Keep mobile IMU overlay/read-only unless #52 field validation explicitly
+  supports moving to a later optional guidance issue.
 - Do not commit phone captures, generated analysis output, local paths, or
   precise private GPS coordinates.
 
@@ -166,6 +186,8 @@ upgrading the Android build.
 - `/remote` remains the primary phone UI surface.
 - `/mobile/gps` is live runtime input once posted by the app.
 - `/mobile/imu` is currently diagnostic/confidence data only.
+- `/mobile/mount_profile` is diagnostic/read-only and must not change pointing
+  state.
 - `/mobile/camera_frame` stores JPEGs for analysis; live solving is not wired
   into the main runtime yet.
 
@@ -182,12 +204,16 @@ Tests use pytest with custom markers for different test types. The smoke tests p
 - Mobile bridge endpoint behavior and storage
 - Raspberry/Python 3.13 Lite compatibility shims
 - Mobile IMU confidence analysis
+- Mobile mount profile schema, offset computation, repeatability validation,
+  and Android calibration UI coverage
 
 **Useful Raspberry diagnostics:**
 ```bash
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
 python PiFinder_lite/analyze_mobile_imu.py --input "$HOME/PiFinder_data/mobile/imu_latest.json"
+python PiFinder_lite/compute_mobile_mount_offset.py --help
+python PiFinder_lite/validate_mobile_mount_repeatability.py --help
 ```
 
 ## Code Quality

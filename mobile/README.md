@@ -3,11 +3,12 @@
 Native Android companion prototype for exploring whether a phone can be used as
 part of a PiFinder Lite setup.
 
-The current app now covers the Phase 1 tester plus the Phase 4 bridge
-prototype. It checks what the phone actually exposes through public Android
-APIs, runs capture tests, loads the existing PiFinder `/remote` page, and can
-send GPS, IMU batches, profile data, and JPEG diagnostic frames to a Raspberry
-Pi running PiFinder Lite.
+The current app now covers the Phase 1 tester, the Phase 4 bridge prototype,
+and the Phase 5 calibration evidence flow. It checks what the phone actually
+exposes through public Android APIs, runs capture tests, loads the existing
+PiFinder `/remote` page, and can send GPS, IMU batches, profile data, mount
+calibration evidence, and JPEG diagnostic frames to a Raspberry Pi running
+PiFinder Lite.
 
 Current validated bridge status:
 
@@ -21,7 +22,8 @@ Current validated bridge status:
 - `CALIBRATION` starts the Phase 5 phone-to-telescope evidence flow.
 
 Camera and IMU data are still diagnostic paths. Live mobile camera solving and
-mobile IMU integration are intentionally deferred until later phases.
+mobile IMU integration are intentionally deferred until later phases. The
+current calibrated IMU path is read-only overlay/status only.
 
 ## Current Screens
 
@@ -218,8 +220,12 @@ should be added as optional modules and configuration.
 Next gates:
 
 - Complete Phase 2 clear-sky camera validation.
-- Use the IMU confidence evidence to design phone-to-telescope calibration.
-- Keep uploaded frames diagnostic until mobile captures solve reliably.
+- Field-validate the Phase 5 calibrated IMU overlay (#52). Poor/cloudy nights
+  can still validate remount, drift, and workflow logging, but cannot promote
+  the overlay beyond read-only.
+- Build Phase 6 as a diagnostic mobile-camera solve workflow first.
+- Keep uploaded frames diagnostic until mobile captures solve reliably under
+  Phase 2 evidence.
 
 See [ROADMAP.md](ROADMAP.md) for the phased PiFinder Mobile / PiFinder Lite
 development plan.

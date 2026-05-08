@@ -11,9 +11,11 @@ enabled.
 ## Current Status
 
 Phase 4 is implemented and validated on Raspberry Pi OS Trixie/Python 3.13.
+Phase 5 is implemented up to calibrated mobile IMU read-only overlay/status.
 The Android app can talk to PiFinder Lite through the mobile bridge, upload a
-JPEG frame, send GPS into the running PiFinder process, and send IMU diagnostic
-batches for confidence analysis.
+JPEG frame, send GPS into the running PiFinder process, send IMU diagnostic
+batches for confidence analysis, collect phone-to-telescope calibration
+evidence, and display the loaded mount profile as diagnostic read-only status.
 
 Validated chain:
 
@@ -36,6 +38,8 @@ Still intentionally diagnostic-only:
 
 - Mobile camera frames are not fed into the live solver/integrator loop.
 - Mobile IMU is not fed into the integrator.
+- Calibrated mobile mount profiles are shown read-only and do not change
+  pointing state.
 - RAW is not promoted until Phase 2 night evidence shows value.
 
 Phase 5 decision:
@@ -192,8 +196,10 @@ commit phone-test artifacts or local filesystem paths.
 
 ## Next Hardware Gate
 
-Phase 4 hardware validation has passed. The next real gate is Phase 2 clear-sky
-camera validation:
+Phase 4 hardware validation has passed. Phase 5 tooling is ready, but #52 still
+needs mounted field evidence before any guidance beyond read-only overlay.
+
+The next camera gate remains Phase 2 clear-sky camera validation:
 
 ```text
 Manual Burst / ISO Sweep / Cam Sweep / RAW Burst under clearer sky.
@@ -208,3 +214,7 @@ dark sky frame -> enough star-like centroids -> accepted quality score -> diagno
 Until that evidence is reliable, mobile camera remains diagnostic-only and
 PiFinder Lite should continue to use the original PiFinder camera path for live
 solving.
+
+Phase 6 has been split into issues #54-#59. Endpoint/UI/report scaffolding can
+be built with existing uploaded frames, but threshold tuning, RAW decisions, and
+any runtime promotion remain blocked by Phase 2 evidence.
