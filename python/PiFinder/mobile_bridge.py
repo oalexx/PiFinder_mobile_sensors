@@ -309,6 +309,129 @@ def camera_report_history(
     }
 
 
+def camera_exposure_advice(
+    score: Optional[Dict[str, Any]],
+    solve: Optional[Dict[str, Any]],
+) -> Dict[str, str]:
+    """Map camera quality/solve diagnostics to short field advice.
+
+    Thresholds are intentionally conservative until clear-sky Phase 2 evidence
+    tunes them. The advice is diagnostic-only and never affects runtime state.
+    """
+    score = score if isinstance(score, dict) else {}
+    solve = solve if isinstance(solve, dict) else {}
+    rejection_reasons = {
+        str(reason)
+        for reason in score.get("rejection_reasons", [])
+        if isinstance(reason, str)
+    }
+
+    if bool(solve.get("solve_ok")):
+        return _advice(
+            code="solved_collect_more",
+            label="Solved",
+            message=(
+                "Diagnostic solve succeeded; keep it as evidence, but this "
+                "is not final support."
+            ),
+            next_action=(
+                "Repeat Run Full Diagnostic on more clear-sky frames before "
+                "changing runtime pointing."
+            ),
+            severity="success",
+        )
+
+    if (
+        {"too_bright_background", "lifted_gray_background", "background_mean_high"}
+        & rejection_reasons
+        or _score_number(score, "mean") > 6.5
+        or 0 <= _score_number(score, "dark_pct") < 45
+    ):
+        return _advice(
+            code="background_too_bright",
+            label="Background too bright",
+            message="The sky/background is too bright for reliable solving.",
+            next_action=(
+                "Try lower ISO/exposure, avoid clouds/moon/light pollution, "
+                "or wait for darker sky."
+            ),
+            severity="warning",
+        )
+
+    if (
+        {
+            "noise_proxy_high",
+            "too_many_bright_points_possible_noise",
+            "possible_noise_overrank_lifted_background",
+        }
+        & rejection_reasons
+        or _score_number(score, "noise_proxy") > 9.0
+    ):
+        return _advice(
+            code="noise_too_high",
+            label="Noise too high",
+            message=(
+                "Noise looks too high; ISO3200-style frames can mimic star "
+                "candidates."
+            ),
+            next_action=(
+                "Prefer ISO400/ISO800, steadier support, and a darker frame "
+                "before solving."
+            ),
+            severity="warning",
+        )
+
+    if "saturation_present" in rejection_reasons or _score_number(score, "saturation_pct") > 0.5:
+        return _advice(
+            code="saturation_present",
+            label="Saturation present",
+            message="Some pixels are saturated, which can confuse star detection.",
+            next_action="Reduce exposure/ISO and avoid bright lights in the frame.",
+            severity="warning",
+        )
+
+    if "low_star_candidates" in rejection_reasons or _score_number(score, "centroids") < 18:
+        return _advice(
+            code="too_few_star_candidates",
+            label="Too few candidates",
+            message="The frame has too few star-like candidates to solve reliably.",
+            next_action=(
+                "Point at a richer star field, increase exposure slightly, or "
+                "wait for clearer sky."
+            ),
+            severity="warning",
+        )
+
+    if "low_sharpness_or_low_signal" in rejection_reasons:
+        return _advice(
+            code="low_sharpness_or_signal",
+            label="Low sharpness or signal",
+            message="The frame appears soft or has too little usable signal.",
+            next_action="Hold the phone steadier, refocus, and retry the same capture mode.",
+            severity="warning",
+        )
+
+    if bool(solve.get("attempted")):
+        return _advice(
+            code="solve_failed_collect_better_frame",
+            label="Solve failed",
+            message="The frame was good enough to try, but Tetra3 did not solve it.",
+            next_action=(
+                "Retry with a steadier clear-sky frame and compare the report "
+                "history."
+            ),
+            severity="info",
+        )
+
+    return _advice(
+        code="inspect_quality_report",
+        label="Inspect quality report",
+        message="The frame did not produce a specific exposure diagnosis.",
+        next_action="Run Full Diagnostic again and compare the report history.",
+        severity="info",
+    )
+
+
 def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
     required_fields = ("lat", "lon", "time_utc", "source")
     for field in required_fields:
@@ -537,6 +660,32 @@ def _elapsed_ms(start_time: float) -> int:
     return int((time.perf_counter() - start_time) * 1000)
 
 
+def _advice(
+    code: str,
+    label: str,
+    message: str,
+    next_action: str,
+    severity: str,
+) -> Dict[str, str]:
+    return {
+        "code": code,
+        "label": label,
+        "message": message,
+        "next_action": next_action,
+        "severity": severity,
+    }
+
+
+def _score_number(score: Dict[str, Any], key: str) -> float:
+    value = score.get(key)
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return -1.0
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -631,6 +780,9 @@ def _camera_report_summary(report_file: Path, payload: Dict[str, Any]) -> Dict[s
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     score = payload.get("score") if isinstance(payload.get("score"), dict) else {}
     solve = payload.get("solve") if isinstance(payload.get("solve"), dict) else {}
+    advice = payload.get("advice") if isinstance(payload.get("advice"), dict) else None
+    if advice is None:
+        advice = camera_exposure_advice(score, solve)
     report_mtime_utc = (
         datetime.fromtimestamp(report_file.stat().st_mtime, timezone.utc)
         .replace(microsecond=0)
@@ -643,6 +795,7 @@ def _camera_report_summary(report_file: Path, payload: Dict[str, Any]) -> Dict[s
         "frame_id": str(payload.get("frame_id") or "unknown"),
         "diagnostic_only": bool(payload.get("diagnostic_only", True)),
         "summary": summary,
+        "advice": advice,
         "score": {
             "path": score.get("path"),
             "grade": summary.get("grade", score.get("grade", "unknown")),
@@ -675,14 +828,24 @@ def _camera_session_summary(
     total_reports: int,
 ) -> Dict[str, Any]:
     status_counts: Dict[str, int] = {}
+    advice_counts: Dict[str, int] = {}
     best_frame_id = None
     best_quality_score = None
     best_solved_frame_id = None
+    dominant_advice = None
 
     for report in reports:
         summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+        advice = report.get("advice") if isinstance(report.get("advice"), dict) else {}
         status = str(summary.get("status") or "unknown")
         status_counts[status] = status_counts.get(status, 0) + 1
+        advice_code = str(advice.get("code") or "unknown")
+        advice_counts[advice_code] = advice_counts.get(advice_code, 0) + 1
+        if dominant_advice is None or advice_counts[advice_code] > advice_counts.get(
+            str(dominant_advice.get("code") or "unknown"),
+            0,
+        ):
+            dominant_advice = advice
         quality_score = summary.get("quality_score")
         if isinstance(quality_score, (int, float)) and (
             best_quality_score is None or quality_score > best_quality_score
@@ -714,6 +877,8 @@ def _camera_session_summary(
         "total_reports": total_reports,
         "returned_reports": returned_reports,
         "status_counts": status_counts,
+        "advice_counts": advice_counts,
+        "dominant_advice": dominant_advice,
         "solved_count": solved_count,
         "rejected_count": status_counts.get("rejected", 0),
         "best_frame_id": best_frame_id,
@@ -777,6 +942,7 @@ def _with_diagnostic_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
         "solve_ok": solve_ok,
         "skipped_reason": skipped_reason,
     }
+    payload["advice"] = camera_exposure_advice(score, solve)
     payload["recommendation"] = recommendation
     payload["next_action"] = next_action
     return payload

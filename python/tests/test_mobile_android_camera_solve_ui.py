@@ -22,6 +22,8 @@ def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
     assert '"solve_ok"' in source
     assert '"json_report"' in source
     assert '"summary"' in source
+    assert '"advice"' in source
+    assert '"message"' in source
     assert '"recommendation"' in source
     assert '"next_action"' in source
     assert 'updateMobileCameraDiagnosticGuide("full_running")' in source
@@ -41,3 +43,4 @@ def test_android_camera_lab_exposes_diagnostic_report_history():
     assert "copyCameraReportSummary()" in source
     assert '"session_summary"' in source
     assert '"status_counts"' in source
+    assert '"dominant_advice"' in source

@@ -640,6 +640,13 @@ Response when the score rejects the frame:
     "solve_ok": false,
     "skipped_reason": "quality_score_rejected"
   },
+  "advice": {
+    "code": "background_too_bright",
+    "label": "Background too bright",
+    "message": "The sky/background is too bright for reliable solving.",
+    "next_action": "Try lower ISO/exposure, avoid clouds/moon/light pollution, or wait for darker sky.",
+    "severity": "warning"
+  },
   "recommendation": "capture_better_frame",
   "next_action": "Run Full Diagnostic again with a darker, steadier frame or wait for clearer sky.",
   "report": {
@@ -656,9 +663,13 @@ Validation rules:
   `~/PiFinder_data/mobile/frames/<frame_id>.jpg`.
 - `frame_id` may contain only letters, numbers, underscores, and hyphens.
 - Missing or unsafe frame IDs return `400`.
-- Successful diagnostic responses include a human-facing `summary`,
+- Successful diagnostic responses include a human-facing `summary`, `advice`,
   `recommendation`, and `next_action` so Android can display a clear report
   without interpreting low-level solver rows.
+- `advice` is rule-based and conservative. It maps score fields such as
+  background brightness, saturation, centroid count, noise proxy, sharpness,
+  and solve/skipped state into short field instructions. Thresholds should be
+  tuned only after more Phase 2 clear-sky evidence.
 
 Persistence:
 
@@ -710,6 +721,17 @@ Response shape:
     "best_frame_id": "20260508T233307Z_d0c205ca",
     "best_solved_frame_id": "20260508T233307Z_d0c205ca",
     "best_quality_score": 0.91,
+    "advice_counts": {
+      "solved_collect_more": 1,
+      "background_too_bright": 1
+    },
+    "dominant_advice": {
+      "code": "solved_collect_more",
+      "label": "Solved",
+      "message": "Diagnostic solve succeeded; keep it as evidence, but this is not final support.",
+      "next_action": "Repeat Run Full Diagnostic on more clear-sky frames before changing runtime pointing.",
+      "severity": "success"
+    },
     "recommendation": "collect_clear_sky_evidence",
     "next_action": "Keep this solved report and repeat with more clear-sky frames before changing runtime pointing."
   },
@@ -725,6 +747,13 @@ Response shape:
         "attempted": true,
         "solve_ok": true,
         "skipped_reason": ""
+      },
+      "advice": {
+        "code": "solved_collect_more",
+        "label": "Solved",
+        "message": "Diagnostic solve succeeded; keep it as evidence, but this is not final support.",
+        "next_action": "Repeat Run Full Diagnostic on more clear-sky frames before changing runtime pointing.",
+        "severity": "success"
       },
       "recommendation": "keep_collecting_clear_sky_evidence",
       "next_action": "Save this report as evidence and repeat Run Full Diagnostic across more clear-sky frames."

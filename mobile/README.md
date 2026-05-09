@@ -73,13 +73,19 @@ Available tests:
 - `RUN FULL DIAGNOSTIC`: captures a solve-candidate JPEG, uploads it, asks
   Raspberry for score/diagnostic solve, and shows the stored report summary.
 - `VIEW REPORTS`: reads `/mobile/camera_reports` and shows recent diagnostic
-  reports, session counts, best score, recommendation, and next action.
+  reports, session counts, best score, dominant advice, recommendation, and
+  next action.
 - `COPY REPORT SUMMARY`: copies the latest history/session summary from
   `VIEW REPORTS`.
 - `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
 - `UPLOAD LAST JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
 - `DIAGNOSTIC SOLVE`: asks PiFinder to score and diagnostic-solve the uploaded
   frame via `/mobile/camera_solve`.
+
+Diagnostic results include rule-based exposure/capture advice such as
+background too bright, noise too high, too few candidates, saturation present,
+or solved but collect more evidence. The advice is conservative until more
+clear-sky Phase 2 data tunes thresholds.
 
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:

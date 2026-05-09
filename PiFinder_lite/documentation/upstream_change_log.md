@@ -1138,6 +1138,63 @@ Status:
 
 Keep. This is required for Phase 6 issues #60, #61, and #62.
 
+### 2026-05-09: Exposure advisor v1 for mobile camera diagnostics
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/tests/test_mobile_bridge.py`
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `python/tests/test_mobile_android_camera_solve_ui.py`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+- `PiFinder_lite/README.md`
+- `mobile/README.md`
+
+Why:
+
+Quality scoring can reject a frame, but the field workflow needs a practical
+next action. Phase 6 issue #63 adds a small rule-based advisor that translates
+score/solve fields into short capture guidance without using ML or changing
+runtime behavior.
+
+Change:
+
+- Added `camera_exposure_advice()` to map score and solve state to
+  `advice.code`, `label`, `message`, `next_action`, and `severity`.
+- `/mobile/camera_solve` reports now include `advice`.
+- `/mobile/camera_reports` summaries include per-report `advice`,
+  `advice_counts`, and `dominant_advice`.
+- Android diagnostic solve and report history screens display the advice and
+  suggested retry action.
+- Current advice rules cover bright/lifted background, noisy frames, saturation,
+  too few candidates, low sharpness/signal, solve failure, and solved-but-keep-
+  collecting-evidence.
+
+Classic PiFinder impact:
+
+Low. This is optional mobile diagnostic metadata only. It does not update
+runtime pointing, feed the integrator, alter solver loops, or change startup
+defaults.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_android_camera_solve_ui.py -q
+25 passed
+
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_imu_analysis.py python\tests\test_mobile_android_calibration_ui.py python\tests\test_mobile_android_camera_solve_ui.py python\tests\test_mobile_mount_offset.py python\tests\test_mobile_mount_repeatability.py python\tests\test_lite_runtime_compat.py -q
+41 passed
+
+cd mobile
+.\gradlew.bat assembleDebug
+BUILD SUCCESSFUL
+```
+
+Status:
+
+Keep. This is required for Phase 6 issue #63. Thresholds are conservative until
+more Phase 2 clear-sky evidence tunes them.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

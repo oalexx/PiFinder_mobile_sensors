@@ -117,10 +117,16 @@ Camera Lab -> Run Full Diagnostic
 `Run Full Diagnostic` captures a solve-candidate JPEG, uploads it to
 `/mobile/camera_frame`, calls `/mobile/camera_solve`, and displays upload,
 quality score, solve/skipped state, next action, and the persisted report path.
-`View Reports` then reads `/mobile/camera_reports` and shows the recent report
-history, solved/rejected counts, best score, recommendation, and next action.
-`Copy Report Summary` copies that human-readable summary. The separate
+It also shows a conservative exposure/capture advice line, for example
+background too bright, noise too high, too few candidates, saturation present,
+or solved but collect more evidence. `View Reports` then reads
+`/mobile/camera_reports` and shows the recent report history, solved/rejected
+counts, best score, dominant advice, recommendation, and next action. `Copy
+Report Summary` copies that human-readable summary. The separate
 burst/upload/solve buttons remain available for debugging.
+
+The exposure advisor is rule-based and diagnostic-only. Its thresholds are
+intentionally conservative until more Phase 2 clear-sky evidence tunes them.
 
 Optional Raspberry-side batch checks:
 

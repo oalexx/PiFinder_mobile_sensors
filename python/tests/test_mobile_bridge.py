@@ -289,6 +289,54 @@ def test_diagnostic_camera_solve_skips_low_quality_frame_without_runtime_effect(
     assert result["summary"]["label"] == "Rejected by quality score"
     assert result["recommendation"] == "capture_better_frame"
     assert "Run Full Diagnostic" in result["next_action"]
+    assert result["advice"]["code"] == "background_too_bright"
+    assert "lower ISO" in result["advice"]["next_action"]
+
+
+def test_camera_exposure_advice_flags_noisy_rejected_frame():
+    advice = mobile_bridge.camera_exposure_advice(
+        score={
+            "grade": "LOW",
+            "mean": 5.8,
+            "dark_pct": 55.0,
+            "noise_proxy": 13.2,
+            "bright_points": 950,
+            "centroids": 80,
+            "rejection_reasons": [
+                "noise_proxy_high",
+                "too_many_bright_points_possible_noise",
+            ],
+        },
+        solve={
+            "attempted": False,
+            "solve_ok": False,
+            "skipped_reason": "quality_score_rejected",
+        },
+    )
+
+    assert advice["code"] == "noise_too_high"
+    assert advice["severity"] == "warning"
+    assert "ISO3200" in advice["message"]
+    assert "ISO400/ISO800" in advice["next_action"]
+
+
+def test_camera_exposure_advice_for_solved_frame_collects_more_evidence():
+    advice = mobile_bridge.camera_exposure_advice(
+        score={
+            "grade": "HIGH",
+            "quality_score": 121.5,
+            "rejection_reasons": [],
+        },
+        solve={
+            "attempted": True,
+            "solve_ok": True,
+        },
+    )
+
+    assert advice["code"] == "solved_collect_more"
+    assert advice["severity"] == "success"
+    assert "not final support" in advice["message"]
+    assert "clear-sky frames" in advice["next_action"]
 
 
 def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
@@ -327,6 +375,7 @@ def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
     assert report_payload["integrator_updated"] is False
     assert report_payload["summary"]["status"] == "rejected"
     assert report_payload["recommendation"] == "capture_better_frame"
+    assert report_payload["advice"]["code"] == "background_too_bright"
     assert "Run Full Diagnostic" in report_payload["next_action"]
     assert "C:/private" not in report_path.read_text(encoding="utf-8")
     assert "42.40404584" not in report_path.read_text(encoding="utf-8")
@@ -373,6 +422,13 @@ def test_camera_report_history_lists_sanitized_reports_and_session_summary(tmp_p
         },
         "recommendation": "capture_better_frame",
         "next_action": "Run Full Diagnostic again.",
+        "advice": {
+            "code": "background_too_bright",
+            "label": "Background too bright",
+            "message": "The sky/background is too bright for reliable solving.",
+            "next_action": "Try lower ISO/exposure.",
+            "severity": "warning",
+        },
         "elapsed_ms": 14,
     }
     new_report = {
@@ -404,6 +460,13 @@ def test_camera_report_history_lists_sanitized_reports_and_session_summary(tmp_p
         },
         "recommendation": "keep_collecting_clear_sky_evidence",
         "next_action": "Save this report as evidence.",
+        "advice": {
+            "code": "solved_collect_more",
+            "label": "Solved",
+            "message": "Solved. Keep collecting evidence; this is not final support.",
+            "next_action": "Repeat with more clear-sky frames.",
+            "severity": "success",
+        },
         "elapsed_ms": 101,
     }
     (tmp_path / "20260508T000000Z_frame_rejected.json").write_text(
@@ -426,7 +489,10 @@ def test_camera_report_history_lists_sanitized_reports_and_session_summary(tmp_p
     assert result["session_summary"]["best_frame_id"] == "frame_solved"
     assert result["session_summary"]["best_quality_score"] == 0.91
     assert result["session_summary"]["recommendation"] == "collect_clear_sky_evidence"
+    assert result["session_summary"]["advice_counts"]["solved_collect_more"] == 1
+    assert result["session_summary"]["dominant_advice"]["code"] == "solved_collect_more"
     assert result["reports"][0]["frame_id"] == "frame_solved"
+    assert result["reports"][0]["advice"]["code"] == "solved_collect_more"
     assert result["reports"][0]["report_file"] == "20260508T000001Z_frame_solved.json"
     assert result["reports"][0]["score"]["path"] == "frame_solved.jpg"
     assert result["reports"][0]["solve"]["best"]["path"] == "preprocessed.jpg"

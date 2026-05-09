@@ -1807,6 +1807,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         JSONObject solve = json.optJSONObject("solve");
         JSONObject report = json.optJSONObject("report");
         JSONObject summary = json.optJSONObject("summary");
+        JSONObject advice = json.optJSONObject("advice");
         String grade = score == null ? "unknown" : score.optString("grade", "unknown");
         double qualityScore = score == null ? -1.0 : score.optDouble("quality_score", -1.0);
         boolean attempted = solve != null && solve.optBoolean("attempted", false);
@@ -1814,6 +1815,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         String skippedReason = solve == null ? "" : solve.optString("skipped_reason", "");
         String reportPath = report == null ? "not stored" : report.optString("json_report", "not stored");
         String summaryLabel = summary == null ? "" : summary.optString("label", "");
+        String adviceLabel = advice == null ? "" : advice.optString("label", "");
+        String adviceMessage = advice == null ? "" : advice.optString("message", "");
+        String adviceNext = advice == null ? "" : advice.optString("next_action", "");
         String recommendation = json.optString("recommendation", "");
         String nextAction = json.optString("next_action", "");
         return "Diagnostic solve complete\nFrame ID: " + json.optString("frame_id", "unknown")
@@ -1823,6 +1827,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "\nAttempted: " + attempted
                 + "\nSolve OK: " + solveOk
                 + (skippedReason.length() > 0 ? "\nSkipped: " + skippedReason : "")
+                + (adviceLabel.length() > 0 ? "\nAdvice: " + adviceLabel : "")
+                + (adviceMessage.length() > 0 ? "\nWhy: " + adviceMessage : "")
+                + (adviceNext.length() > 0 ? "\nTry: " + adviceNext : "")
                 + (recommendation.length() > 0 ? "\nRecommendation: " + recommendation : "")
                 + (nextAction.length() > 0 ? "\nNext: " + nextAction : "")
                 + "\nReport: " + reportPath
@@ -1844,6 +1851,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         JSONObject sessionSummary = json.optJSONObject("session_summary");
         JSONArray reports = json.optJSONArray("reports");
         JSONObject statusCounts = sessionSummary == null ? null : sessionSummary.optJSONObject("status_counts");
+        JSONObject dominantAdvice = sessionSummary == null ? null : sessionSummary.optJSONObject("dominant_advice");
         StringBuilder result = new StringBuilder();
         result.append("Camera diagnostic history\n");
         if (sessionSummary != null) {
@@ -1865,6 +1873,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             String nextAction = sessionSummary.optString("next_action", "");
             if (statusCounts != null) {
                 result.append("\nStatus counts: ").append(statusCounts.toString());
+            }
+            if (dominantAdvice != null) {
+                String adviceLabel = dominantAdvice.optString("label", "");
+                String adviceNext = dominantAdvice.optString("next_action", "");
+                if (adviceLabel.length() > 0) {
+                    result.append("\nMain advice: ").append(adviceLabel);
+                }
+                if (adviceNext.length() > 0) {
+                    result.append("\nTry: ").append(adviceNext);
+                }
             }
             if (recommendation.length() > 0) {
                 result.append("\nRecommendation: ").append(recommendation);
@@ -1890,6 +1908,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 continue;
             }
             JSONObject summary = report.optJSONObject("summary");
+            JSONObject advice = report.optJSONObject("advice");
             JSONObject score = report.optJSONObject("score");
             JSONObject solve = report.optJSONObject("solve");
             String status = summary == null ? "unknown" : summary.optString("status", "unknown");
@@ -1899,6 +1918,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             boolean attempted = solve != null && solve.optBoolean("attempted", false);
             boolean solveOk = solve != null && solve.optBoolean("solve_ok", false);
             String skippedReason = solve == null ? "" : solve.optString("skipped_reason", "");
+            String adviceLabel = advice == null ? "" : advice.optString("label", "");
+            String adviceNext = advice == null ? "" : advice.optString("next_action", "");
             if (score != null && qualityScore < 0) {
                 qualityScore = score.optDouble("quality_score", -1.0);
             }
@@ -1919,6 +1940,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     .append(solveOk);
             if (skippedReason.length() > 0) {
                 result.append("\nSkipped: ").append(skippedReason);
+            }
+            if (adviceLabel.length() > 0) {
+                result.append("\nAdvice: ").append(adviceLabel);
+            }
+            if (adviceNext.length() > 0) {
+                result.append("\nTry: ").append(adviceNext);
             }
             result.append("\nReport: ").append(report.optString("report_file", "unknown"));
         }
