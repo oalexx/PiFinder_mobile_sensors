@@ -75,9 +75,16 @@ Available tests:
 - `CAM SWEEP`: tests the available rear camera IDs.
 - `RUN FULL DIAGNOSTIC`: captures a solve-candidate JPEG, uploads it, asks
   Raspberry for score/diagnostic solve, and shows the stored report summary.
+- `NIGHT TEST WIZARD`: shows the Phase 2 field checklist for connection,
+  profile/environment/GPS, save folder, full diagnostic, repeats, and report
+  summary.
 - `VIEW REPORTS`: reads `/mobile/camera_reports` and shows recent diagnostic
   reports, session counts, best score, dominant advice, recommendation, and
   next action.
+- `COPY NIGHT TEST PLAN`: copies a sanitized Phase 2 field checklist and
+  evidence-state summary.
+- `MARK REPEAT`: increments the local repeat counter after each completed
+  diagnostic attempt.
 - `COPY REPORT SUMMARY`: copies the latest history/session summary from
   `VIEW REPORTS`.
 - `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
@@ -93,6 +100,12 @@ clear-sky Phase 2 data tunes thresholds.
 Camera-frame metadata includes a diagnostic environment snapshot. Missing
 light or pressure sensors are recorded as unavailable rather than treated as an
 error.
+
+The Phase 2 night test wizard is a checklist, not a runtime promotion. It
+separates `test completed` from `camera proven reliable`: a completed test
+means the workflow ran and produced notes; camera reliability still requires
+repeated clear-sky evidence and the Phase 2 decision summary. The wizard remains
+diagnostic-only and does not feed mobile solves into pointing or the integrator.
 
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:
@@ -210,13 +223,15 @@ cd mobile
     - `SEND ENV`
     - `SEND GPS`
     - `SEND IMU BATCH`
-12. Go back to `CAMERA LAB`, run `SOLVE CANDIDATE BURST`, then tap
-    `UPLOAD LAST JPEG`.
-13. Tap `DIAGNOSTIC SOLVE` to display quality score, solve/skipped state, and
-    the Raspberry report path.
-14. Tap `VIEW REPORTS` to compare the recent diagnostic reports and copy the
+12. Go back to `CAMERA LAB`, tap `NIGHT TEST WIZARD`, then `COPY NIGHT TEST
+    PLAN` if you want a field checklist.
+13. Tap `RUN FULL DIAGNOSTIC` to capture, upload, score, diagnostic-solve, and
+    summarize one solve-candidate frame.
+14. Tap `MARK REPEAT` after each completed attempt, even if the frame is
+    rejected or solve fails.
+15. Tap `VIEW REPORTS` to compare recent diagnostic reports and copy the
     session summary when needed.
-15. Run the sky tests outdoors at night when conditions allow:
+16. Run the broader sky tests outdoors at night when conditions allow:
     - `MANUAL BURST`
     - `ISO SWEEP`
     - `CAM SWEEP`

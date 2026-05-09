@@ -141,6 +141,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView liveView;
     private TextView captureView;
     private TextView cameraDiagnosticGuideView;
+    private TextView phase2NightTestWizardView;
     private Button startImuButton;
     private LinearLayout homeScreen;
     private LinearLayout capabilitiesScreen;
@@ -182,6 +183,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private long latestPressureAtMs = 0L;
     private String lastUploadedFrameId = "";
     private boolean fullDiagnosticRunning = false;
+    private int phase2NightTestRepeatCount = 0;
 
     private final List<Sensor> activeSensors = new ArrayList<>();
     private final List<Sensor> imuBatchSensors = new ArrayList<>();
@@ -502,6 +504,22 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraDiagnosticGuideView = statusCard();
         updateMobileCameraDiagnosticGuide("ready");
         cameraScreen.addView(cameraDiagnosticGuideView);
+
+        addAreaTitle(cameraScreen, "PHASE 2 NIGHT TEST WIZARD");
+        phase2NightTestWizardView = statusCard();
+        updatePhase2NightTestWizard("ready");
+        cameraScreen.addView(phase2NightTestWizardView);
+        LinearLayout phase2WizardRow = buttonRow();
+        cameraScreen.addView(phase2WizardRow);
+        Button phase2Wizard = makeGridButton("Night Test Wizard");
+        phase2Wizard.setOnClickListener(v -> showPhase2NightTestWizard());
+        phase2WizardRow.addView(phase2Wizard);
+        Button copyPhase2Plan = makeGridButton("Copy Night Test Plan");
+        copyPhase2Plan.setOnClickListener(v -> copyPhase2NightTestPlan());
+        phase2WizardRow.addView(copyPhase2Plan);
+        Button markPhase2Repeat = makeGridButton("Mark Repeat");
+        markPhase2Repeat.setOnClickListener(v -> markPhase2NightTestRepeat());
+        phase2WizardRow.addView(markPhase2Repeat);
 
         LinearLayout fullDiagnosticRow = buttonRow();
         cameraScreen.addView(fullDiagnosticRow);
@@ -1823,6 +1841,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 fullDiagnosticRunning = false;
                 captureView.setText(finalMessage);
                 updateMobileCameraDiagnosticGuide(success ? "solve_complete" : "solve_failed");
+                updatePhase2NightTestWizard(success ? "review" : "ready");
             });
         }).start();
     }
@@ -1841,6 +1860,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 cameraReportView.setText(message);
                 updateMobileCameraDiagnosticGuide(
                         message.startsWith("Camera diagnostic history") ? "reports_loaded" : "solve_failed"
+                );
+                updatePhase2NightTestWizard(
+                        message.startsWith("Camera diagnostic history") ? "reports_loaded" : "ready"
                 );
             });
         }).start();
@@ -1923,6 +1945,95 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "4. Tap Run Full Diagnostic.\n"
                 + "5. Review uploaded frame ID, quality score, solve/skipped state, and stored report.\n"
                 + "6. Use the separate burst/upload/solve buttons only when debugging individual steps.\n";
+    }
+
+    private void showPhase2NightTestWizard() {
+        updatePhase2NightTestWizard("review");
+        if (cameraReportView != null) {
+            cameraReportView.setText(phase2NightTestPlanText());
+        }
+    }
+
+    private void markPhase2NightTestRepeat() {
+        phase2NightTestRepeatCount += 1;
+        updatePhase2NightTestWizard("repeat_marked");
+        Toast.makeText(this, "Night test repeat marked", Toast.LENGTH_SHORT).show();
+    }
+
+    private void updatePhase2NightTestWizard(String stage) {
+        if (phase2NightTestWizardView == null) {
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        String folderStatus = outputTreeUri == null ? "missing" : "selected";
+        String reportStatus = latestCameraReportSummary == null
+                || latestCameraReportSummary.trim().length() == 0
+                ? "not loaded"
+                : "loaded";
+        String text = "Phase 2 Night Test Wizard\n"
+                + "Goal: collect comparable clear-sky evidence without claiming camera proven reliable.\n"
+                + "Status: " + phase2NightTestWizardStatus(stage) + "\n\n"
+                + "Checklist\n"
+                + "1. PiFinder URL: " + (baseUrl.length() == 0 ? "missing" : baseUrl) + "\n"
+                + "2. In PiFinder Remote: TEST CONNECTION, SEND PROFILE, SEND ENV, SEND GPS.\n"
+                + "3. Save folder: " + folderStatus + "\n"
+                + "4. In Camera Lab: Run Full Diagnostic.\n"
+                + "5. Use View Reports, then Copy Report Summary for sanitized notes.\n"
+                + "6. Repeat count marked here: " + phase2NightTestRepeatCount + "\n"
+                + "7. Report summary: " + reportStatus + "\n\n"
+                + "Decision boundary: test completed means the workflow ran. Camera proven reliable requires repeated clear-sky evidence and remains blocked until Phase 2 is summarized.\n"
+                + "Safety: diagnostic-only; no mobile camera solve updates pointing or the integrator.";
+        phase2NightTestWizardView.setText(text);
+    }
+
+    private String phase2NightTestWizardStatus(String stage) {
+        if ("repeat_marked".equals(stage)) {
+            return "repeat marked; run another full diagnostic or load reports.";
+        }
+        if ("reports_loaded".equals(stage)) {
+            return "reports loaded; copy the summary for Phase 2 evidence.";
+        }
+        if ("review".equals(stage)) {
+            return "review the checklist and run each field step deliberately.";
+        }
+        return "ready; use this before a clear-sky or partial-night run.";
+    }
+
+    private String phase2NightTestPlanText() {
+        String summary = latestCameraReportSummary == null ? "" : latestCameraReportSummary.trim();
+        return "Phase 2 Night Test Wizard\n"
+                + "Purpose: collect repeatable phone-camera evidence for PiFinder Lite.\n"
+                + "This can record a test completed session, but not camera proven reliable without repeated clear-sky evidence.\n\n"
+                + "Field steps\n"
+                + "1. Start PiFinder Lite on Raspberry.\n"
+                + "2. Set Android PiFinder base URL and run TEST CONNECTION.\n"
+                + "3. SEND PROFILE, SEND ENV, and SEND GPS.\n"
+                + "4. Camera Lab -> SAVE FOLDER.\n"
+                + "5. Run Full Diagnostic.\n"
+                + "6. View Reports and copy the sanitized report summary.\n"
+                + "7. Mark Repeat after each completed diagnostic attempt.\n\n"
+                + "Evidence state\n"
+                + "- Repeat count marked in app: " + phase2NightTestRepeatCount + "\n"
+                + "- Save folder selected: " + (outputTreeUri == null ? "no" : "yes") + "\n"
+                + "- Latest uploaded frame ID: " + safeEvidenceText(lastUploadedFrameId, "none") + "\n"
+                + "- Latest report summary loaded: " + (summary.length() == 0 ? "no" : "yes") + "\n\n"
+                + "Decision boundary\n"
+                + "- test completed: checklist ran and report summary was captured.\n"
+                + "- camera proven reliable: requires repeated clear-sky evidence and Phase 2 decision summary.\n"
+                + "- diagnostic-only: do not feed mobile solves into pointing or the integrator.\n";
+    }
+
+    private String safeEvidenceText(String value, String fallback) {
+        if (value == null || value.trim().length() == 0) {
+            return fallback;
+        }
+        return value.replace("\n", " ").replace("\r", " ").trim();
+    }
+
+    private void copyPhase2NightTestPlan() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder Phase 2 night test plan", phase2NightTestPlanText()));
+        Toast.makeText(this, "Night test plan copied", Toast.LENGTH_SHORT).show();
     }
 
     private void copyMobileCameraDiagnosticPlan() {
@@ -3604,6 +3715,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             if (outputTreeUri != null) {
                 getContentResolver().takePersistableUriPermission(outputTreeUri, flags);
                 updateCameraFolderStatus();
+                updatePhase2NightTestWizard("review");
                 captureView.setText("Save folder selected:\n" + outputTreeUri);
             }
         }

@@ -63,3 +63,29 @@ def test_android_exposes_mobile_environment_metadata_bridge():
     assert '"device_state"' in source
     assert "ConnectivityManager" in source
     assert "BatteryManager" in source
+
+
+def test_android_camera_lab_exposes_phase2_night_test_wizard():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "phase2NightTestWizardView" in source
+    assert 'addAreaTitle(cameraScreen, "PHASE 2 NIGHT TEST WIZARD")' in source
+    assert 'makeGridButton("Night Test Wizard")' in source
+    assert "showPhase2NightTestWizard()" in source
+    assert 'makeGridButton("Copy Night Test Plan")' in source
+    assert "copyPhase2NightTestPlan()" in source
+    assert 'makeGridButton("Mark Repeat")' in source
+    assert "markPhase2NightTestRepeat()" in source
+    assert "phase2NightTestRepeatCount" in source
+    assert "updatePhase2NightTestWizard" in source
+    assert "phase2NightTestPlanText" in source
+    assert "Phase 2 Night Test Wizard" in source
+    assert "test completed" in source
+    assert "camera proven reliable" in source
+    assert "clear-sky evidence" in source
+    assert "diagnostic-only" in source
+    assert "SEND PROFILE" in source
+    assert "SEND ENV" in source
+    assert "SEND GPS" in source
+    assert "Run Full Diagnostic" in source
+    assert "View Reports" in source
