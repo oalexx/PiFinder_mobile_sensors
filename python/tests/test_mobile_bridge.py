@@ -126,6 +126,94 @@ def test_status_payload_advertises_camera_report_history():
     assert status["mobile_bridge"]["camera_reports"] == "implemented_read_only"
 
 
+def test_status_payload_advertises_mobile_environment_bridge():
+    status = mobile_bridge.status_payload()
+
+    assert status["mobile_bridge"]["environment"] == "implemented_diagnostic_only"
+
+
+def test_validate_environment_payload_preserves_optional_environment_fields():
+    payload = {
+        "schema": "pifinder-mobile-environment-v0",
+        "device_time_utc": "2026-05-09T12:00:00Z",
+        "app": {"version_name": "debug"},
+        "device": {"manufacturer": "samsung", "model": "SM-S948B"},
+        "sensors": {
+            "ambient_light": {
+                "available": True,
+                "lux": 12.3,
+                "sensor_name": "Light Sensor",
+            },
+            "pressure": {"available": False},
+        },
+        "battery": {"available": True, "percent": 76.0, "charging": True},
+        "network": {"available": True, "type": "wifi", "validated": True},
+        "device_state": {"screen_orientation": "portrait", "power_save_mode": False},
+    }
+
+    environment, error = mobile_bridge.validate_environment_payload(payload)
+
+    assert error is None
+    assert environment["sensors"]["ambient_light"]["available"] is True
+    assert environment["sensors"]["ambient_light"]["lux"] == 12.3
+    assert environment["sensors"]["pressure"]["available"] is False
+    assert environment["battery"]["percent"] == 76.0
+    assert environment["network"]["type"] == "wifi"
+
+
+def test_validate_environment_payload_removes_precise_location_fields():
+    payload = {
+        "device_time_utc": "2026-05-09T12:00:00Z",
+        "lat": 42.4,
+        "lon": -7.1,
+        "location": {"latitude": 42.4, "longitude": -7.1},
+        "gps": {"lat": 42.4, "lon": -7.1},
+        "sensors": {"ambient_light": {"available": False}},
+    }
+
+    environment, error = mobile_bridge.validate_environment_payload(payload)
+
+    assert error is None
+    raw = json.dumps(environment)
+    assert "42.4" not in raw
+    assert "-7.1" not in raw
+    assert "location" not in raw
+    assert "gps" not in raw
+
+
+def test_environment_payload_adds_summary_and_received_time():
+    environment, error = mobile_bridge.validate_environment_payload(
+        {
+            "sensors": {
+                "ambient_light": {"available": True, "lux": 4.5},
+                "pressure": {"available": True, "hpa": 932.1},
+            },
+            "battery": {"available": True, "percent": 55.0, "charging": False},
+            "network": {"available": True, "type": "cellular", "validated": True},
+        }
+    )
+    assert error is None
+
+    payload = mobile_bridge.environment_payload(environment)
+
+    assert payload["received_utc"].endswith("Z")
+    assert payload["environment"]["diagnostic_only"] is True
+    assert payload["summary"]["ambient_light_available"] is True
+    assert payload["summary"]["ambient_light_lux"] == 4.5
+    assert payload["summary"]["pressure_available"] is True
+    assert payload["summary"]["pressure_hpa"] == 932.1
+    assert payload["summary"]["battery_percent"] == 55.0
+    assert payload["summary"]["network_type"] == "cellular"
+
+
+def test_server_exposes_mobile_environment_endpoint():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert '@app.route("/mobile/environment", method="POST")' in source
+    assert "validate_environment_payload" in source
+    assert "ENVIRONMENT_LATEST_FILENAME" in source
+
+
 def test_validate_imu_payload_rejects_unknown_batch_label():
     payload = {
         "batch_label": "surprise_mode",
@@ -261,6 +349,45 @@ def test_diagnostic_camera_solve_reports_missing_frame(tmp_path):
 
     assert result["ok"] is False
     assert result["error"]["code"] == "frame_not_found"
+
+
+def test_diagnostic_camera_solve_includes_latest_environment_summary(tmp_path):
+    frame_id = "20260508T000000Z_frame"
+    frame_path = tmp_path / f"{frame_id}.jpg"
+    Image.new("RGB", (64, 64), color=(0, 0, 0)).save(frame_path)
+    (tmp_path / f"{frame_id}.json").write_text(
+        json.dumps({"schema": "pifinder-mobile-camera-frame-v0"}),
+        encoding="utf-8",
+    )
+    environment, error = mobile_bridge.validate_environment_payload(
+        {
+            "sensors": {"ambient_light": {"available": True, "lux": 0.8}},
+            "battery": {"available": True, "percent": 91.0},
+            "network": {"available": True, "type": "wifi"},
+            "location": {"latitude": 42.4, "longitude": -7.1},
+        }
+    )
+    assert error is None
+    environment_path = tmp_path / "environment_latest.json"
+    environment_path.write_text(
+        json.dumps(mobile_bridge.environment_payload(environment)),
+        encoding="utf-8",
+    )
+
+    result = mobile_bridge.diagnostic_camera_solve(
+        frame_id,
+        frames_dir=tmp_path,
+        reports_dir=tmp_path / "reports",
+        environment_path=environment_path,
+    )
+
+    assert result["ok"] is True
+    assert result["environment"]["available"] is True
+    assert result["environment"]["summary"]["ambient_light_lux"] == 0.8
+    report_file = Path(result["report"]["json_report"])
+    report_payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert report_payload["environment"]["summary"]["battery_percent"] == 91.0
+    assert "42.4" not in json.dumps(report_payload)
 
 
 def test_diagnostic_camera_solve_skips_low_quality_frame_without_runtime_effect(tmp_path):

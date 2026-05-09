@@ -16,6 +16,10 @@ The Android app can talk to PiFinder Lite through the mobile bridge, upload a
 JPEG frame, send GPS into the running PiFinder process, send IMU diagnostic
 batches for confidence analysis, collect phone-to-telescope calibration
 evidence, and display the loaded mount profile as diagnostic read-only status.
+It can also send optional environment metadata, such as ambient light,
+barometer availability, battery, network, and coarse device state, so camera
+reports can explain field conditions without storing precise phone GPS
+coordinates.
 
 Validated chain:
 
@@ -29,7 +33,7 @@ Validated capabilities:
 - Phone access to `/remote`.
 - SkySafari/LX200 server startup alongside the web remote.
 - `/mobile/status`, `/mobile/profile`, `/mobile/gps`, `/mobile/imu`, and
-  `/mobile/camera_frame`.
+  `/mobile/environment`, and `/mobile/camera_frame`.
 - Runtime GPS updates from Android GPS.
 - IMU batch capture and confidence scoring.
 - Mobile JPEG upload, quality scoring, and diagnostic solve tooling.
@@ -38,6 +42,8 @@ Validated capabilities:
   `~/PiFinder_data/mobile/camera_solve_reports/`.
 - Read-only `/mobile/camera_reports` history/session summary for recent
   diagnostic reports.
+- Environment summaries in camera reports when Android has sent
+  `/mobile/environment` or embedded a camera-frame environment snapshot.
 
 Still intentionally diagnostic-only:
 
@@ -109,7 +115,7 @@ In the Android app:
 ```text
 PiFinder Remote -> set base URL
 PiFinder Remote -> Test Connection
-PiFinder Remote -> Send Profile / Send GPS / Send IMU Batch
+PiFinder Remote -> Send Profile / Send Env / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
 Camera Lab -> Run Full Diagnostic
 ```
@@ -121,9 +127,14 @@ It also shows a conservative exposure/capture advice line, for example
 background too bright, noise too high, too few candidates, saturation present,
 or solved but collect more evidence. `View Reports` then reads
 `/mobile/camera_reports` and shows the recent report history, solved/rejected
-counts, best score, dominant advice, recommendation, and next action. `Copy
+counts, best score, dominant advice, available environment metadata,
+recommendation, and next action. `Copy
 Report Summary` copies that human-readable summary. The separate
 burst/upload/solve buttons remain available for debugging.
+
+`Send Env` is optional. Phones without a light or pressure sensor still send
+battery/network/device-state metadata and mark missing sensors unavailable.
+Environment data is diagnostic-only and never changes pointing state.
 
 The exposure advisor is rule-based and diagnostic-only. Its thresholds are
 intentionally conservative until more Phase 2 clear-sky evidence tunes them.

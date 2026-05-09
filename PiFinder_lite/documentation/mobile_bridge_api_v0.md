@@ -27,6 +27,7 @@ Endpoint paths are appended to the base URL:
 <base-url>/mobile/status
 <base-url>/mobile/profile
 <base-url>/mobile/mount_profile
+<base-url>/mobile/environment
 <base-url>/mobile/gps
 <base-url>/mobile/imu
 <base-url>/mobile/camera_frame
@@ -61,6 +62,7 @@ allowed in v0.
 | `/mobile/status` | `GET` | Implemented | Yes |
 | `/mobile/profile` | `POST` | Implemented | Yes |
 | `/mobile/mount_profile` | `GET` | Implemented, read-only | Yes |
+| `/mobile/environment` | `POST` | Implemented, diagnostic only | Yes |
 | `/mobile/gps` | `POST` | Implemented | Yes |
 | `/mobile/imu` | `POST` | Implemented, debug only | Yes |
 | `/mobile/camera_frame` | `POST` | Implemented, storage only | Yes |
@@ -130,6 +132,7 @@ Response:
   "mobile_bridge": {
     "profile": "implemented",
     "mount_profile": "implemented_read_only",
+    "environment": "implemented_diagnostic_only",
     "gps": "implemented",
     "imu": "implemented_debug_only",
     "camera_frame": "implemented_storage_only",
@@ -295,6 +298,90 @@ Guardrails:
 - This endpoint does not change solver, GPS, IMU, integrator, camera, or
   classic UI behavior.
 
+## POST `/mobile/environment`
+
+Status: implemented, diagnostic only.
+
+Purpose:
+
+Android sends phone/session environment metadata that helps explain camera
+diagnostic results without changing pointing state. This endpoint must not
+carry precise private GPS coordinates and must not affect solver runtime,
+integrator state, or live pointing.
+
+Request:
+
+```http
+POST /mobile/environment
+Content-Type: application/json
+```
+
+Example body:
+
+```json
+{
+  "schema": "pifinder-mobile-environment-v0",
+  "device_time_utc": "2026-05-09T12:00:00Z",
+  "sensors": {
+    "ambient_light": {
+      "available": true,
+      "lux": 0.8,
+      "sensor_name": "Light"
+    },
+    "pressure": {
+      "available": false
+    }
+  },
+  "battery": {
+    "available": true,
+    "percent": 76,
+    "charging": false
+  },
+  "network": {
+    "available": true,
+    "type": "wifi",
+    "validated": true
+  },
+  "device_state": {
+    "screen_orientation": "portrait",
+    "power_save_mode": false
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "api": "mobile-bridge-v0",
+  "message": "environment accepted for diagnostics",
+  "stored_as": "environment_latest.json",
+  "received_utc": "2026-05-09T12:00:01Z",
+  "summary": {
+    "ambient_light_available": true,
+    "ambient_light_lux": 0.8,
+    "pressure_available": false,
+    "battery_available": true,
+    "battery_percent": 76.0,
+    "network_available": true,
+    "network_type": "wifi"
+  },
+  "diagnostic_only": true,
+  "integrator_updated": false,
+  "runtime_pointing_updated": false
+}
+```
+
+Validation rules:
+
+- Body must be a JSON object.
+- Missing light or pressure sensors are accepted and marked unavailable.
+- Private location keys such as `gps`, `location`, `lat`, `lon`,
+  `latitude`, and `longitude` are removed from the stored payload.
+- The latest payload is stored under `~/PiFinder_data/mobile/`.
+- Camera diagnostic reports include an environment summary when available.
+
 ## Mobile Bridge Debug Persistence
 
 Status: implemented.
@@ -312,6 +399,7 @@ Current and planned files:
 status.json
 profile_latest.json
 mount_profiles/<profile-id>.json
+environment_latest.json
 gps_latest.json
 imu_latest.json
 frames/<frame_id>.jpg

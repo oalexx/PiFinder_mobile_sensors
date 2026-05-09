@@ -44,3 +44,22 @@ def test_android_camera_lab_exposes_diagnostic_report_history():
     assert '"session_summary"' in source
     assert '"status_counts"' in source
     assert '"dominant_advice"' in source
+
+
+def test_android_exposes_mobile_environment_metadata_bridge():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert 'makeGridButton("Send Env")' in source
+    assert "sendEnvironmentToPiFinder()" in source
+    assert "buildEnvironmentPayloadJson()" in source
+    assert "postMobileEnvironment" in source
+    assert '"/mobile/environment"' in source
+    assert "Sensor.TYPE_LIGHT" in source
+    assert "Sensor.TYPE_PRESSURE" in source
+    assert '"ambient_light"' in source
+    assert '"pressure"' in source
+    assert '"battery"' in source
+    assert '"network"' in source
+    assert '"device_state"' in source
+    assert "ConnectivityManager" in source
+    assert "BatteryManager" in source

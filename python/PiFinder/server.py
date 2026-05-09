@@ -226,6 +226,43 @@ class Server:
                 "received_utc": profile_payload["received_utc"],
             }
 
+        @app.route("/mobile/environment", method="POST")
+        def mobile_environment():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            environment, error_message = mobile_bridge.validate_environment_payload(
+                payload
+            )
+            if error_message:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_environment",
+                    error_message,
+                )
+
+            environment_payload = mobile_bridge.environment_payload(environment)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.ENVIRONMENT_LATEST_FILENAME,
+                environment_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "environment accepted for diagnostics",
+                "stored_as": mobile_bridge.ENVIRONMENT_LATEST_FILENAME,
+                "received_utc": environment_payload["received_utc"],
+                "summary": environment_payload["summary"],
+                "diagnostic_only": True,
+                "integrator_updated": False,
+                "runtime_pointing_updated": False,
+            }
+
         @app.route("/mobile/gps", method="POST")
         def mobile_gps():
             payload = request.json

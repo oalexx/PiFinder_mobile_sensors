@@ -33,11 +33,16 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.Image;
 import android.media.ImageReader;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.DocumentsContract;
 import android.text.InputType;
 import android.text.SpannableString;
@@ -169,11 +174,18 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private boolean imuBatchCaptureActive = false;
     private String pendingImuBaseUrl = "";
     private String pendingImuBatchLabel = "diagnostic";
+    private String pendingEnvironmentBaseUrl = "";
+    private boolean environmentCaptureActive = false;
+    private Float latestAmbientLightLux;
+    private long latestAmbientLightAtMs = 0L;
+    private Float latestPressureHpa;
+    private long latestPressureAtMs = 0L;
     private String lastUploadedFrameId = "";
     private boolean fullDiagnosticRunning = false;
 
     private final List<Sensor> activeSensors = new ArrayList<>();
     private final List<Sensor> imuBatchSensors = new ArrayList<>();
+    private final List<Sensor> environmentSensors = new ArrayList<>();
     private final JSONArray imuBatchSamples = new JSONArray();
     private final StringBuilder liveSensorText = new StringBuilder();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -223,6 +235,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     protected void onPause() {
         super.onPause();
         stopImuBatchCapture();
+        stopEnvironmentCapture();
         stopLiveSensors();
         stopLocation();
         if (remoteWebView != null) {
@@ -425,6 +438,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button sendGps = makeGridButton("Send GPS");
         sendGps.setOnClickListener(v -> sendGpsToPiFinder());
         remoteBridgeRow.addView(sendGps);
+        Button sendEnvironment = makeGridButton("Send Env");
+        sendEnvironment.setOnClickListener(v -> sendEnvironmentToPiFinder());
+        remoteBridgeRow.addView(sendEnvironment);
         LinearLayout remoteImuRow = buttonRow();
         remoteScreen.addView(remoteImuRow);
         Button sendImu = makeGridButton("Send IMU Batch");
@@ -1067,6 +1083,78 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
+    private void sendEnvironmentToPiFinder() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateRemoteStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        pendingEnvironmentBaseUrl = baseUrl;
+        stopEnvironmentCapture();
+        boolean registered = registerEnvironmentSensor(Sensor.TYPE_LIGHT);
+        registered = registerEnvironmentSensor(Sensor.TYPE_PRESSURE) || registered;
+        environmentCaptureActive = registered;
+        if (registered) {
+            updateRemoteStatus("Sampling environment\nLight/pressure sensors are optional.");
+            mainHandler.postDelayed(() -> finishEnvironmentCapture("sampled"), 700);
+        } else {
+            finishEnvironmentCapture("no_optional_sensors");
+        }
+    }
+
+    private boolean registerEnvironmentSensor(int type) {
+        if (sensorManager == null) {
+            return false;
+        }
+        Sensor sensor = sensorManager.getDefaultSensor(type);
+        if (sensor == null) {
+            return false;
+        }
+        boolean registered = sensorManager.registerListener(
+                this,
+                sensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+        );
+        if (registered && !environmentSensors.contains(sensor)) {
+            environmentSensors.add(sensor);
+        }
+        return registered;
+    }
+
+    private void finishEnvironmentCapture(String reason) {
+        String baseUrl = pendingEnvironmentBaseUrl;
+        pendingEnvironmentBaseUrl = "";
+        stopEnvironmentCapture();
+        if (baseUrl == null || baseUrl.length() == 0) {
+            return;
+        }
+        String environmentJson;
+        try {
+            environmentJson = buildEnvironmentPayloadJson();
+        } catch (JSONException e) {
+            updateRemoteStatus("Environment send failed\nCould not build environment JSON.");
+            return;
+        }
+        updateRemoteStatus("Sending environment\n" + reason + "\n" + baseUrl + "/mobile/environment");
+        new Thread(() -> {
+            String message = postMobileEnvironment(baseUrl, environmentJson);
+            runOnUiThread(() -> updateRemoteStatus(message));
+        }).start();
+    }
+
+    private void stopEnvironmentCapture() {
+        if (sensorManager != null) {
+            for (Sensor sensor : environmentSensors) {
+                sensorManager.unregisterListener(this, sensor);
+            }
+        }
+        environmentSensors.clear();
+        environmentCaptureActive = false;
+    }
+
     private void sendImuBatchToPiFinder(String batchLabel) {
         if (remoteUrlInput == null) {
             return;
@@ -1343,6 +1431,74 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
+    private String postMobileEnvironment(String baseUrl, String environmentJson) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/environment");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(6000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+            byte[] bodyBytes = environmentJson.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bodyBytes.length);
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                outputStream.write(bodyBytes);
+            }
+
+            int status = connection.getResponseCode();
+            String body = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Environment send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+            }
+            JSONObject json = new JSONObject(body);
+            if (!json.optBoolean("ok", false)) {
+                return "Environment send failed\nServer returned ok=false.";
+            }
+            JSONObject summary = json.optJSONObject("summary");
+            return "Environment sent\nStored: " + json.optString("stored_as", "unknown")
+                    + "\nReceived: " + json.optString("received_utc", "unknown time")
+                    + "\n" + formatEnvironmentSummary(summary);
+        } catch (Exception e) {
+            return "Environment send failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String formatEnvironmentSummary(JSONObject summary) {
+        if (summary == null) {
+            return "Environment: unavailable";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("Light: ");
+        if (summary.optBoolean("ambient_light_available", false)) {
+            builder.append(format(summary.optDouble("ambient_light_lux", 0.0))).append(" lux");
+        } else {
+            builder.append("unavailable");
+        }
+        builder.append("\nPressure: ");
+        if (summary.optBoolean("pressure_available", false)) {
+            builder.append(format(summary.optDouble("pressure_hpa", 0.0))).append(" hPa");
+        } else {
+            builder.append("unavailable");
+        }
+        builder.append("\nBattery: ");
+        if (summary.optBoolean("battery_available", false)) {
+            builder.append(format(summary.optDouble("battery_percent", 0.0))).append("%");
+        } else {
+            builder.append("unavailable");
+        }
+        builder.append("\nNetwork: ").append(summary.optString("network_type", "unknown"));
+        return builder.toString();
+    }
+
     private String buildGpsPayloadJson(Location location) throws JSONException {
         JSONObject gps = new JSONObject();
         gps.put("lat", location.getLatitude());
@@ -1358,6 +1514,113 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         gps.put("provider", location.getProvider());
         gps.put("phone_time_utc", utcIso(System.currentTimeMillis()));
         return gps.toString();
+    }
+
+    private String buildEnvironmentPayloadJson() throws JSONException {
+        JSONObject environment = new JSONObject();
+        environment.put("schema", "pifinder-mobile-environment-v0");
+        environment.put("device_time_utc", utcIso(System.currentTimeMillis()));
+        environment.put("app", appJson());
+        environment.put("device", deviceJson());
+        environment.put("sensors", environmentSensorsJson());
+        environment.put("battery", batteryJson());
+        environment.put("network", networkJson());
+        environment.put("device_state", deviceStateJson());
+        environment.put("diagnostic_only", true);
+        return environment.toString();
+    }
+
+    private JSONObject environmentSensorsJson() throws JSONException {
+        JSONObject sensors = new JSONObject();
+        sensors.put("ambient_light", environmentSensorJson(
+                Sensor.TYPE_LIGHT,
+                "lux",
+                latestAmbientLightLux,
+                latestAmbientLightAtMs
+        ));
+        sensors.put("pressure", environmentSensorJson(
+                Sensor.TYPE_PRESSURE,
+                "hpa",
+                latestPressureHpa,
+                latestPressureAtMs
+        ));
+        return sensors;
+    }
+
+    private JSONObject environmentSensorJson(
+            int type,
+            String valueName,
+            Float latestValue,
+            long latestAtMs
+    ) throws JSONException {
+        JSONObject json = sensorJson(type);
+        json.put("sensor_name", json.optString("name", ""));
+        if (latestValue != null) {
+            json.put(valueName, latestValue);
+            json.put("sample_age_ms", Math.max(0, System.currentTimeMillis() - latestAtMs));
+        }
+        return json;
+    }
+
+    private JSONObject batteryJson() throws JSONException {
+        JSONObject battery = new JSONObject();
+        BatteryManager batteryManager = (BatteryManager) getSystemService(Context.BATTERY_SERVICE);
+        battery.put("available", batteryManager != null);
+        if (batteryManager != null) {
+            int percent = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            if (percent >= 0) {
+                battery.put("percent", percent);
+            }
+            int chargingStatus = batteryManager.getIntProperty(
+                    BatteryManager.BATTERY_PROPERTY_STATUS
+            );
+            battery.put("charging", chargingStatus == BatteryManager.BATTERY_STATUS_CHARGING
+                    || chargingStatus == BatteryManager.BATTERY_STATUS_FULL);
+        }
+        return battery;
+    }
+
+    private JSONObject networkJson() throws JSONException {
+        JSONObject network = new JSONObject();
+        network.put("available", false);
+        network.put("type", "unknown");
+        try {
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) {
+                return network;
+            }
+            Network activeNetwork = manager.getActiveNetwork();
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(activeNetwork);
+            if (capabilities == null) {
+                return network;
+            }
+            network.put("available", true);
+            network.put("internet", capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET));
+            network.put("validated", capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                network.put("type", "wifi");
+            } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                network.put("type", "cellular");
+            } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                network.put("type", "ethernet");
+            } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                network.put("type", "vpn");
+            }
+        } catch (SecurityException ignored) {
+            network.put("available", false);
+        }
+        return network;
+    }
+
+    private JSONObject deviceStateJson() throws JSONException {
+        JSONObject state = new JSONObject();
+        state.put("screen_orientation", screenOrientationName());
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (powerManager != null) {
+            state.put("power_save_mode", powerManager.isPowerSaveMode());
+            state.put("interactive", powerManager.isInteractive());
+        }
+        return state;
     }
 
     private void postImuBatchToPiFinder(String baseUrl, String imuJson, String batchLabel) {
@@ -1855,6 +2118,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         StringBuilder result = new StringBuilder();
         result.append("Camera diagnostic history\n");
         if (sessionSummary != null) {
+            JSONObject environment = sessionSummary.optJSONObject("environment");
             result.append("Reports: ")
                     .append(sessionSummary.optInt("returned_reports", 0))
                     .append("/")
@@ -1884,6 +2148,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     result.append("\nTry: ").append(adviceNext);
                 }
             }
+            if (environment != null) {
+                result.append("\nEnv reports: ")
+                        .append(environment.optInt("reports_with_environment", 0));
+                JSONObject latestEnvironment = environment.optJSONObject("latest");
+                if (latestEnvironment != null) {
+                    result.append("\nLatest env: ")
+                            .append(formatEnvironmentSummary(latestEnvironment));
+                }
+            }
             if (recommendation.length() > 0) {
                 result.append("\nRecommendation: ").append(recommendation);
             }
@@ -1911,6 +2184,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             JSONObject advice = report.optJSONObject("advice");
             JSONObject score = report.optJSONObject("score");
             JSONObject solve = report.optJSONObject("solve");
+            JSONObject environment = report.optJSONObject("environment");
             String status = summary == null ? "unknown" : summary.optString("status", "unknown");
             String label = summary == null ? "" : summary.optString("label", "");
             String grade = summary == null ? "unknown" : summary.optString("grade", "unknown");
@@ -1946,6 +2220,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             }
             if (adviceNext.length() > 0) {
                 result.append("\nTry: ").append(adviceNext);
+            }
+            if (environment != null) {
+                result.append("\nEnvironment: ")
+                        .append(environment.optBoolean("available", false) ? "available" : "missing");
             }
             result.append("\nReport: ").append(report.optString("report_file", "unknown"));
         }
@@ -2027,6 +2305,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             }
             metadata.put("storage_only", true);
             metadata.put("solver_requested", false);
+            metadata.put("environment", new JSONObject(buildEnvironmentPayloadJson()));
             return metadata.toString();
         } catch (JSONException e) {
             return "{\"schema\":\"pifinder-mobile-camera-frame-v0\",\"storage_only\":true}";
@@ -3217,6 +3496,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     @Override
     public void onSensorChanged(SensorEvent event) {
+        rememberEnvironmentSensorSample(event);
         liveImuSampleReceived = true;
         maybeCaptureImuSample(event);
         liveSensorText.setLength(0);
@@ -3238,6 +3518,20 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         liveSensorText.append("\nActive sensors: ").append(activeSensors.size());
         liveView.setText(liveSensorText.toString());
+    }
+
+    private void rememberEnvironmentSensorSample(SensorEvent event) {
+        if (event.values == null || event.values.length == 0) {
+            return;
+        }
+        int type = event.sensor.getType();
+        if (type == Sensor.TYPE_LIGHT) {
+            latestAmbientLightLux = event.values[0];
+            latestAmbientLightAtMs = System.currentTimeMillis();
+        } else if (type == Sensor.TYPE_PRESSURE) {
+            latestPressureHpa = event.values[0];
+            latestPressureAtMs = System.currentTimeMillis();
+        }
     }
 
     @Override

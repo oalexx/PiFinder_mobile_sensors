@@ -8,12 +8,15 @@ and the Phase 5 calibration evidence flow. It checks what the phone actually
 exposes through public Android APIs, runs capture tests, loads the existing
 PiFinder `/remote` page, and can send GPS, IMU batches, profile data, mount
 calibration evidence, and JPEG diagnostic frames to a Raspberry Pi running
-PiFinder Lite.
+PiFinder Lite. It can also send optional environment metadata so camera
+reports can show whether ambient light, barometer, battery, and network context
+were available during a session.
 
 Current validated bridge status:
 
 - `/mobile/status` connection check works.
 - `SEND PROFILE` posts the structured phone profile.
+- `SEND ENV` stores diagnostic environment metadata without GPS coordinates.
 - `SEND GPS` can feed the running PiFinder process.
 - `SEND IMU BATCH` stores a short diagnostic batch for confidence analysis.
 - `CALIBRATION` stores labeled `stationary`, `mounted_reference`, and
@@ -87,6 +90,10 @@ background too bright, noise too high, too few candidates, saturation present,
 or solved but collect more evidence. The advice is conservative until more
 clear-sky Phase 2 data tunes thresholds.
 
+Camera-frame metadata includes a diagnostic environment snapshot. Missing
+light or pressure sensors are recorded as unavailable rather than treated as an
+error.
+
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:
 
@@ -106,6 +113,8 @@ Available actions:
 - `TEST CONNECTION`: checks `/mobile/status`.
 - `OPEN REMOTE`: opens the existing PiFinder `/remote` page full-screen.
 - `SEND PROFILE`: sends the phone capability/profile JSON.
+- `SEND ENV`: sends ambient-light/barometer availability, battery, network,
+  app/device time, and coarse device state to `/mobile/environment`.
 - `SEND GPS`: posts the current Android location to PiFinder.
 - `SEND IMU BATCH`: captures and uploads a short rotation-vector batch.
 - `MOUNT REF IMU`: captures a still phone/tube reference batch for Phase 5
@@ -198,6 +207,7 @@ cd mobile
 11. Go to `PIFINDER REMOTE`, set the Raspberry base URL, then run:
     - `TEST CONNECTION`
     - `SEND PROFILE`
+    - `SEND ENV`
     - `SEND GPS`
     - `SEND IMU BATCH`
 12. Go back to `CAMERA LAB`, run `SOLVE CANDIDATE BURST`, then tap

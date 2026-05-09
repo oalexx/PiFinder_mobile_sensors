@@ -22,6 +22,46 @@ real Raspberry Pi.
 
 ## Change Records
 
+### 2026-05-09: Mobile environment metadata bridge
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/PiFinder/server.py`
+- `python/tests/test_mobile_bridge.py`
+
+Reason:
+
+Phase 6 camera diagnostics need session context to explain why a capture scored
+well or poorly. Android can provide ambient-light availability/value,
+barometer availability/value, battery, network, and coarse device state without
+using private GPS coordinates.
+
+Change:
+
+Added diagnostic-only `/mobile/environment`, persisted the latest normalized
+payload as `environment_latest.json`, and included a compact environment
+summary in camera diagnostic solve reports and `/mobile/camera_reports`.
+Private location keys are stripped from environment payloads and reports.
+
+Classic PiFinder impact:
+
+Low. The endpoint is additive, only writes debug/diagnostic JSON under
+`~/PiFinder_data/mobile/`, and never updates solver, integrator, or pointing
+state.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_android_camera_solve_ui.py -q
+cd mobile && .\gradlew.bat assembleDebug
+```
+
+Status:
+
+Keep. This supports Phase 6 evidence capture while preserving the
+diagnostic-only guardrail.
+
 ### 2026-05-02: `keyboard_none.run_keyboard` signature
 
 Files:

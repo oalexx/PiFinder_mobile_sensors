@@ -19,6 +19,7 @@ MOBILE_DATA_DIR = utils.data_dir / "mobile"
 PROFILE_LATEST_FILENAME = "profile_latest.json"
 GPS_LATEST_FILENAME = "gps_latest.json"
 IMU_LATEST_FILENAME = "imu_latest.json"
+ENVIRONMENT_LATEST_FILENAME = "environment_latest.json"
 MOUNT_PROFILES_DIRNAME = "mount_profiles"
 MAX_IMU_SAMPLES = 512
 IMU_BATCH_LABELS = {
@@ -34,6 +35,15 @@ MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 DEFAULT_MOBILE_GPS_ERROR_M = 9999
 MOUNT_PROFILE_SCHEMA = "pifinder-mobile-mount-profile-v0"
 CAMERA_SOLVE_FRAME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,96}$")
+PRIVATE_LOCATION_KEYS = {
+    "gps",
+    "location",
+    "coordinates",
+    "lat",
+    "lon",
+    "latitude",
+    "longitude",
+}
 MOUNT_PROFILE_STATUSES = {"uncalibrated", "candidate", "usable", "invalidated"}
 MOUNT_PROFILE_VALIDATION_STATES = {
     "not_validated",
@@ -98,6 +108,77 @@ def profile_payload(profile: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def validate_environment_payload(
+    payload: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    """Normalize mobile environment metadata without accepting GPS coordinates."""
+    if not isinstance(payload, dict):
+        return {}, "environment payload must be a JSON object."
+
+    sanitized = _strip_private_location_fields(payload)
+    sensors = _object_or_empty(sanitized.get("sensors"))
+    normalized = {
+        "schema": str(sanitized.get("schema") or "pifinder-mobile-environment-v0"),
+        "device_time_utc": sanitized.get("device_time_utc"),
+        "app": _object_or_empty(sanitized.get("app")),
+        "device": _object_or_empty(sanitized.get("device")),
+        "sensors": {
+            "ambient_light": _environment_sensor_payload(
+                sensors.get("ambient_light"),
+                value_field="lux",
+            ),
+            "pressure": _environment_sensor_payload(
+                sensors.get("pressure"),
+                value_field="hpa",
+            ),
+        },
+        "battery": _object_or_empty(sanitized.get("battery")),
+        "network": _object_or_empty(sanitized.get("network")),
+        "device_state": _object_or_empty(sanitized.get("device_state")),
+        "diagnostic_only": True,
+        "integrator_updated": False,
+        "runtime_pointing_updated": False,
+    }
+    normalized["battery"].setdefault("available", bool(normalized["battery"]))
+    normalized["network"].setdefault("available", bool(normalized["network"]))
+    return normalized, None
+
+
+def environment_payload(environment: Dict[str, Any]) -> Dict[str, Any]:
+    """Wrap normalized environment metadata for storage/debug reports."""
+    return {
+        "received_utc": utc_now_iso(),
+        "environment": environment,
+        "summary": environment_summary(environment),
+    }
+
+
+def environment_summary(environment: Dict[str, Any]) -> Dict[str, Any]:
+    environment = environment if isinstance(environment, dict) else {}
+    sensors = _object_or_empty(environment.get("sensors"))
+    light = _object_or_empty(sensors.get("ambient_light"))
+    pressure = _object_or_empty(sensors.get("pressure"))
+    battery = _object_or_empty(environment.get("battery"))
+    network = _object_or_empty(environment.get("network"))
+    device_state = _object_or_empty(environment.get("device_state"))
+    return {
+        "ambient_light_available": bool(light.get("available", False)),
+        "ambient_light_lux": _optional_float(light.get("lux")),
+        "pressure_available": bool(pressure.get("available", False)),
+        "pressure_hpa": _optional_float(
+            pressure.get("hpa", pressure.get("pressure_hpa"))
+        ),
+        "battery_available": bool(battery.get("available", False)),
+        "battery_percent": _optional_float(battery.get("percent")),
+        "battery_charging": _optional_bool(battery.get("charging")),
+        "network_available": bool(network.get("available", False)),
+        "network_type": str(network.get("type") or "unknown"),
+        "network_validated": _optional_bool(network.get("validated")),
+        "screen_orientation": str(device_state.get("screen_orientation") or "unknown"),
+        "power_save_mode": _optional_bool(device_state.get("power_save_mode")),
+    }
+
+
 def error_payload(code: str, message: str) -> Dict[str, Any]:
     return {
         "ok": False,
@@ -129,6 +210,45 @@ def validate_camera_frame_bytes(frame_bytes: bytes) -> Optional[str]:
     if not frame_bytes.startswith(b"\xff\xd8"):
         return "frame must be a JPEG image."
     return None
+
+
+def _strip_private_location_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _strip_private_location_fields(item)
+            for key, item in value.items()
+            if str(key).lower() not in PRIVATE_LOCATION_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_private_location_fields(item) for item in value]
+    return value
+
+
+def _object_or_empty(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _optional_bool(value: Any) -> Optional[bool]:
+    return value if isinstance(value, bool) else None
+
+
+def _environment_sensor_payload(value: Any, value_field: str) -> Dict[str, Any]:
+    source = _object_or_empty(value)
+    payload = dict(source)
+    payload["available"] = bool(source.get("available", False))
+    if value_field in source:
+        numeric_value = _optional_float(source.get(value_field))
+        if numeric_value is not None:
+            payload[value_field] = numeric_value
+    return payload
 
 
 def store_camera_frame(
@@ -174,6 +294,7 @@ def diagnostic_camera_solve(
     frame_id: str,
     frames_dir: Optional[Path] = None,
     reports_dir: Optional[Path] = None,
+    environment_path: Optional[Path] = None,
     solve_timeout_ms: int = 1000,
     preprocess_modes: Optional[List[str]] = None,
     force_attempt: bool = False,
@@ -200,6 +321,7 @@ def diagnostic_camera_solve(
         )
 
     metadata = _load_optional_json(metadata_path)
+    environment = _latest_environment_for_report(environment_path)
     try:
         score_mobile_frame = _import_lite_module("score_mobile_frame")
         score = score_mobile_frame.score_frame(frame_path)
@@ -213,6 +335,7 @@ def diagnostic_camera_solve(
             "integrator_updated": False,
             "runtime_pointing_updated": False,
             "metadata": metadata,
+            "environment": environment,
             "score": None,
             "solve": {
                 "attempted": False,
@@ -234,6 +357,7 @@ def diagnostic_camera_solve(
             "integrator_updated": False,
             "runtime_pointing_updated": False,
             "metadata": metadata,
+            "environment": environment,
             "score": score_payload,
             "solve": {
                 "attempted": False,
@@ -259,6 +383,7 @@ def diagnostic_camera_solve(
         "integrator_updated": False,
         "runtime_pointing_updated": False,
         "metadata": metadata,
+        "environment": environment,
         "score": score_payload,
         "solve": solve_payload,
         "elapsed_ms": _elapsed_ms(start_time),
@@ -647,6 +772,7 @@ def status_payload() -> Dict[str, Any]:
             "status": "implemented",
             "profile": "implemented",
             "gps": "implemented",
+            "environment": "implemented_diagnostic_only",
             "imu": "implemented_debug_only",
             "camera_frame": "implemented_storage_only",
             "camera_solve": "implemented_diagnostic_only",
@@ -776,10 +902,46 @@ def _load_camera_report(path: Path) -> Tuple[Dict[str, Any], Optional[str]]:
     return _sanitize_diagnostic_report(payload), None
 
 
+def _latest_environment_for_report(
+    environment_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    path = environment_path or (MOBILE_DATA_DIR / ENVIRONMENT_LATEST_FILENAME)
+    latest = _load_optional_json(path)
+    if not isinstance(latest, dict) or not latest:
+        return {
+            "available": False,
+            "summary": environment_summary({}),
+            "warnings": ["no_environment_payload_found"],
+        }
+
+    environment = latest.get("environment")
+    if not isinstance(environment, dict):
+        environment, error = validate_environment_payload(latest)
+        if error:
+            return {
+                "available": False,
+                "summary": environment_summary({}),
+                "warnings": [error],
+            }
+
+    summary = latest.get("summary")
+    if not isinstance(summary, dict):
+        summary = environment_summary(environment)
+
+    return {
+        "available": True,
+        "received_utc": latest.get("received_utc"),
+        "summary": summary,
+    }
+
+
 def _camera_report_summary(report_file: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     score = payload.get("score") if isinstance(payload.get("score"), dict) else {}
     solve = payload.get("solve") if isinstance(payload.get("solve"), dict) else {}
+    environment = (
+        payload.get("environment") if isinstance(payload.get("environment"), dict) else {}
+    )
     advice = payload.get("advice") if isinstance(payload.get("advice"), dict) else None
     if advice is None:
         advice = camera_exposure_advice(score, solve)
@@ -819,7 +981,22 @@ def _camera_report_summary(report_file: Path, payload: Dict[str, Any]) -> Dict[s
         },
         "recommendation": str(payload.get("recommendation") or ""),
         "next_action": str(payload.get("next_action") or ""),
+        "environment": _camera_environment_summary(environment),
         "elapsed_ms": payload.get("elapsed_ms"),
+    }
+
+
+def _camera_environment_summary(environment: Dict[str, Any]) -> Dict[str, Any]:
+    summary = environment.get("summary") if isinstance(environment, dict) else {}
+    if not isinstance(summary, dict):
+        summary = {}
+    return {
+        "available": bool(environment.get("available", False))
+        if isinstance(environment, dict)
+        else False,
+        "received_utc": environment.get("received_utc") if isinstance(environment, dict) else None,
+        "summary": summary or environment_summary({}),
+        "warnings": environment.get("warnings", []) if isinstance(environment, dict) else [],
     }
 
 
@@ -833,6 +1010,14 @@ def _camera_session_summary(
     best_quality_score = None
     best_solved_frame_id = None
     dominant_advice = None
+    environment_counts = {
+        "reports_with_environment": 0,
+        "ambient_light_available": 0,
+        "pressure_available": 0,
+        "battery_available": 0,
+        "network_available": 0,
+    }
+    latest_environment_summary = None
 
     for report in reports:
         summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
@@ -854,6 +1039,28 @@ def _camera_session_summary(
             best_frame_id = report.get("frame_id")
         if bool(summary.get("solve_ok")) and best_solved_frame_id is None:
             best_solved_frame_id = report.get("frame_id")
+        environment = (
+            report.get("environment")
+            if isinstance(report.get("environment"), dict)
+            else {}
+        )
+        if bool(environment.get("available", False)):
+            environment_counts["reports_with_environment"] += 1
+            env_summary = (
+                environment.get("summary")
+                if isinstance(environment.get("summary"), dict)
+                else {}
+            )
+            if latest_environment_summary is None:
+                latest_environment_summary = env_summary
+            for key in (
+                "ambient_light_available",
+                "pressure_available",
+                "battery_available",
+                "network_available",
+            ):
+                if bool(env_summary.get(key, False)):
+                    environment_counts[key] += 1
 
     solved_count = status_counts.get("solved", 0)
     returned_reports = len(reports)
@@ -884,6 +1091,10 @@ def _camera_session_summary(
         "best_frame_id": best_frame_id,
         "best_solved_frame_id": best_solved_frame_id,
         "best_quality_score": best_quality_score,
+        "environment": {
+            **environment_counts,
+            "latest": latest_environment_summary,
+        },
         "recommendation": recommendation,
         "next_action": next_action,
     }
@@ -971,6 +1182,7 @@ def _write_diagnostic_report(
 
 def _sanitize_diagnostic_report(payload: Dict[str, Any]) -> Dict[str, Any]:
     sanitized = json.loads(json.dumps(payload, default=str))
+    sanitized = _strip_private_location_fields(sanitized)
     metadata = sanitized.get("metadata")
     if isinstance(metadata, dict):
         metadata.pop("frame_file", None)
