@@ -169,6 +169,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String pendingImuBaseUrl = "";
     private String pendingImuBatchLabel = "diagnostic";
     private String lastUploadedFrameId = "";
+    private boolean fullDiagnosticRunning = false;
 
     private final List<Sensor> activeSensors = new ArrayList<>();
     private final List<Sensor> imuBatchSensors = new ArrayList<>();
@@ -484,6 +485,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraDiagnosticGuideView = statusCard();
         updateMobileCameraDiagnosticGuide("ready");
         cameraScreen.addView(cameraDiagnosticGuideView);
+
+        LinearLayout fullDiagnosticRow = buttonRow();
+        cameraScreen.addView(fullDiagnosticRow);
+        Button fullDiagnostic = makeGridButton("Run Full Diagnostic");
+        fullDiagnostic.setOnClickListener(v -> runFullMobileCameraDiagnostic());
+        fullDiagnosticRow.addView(fullDiagnostic);
 
         LinearLayout diagnosticRow = buttonRow();
         cameraScreen.addView(diagnosticRow);
@@ -1474,17 +1481,92 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         startCaptureTest("solve_candidate_burst", 256);
     }
 
+    private void runFullMobileCameraDiagnostic() {
+        if (fullDiagnosticRunning) {
+            captureView.setText("Full diagnostic already running.\nWait for the current report.");
+            return;
+        }
+        if (outputTreeUri == null) {
+            updateCameraFolderStatus();
+            captureView.setText("Full diagnostic needs a save folder.\nChoose Save Folder first.");
+            updateMobileCameraDiagnosticGuide("capture_needed");
+            pickOutputFolder();
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestRuntimePermissions();
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            captureView.setText("PiFinder URL missing.\nSet it in PiFinder Remote first.");
+            updateMobileCameraDiagnosticGuide("remote_needed");
+            return;
+        }
+        fullDiagnosticRunning = true;
+        lastUploadedFrameId = "";
+        updateMobileCameraDiagnosticGuide("full_running");
+        captureView.setText("Full diagnostic running...\n1. Capturing solve-candidate JPEG burst.");
+        startCaptureTest("solve_candidate_burst", 256);
+    }
+
+    private void continueFullMobileCameraDiagnostic() {
+        if (!fullDiagnosticRunning) {
+            return;
+        }
+        if (lastCapturedJpegBytes == null || lastCapturedJpegBytes.length == 0) {
+            fullDiagnosticRunning = false;
+            captureView.setText("Full diagnostic failed.\nNo JPEG was captured.");
+            updateMobileCameraDiagnosticGuide("capture_needed");
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            fullDiagnosticRunning = false;
+            captureView.setText("Full diagnostic failed.\nPiFinder URL missing.");
+            updateMobileCameraDiagnosticGuide("remote_needed");
+            return;
+        }
+        byte[] frameBytes = Arrays.copyOf(lastCapturedJpegBytes, lastCapturedJpegBytes.length);
+        String filename = lastCapturedJpegName;
+        String metadataJson = lastCapturedJpegMetadataJson;
+        captureView.setText("Full diagnostic running...\n2. Uploading JPEG.\n" + filename);
+        updateMobileCameraDiagnosticGuide("uploading");
+        new Thread(() -> {
+            String uploadMessage = postMobileCameraFrame(baseUrl, filename, frameBytes, metadataJson);
+            String frameId = lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim();
+            String solveMessage = "";
+            if (uploadMessage.startsWith("Camera frame uploaded") && frameId.length() > 0) {
+                runOnUiThread(() -> {
+                    captureView.setText("Full diagnostic running...\n3. Scoring and solving.\nFrame ID: " + frameId);
+                    updateMobileCameraDiagnosticGuide("solving");
+                });
+                solveMessage = postDiagnosticCameraSolve(baseUrl, frameId);
+            }
+            String finalMessage = formatFullDiagnosticResult(uploadMessage, solveMessage);
+            boolean success = uploadMessage.startsWith("Camera frame uploaded")
+                    && solveMessage.startsWith("Diagnostic solve complete");
+            runOnUiThread(() -> {
+                fullDiagnosticRunning = false;
+                captureView.setText(finalMessage);
+                updateMobileCameraDiagnosticGuide(success ? "solve_complete" : "solve_failed");
+            });
+        }).start();
+    }
+
     private void updateMobileCameraDiagnosticGuide(String stage) {
         if (cameraDiagnosticGuideView == null) {
             return;
         }
         String text = "Mobile camera diagnostic\n"
                 + "1. Select a save folder.\n"
-                + "2. Run Diagnostic Burst.\n"
-                + "3. Upload Last JPEG to PiFinder.\n"
-                + "4. On PiFinder/Raspberry, run quality score and diagnostic solve.\n\n";
+                + "2. Tap Run Full Diagnostic.\n"
+                + "3. Review upload, score, solve/skipped state, and report.\n"
+                + "Advanced: use separate burst/upload/solve buttons when debugging.\n\n";
         if ("capturing".equals(stage)) {
             text += "Status: capturing a solve-targeted JPEG burst.";
+        } else if ("full_running".equals(stage)) {
+            text += "Status: full diagnostic running. Capture, upload, score, and report will run in sequence.";
         } else if ("capture_ready".equals(stage)) {
             text += "Status: capture complete. Upload Last JPEG when PiFinder is reachable.";
         } else if ("capture_needed".equals(stage)) {
@@ -1514,10 +1596,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "1. Start PiFinder Lite on Raspberry.\n"
                 + "2. Set the PiFinder base URL in the Android app.\n"
                 + "3. Camera Lab -> Save Folder.\n"
-                + "4. Run Diagnostic Burst / Solve Candidate Burst.\n"
-                + "5. Upload Last JPEG.\n"
-                + "6. Tap Diagnostic Solve to call /mobile/camera_solve.\n"
-                + "7. Review the quality score, solve result, and stored report.\n";
+                + "4. Tap Run Full Diagnostic.\n"
+                + "5. Review uploaded frame ID, quality score, solve/skipped state, and stored report.\n"
+                + "6. Use the separate burst/upload/solve buttons only when debugging individual steps.\n";
     }
 
     private void copyMobileCameraDiagnosticPlan() {
@@ -1654,20 +1735,38 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         JSONObject score = json.optJSONObject("score");
         JSONObject solve = json.optJSONObject("solve");
         JSONObject report = json.optJSONObject("report");
+        JSONObject summary = json.optJSONObject("summary");
         String grade = score == null ? "unknown" : score.optString("grade", "unknown");
         double qualityScore = score == null ? -1.0 : score.optDouble("quality_score", -1.0);
         boolean attempted = solve != null && solve.optBoolean("attempted", false);
         boolean solveOk = solve != null && solve.optBoolean("solve_ok", false);
         String skippedReason = solve == null ? "" : solve.optString("skipped_reason", "");
         String reportPath = report == null ? "not stored" : report.optString("json_report", "not stored");
+        String summaryLabel = summary == null ? "" : summary.optString("label", "");
+        String recommendation = json.optString("recommendation", "");
+        String nextAction = json.optString("next_action", "");
         return "Diagnostic solve complete\nFrame ID: " + json.optString("frame_id", "unknown")
+                + (summaryLabel.length() > 0 ? "\nSummary: " + summaryLabel : "")
                 + "\nGrade: " + grade
                 + "\nScore: " + qualityScore
                 + "\nAttempted: " + attempted
                 + "\nSolve OK: " + solveOk
                 + (skippedReason.length() > 0 ? "\nSkipped: " + skippedReason : "")
+                + (recommendation.length() > 0 ? "\nRecommendation: " + recommendation : "")
+                + (nextAction.length() > 0 ? "\nNext: " + nextAction : "")
                 + "\nReport: " + reportPath
                 + "\nDiagnostic only: " + json.optBoolean("diagnostic_only", true);
+    }
+
+    private String formatFullDiagnosticResult(String uploadMessage, String solveMessage) {
+        StringBuilder result = new StringBuilder();
+        result.append("Full diagnostic report\n\nUpload\n").append(uploadMessage);
+        if (solveMessage == null || solveMessage.length() == 0) {
+            result.append("\n\nDiagnostic solve\nNot requested because upload did not return a frame ID.");
+            return result.toString();
+        }
+        result.append("\n\nDiagnostic solve\n").append(solveMessage);
+        return result.toString();
     }
 
     private byte[] buildCameraFrameMultipartBody(
@@ -3644,6 +3743,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             runOnUiThread(() -> updateMobileCameraDiagnosticGuide("capture_ready"));
         }
         closeCaptureCamera();
+        if ("solve_candidate_burst".equals(captureTestName) && fullDiagnosticRunning) {
+            runOnUiThread(() -> continueFullMobileCameraDiagnostic());
+        }
         if ("camera_sweep".equals(captureTestName)) {
             cameraSweepIndex++;
             if (cameraSweepIndex < cameraSweepIds.size()) {

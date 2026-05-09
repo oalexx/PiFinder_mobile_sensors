@@ -109,21 +109,23 @@ PiFinder Remote -> set base URL
 PiFinder Remote -> Test Connection
 PiFinder Remote -> Send Profile / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
-Camera Lab -> Run Diagnostic Burst
-Camera Lab -> Upload Last JPEG
-Camera Lab -> Diagnostic Solve
+Camera Lab -> Run Full Diagnostic
 ```
 
-Then on Raspberry:
+`Run Full Diagnostic` captures a solve-candidate JPEG, uploads it to
+`/mobile/camera_frame`, calls `/mobile/camera_solve`, and displays upload,
+quality score, solve/skipped state, next action, and the persisted report path.
+The separate burst/upload/solve buttons remain available for debugging.
+
+Optional Raspberry-side batch checks:
 
 ```bash
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
 ```
 
-The Android `Diagnostic Solve` action calls `/mobile/camera_solve` for the last
-uploaded `frame_id` and shows the score, solve/skipped state, and report path
-directly in the app.
+The Android diagnostic actions remain diagnostic-only and do not update live
+pointing or feed the integrator.
 
 ## Documentation Map
 

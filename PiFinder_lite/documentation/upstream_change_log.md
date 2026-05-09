@@ -1034,6 +1034,54 @@ Status:
 
 Keep. This is the Phase 6 diagnostic bridge for issues #54, #56, and #55.
 
+### 2026-05-09: Guided full mobile camera diagnostic report
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/tests/test_mobile_bridge.py`
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `python/tests/test_mobile_android_camera_solve_ui.py`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+
+Why:
+
+The first diagnostic solve implementation worked, but the operator still had to
+run capture, upload, and solve as separate steps. Phase 6 needs a clearer
+evidence-gathering loop so each useful capture can produce an understandable
+report from Android without SSH or manual script interpretation.
+
+Change:
+
+- `/mobile/camera_solve` responses now include `summary`, `recommendation`, and
+  `next_action` fields for app display.
+- Android Camera Lab now has `Run Full Diagnostic`, which captures a
+  solve-candidate burst, uploads the latest JPEG, calls `/mobile/camera_solve`,
+  and displays a combined upload/score/solve/report summary.
+- The existing separate burst, upload, and diagnostic solve buttons remain for
+  debugging individual steps.
+
+Classic PiFinder impact:
+
+Low. This extends optional mobile diagnostics only. It does not update runtime
+pointing, feed the integrator, alter solver loops, or change startup defaults.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_android_camera_solve_ui.py -q
+17 passed
+
+cd mobile
+.\gradlew.bat assembleDebug
+BUILD SUCCESSFUL
+```
+
+Status:
+
+Keep. This improves evidence collection for Phase 6 while remaining
+diagnostic-only.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

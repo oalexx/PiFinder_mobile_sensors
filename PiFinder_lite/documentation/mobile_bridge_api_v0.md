@@ -628,6 +628,17 @@ Response when the score rejects the frame:
     "solve_ok": false,
     "skipped_reason": "quality_score_rejected"
   },
+  "summary": {
+    "status": "rejected",
+    "label": "Rejected by quality score",
+    "grade": "LOW",
+    "quality_score": 12.0,
+    "attempted": false,
+    "solve_ok": false,
+    "skipped_reason": "quality_score_rejected"
+  },
+  "recommendation": "capture_better_frame",
+  "next_action": "Run Full Diagnostic again with a darker, steadier frame or wait for clearer sky.",
   "report": {
     "stored": true,
     "json_report": "/home/pi/PiFinder_data/mobile/camera_solve_reports/<report>.json"
@@ -642,6 +653,9 @@ Validation rules:
   `~/PiFinder_data/mobile/frames/<frame_id>.jpg`.
 - `frame_id` may contain only letters, numbers, underscores, and hyphens.
 - Missing or unsafe frame IDs return `400`.
+- Successful diagnostic responses include a human-facing `summary`,
+  `recommendation`, and `next_action` so Android can display a clear report
+  without interpreting low-level solver rows.
 
 Persistence:
 

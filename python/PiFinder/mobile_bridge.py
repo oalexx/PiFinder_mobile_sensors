@@ -222,7 +222,7 @@ def diagnostic_camera_solve(
             },
             "elapsed_ms": _elapsed_ms(start_time),
         }
-        return _with_diagnostic_report(payload, reports_dir)
+        return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
 
     should_attempt = bool(score.accept_for_diagnostic_solve or force_attempt)
     if not should_attempt:
@@ -243,7 +243,7 @@ def diagnostic_camera_solve(
             },
             "elapsed_ms": _elapsed_ms(start_time),
         }
-        return _with_diagnostic_report(payload, reports_dir)
+        return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
 
     solve_payload = _attempt_diagnostic_solve(
         frame_path=frame_path,
@@ -263,7 +263,7 @@ def diagnostic_camera_solve(
         "solve": solve_payload,
         "elapsed_ms": _elapsed_ms(start_time),
     }
-    return _with_diagnostic_report(payload, reports_dir)
+    return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
 
 
 def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -557,6 +557,64 @@ def _with_diagnostic_report(
 ) -> Dict[str, Any]:
     report_info = _write_diagnostic_report(payload, reports_dir)
     payload["report"] = report_info
+    return payload
+
+
+def _with_diagnostic_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
+    solve = payload.get("solve") if isinstance(payload.get("solve"), dict) else {}
+    score = payload.get("score") if isinstance(payload.get("score"), dict) else {}
+    attempted = bool(solve.get("attempted"))
+    solve_ok = bool(solve.get("solve_ok"))
+    skipped_reason = str(solve.get("skipped_reason") or "")
+    grade = str(score.get("grade") or "unknown")
+    quality_score = score.get("quality_score")
+
+    if skipped_reason == "quality_score_rejected":
+        status = "rejected"
+        label = "Rejected by quality score"
+        recommendation = "capture_better_frame"
+        next_action = (
+            "Run Full Diagnostic again with a darker, steadier frame or wait "
+            "for clearer sky."
+        )
+    elif skipped_reason == "quality_score_error":
+        status = "score_error"
+        label = "Quality score failed"
+        recommendation = "check_frame_or_server_logs"
+        next_action = "Check the stored JPEG/report and retry Run Full Diagnostic."
+    elif attempted and solve_ok:
+        status = "solved"
+        label = "Diagnostic solve succeeded"
+        recommendation = "keep_collecting_clear_sky_evidence"
+        next_action = (
+            "Save this report as evidence and repeat Run Full Diagnostic across "
+            "more clear-sky frames."
+        )
+    elif attempted:
+        status = "solve_failed"
+        label = "Diagnostic solve attempted but failed"
+        recommendation = "capture_better_frame_or_tune_thresholds"
+        next_action = (
+            "Run Full Diagnostic again with steadier capture and compare the "
+            "stored reports."
+        )
+    else:
+        status = "not_attempted"
+        label = "Diagnostic solve not attempted"
+        recommendation = "inspect_report"
+        next_action = "Inspect the stored report and retry Run Full Diagnostic."
+
+    payload["summary"] = {
+        "status": status,
+        "label": label,
+        "grade": grade,
+        "quality_score": quality_score,
+        "attempted": attempted,
+        "solve_ok": solve_ok,
+        "skipped_reason": skipped_reason,
+    }
+    payload["recommendation"] = recommendation
+    payload["next_action"] = next_action
     return payload
 
 

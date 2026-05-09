@@ -279,6 +279,10 @@ def test_diagnostic_camera_solve_skips_low_quality_frame_without_runtime_effect(
     assert result["score"]["grade"] == "LOW"
     assert result["solve"]["attempted"] is False
     assert result["solve"]["skipped_reason"] == "quality_score_rejected"
+    assert result["summary"]["status"] == "rejected"
+    assert result["summary"]["label"] == "Rejected by quality score"
+    assert result["recommendation"] == "capture_better_frame"
+    assert "Run Full Diagnostic" in result["next_action"]
 
 
 def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
@@ -315,6 +319,9 @@ def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
     assert report_payload["frame_id"] == frame_id
     assert report_payload["diagnostic_only"] is True
     assert report_payload["integrator_updated"] is False
+    assert report_payload["summary"]["status"] == "rejected"
+    assert report_payload["recommendation"] == "capture_better_frame"
+    assert "Run Full Diagnostic" in report_payload["next_action"]
     assert "C:/private" not in report_path.read_text(encoding="utf-8")
     assert "42.40404584" not in report_path.read_text(encoding="utf-8")
 
