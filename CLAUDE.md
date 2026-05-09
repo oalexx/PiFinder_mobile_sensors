@@ -19,6 +19,10 @@ Current status:
 - Phase 2 night-sky camera validation remains the active evidence gate.
 - Phase 5 field validation (#52) remains open as the mounted/real-sky evidence
   gate before any guidance or integrator work.
+- `PiFinder_lite/documentation/no_good_night_rehearsal.md` is the combined
+  cloudy/day rehearsal for Phase 2 camera diagnostics plus #52 IMU overlay
+  workflow checks. It can remove workflow blockers but cannot satisfy the
+  clear-sky evidence gates.
 - Phase 6 diagnostic mobile camera scaffolding is implemented through #67:
   diagnostic solve endpoint, Android guided flow, persisted reports, report
   history/session summary, exposure advisor, environment metadata, night-test

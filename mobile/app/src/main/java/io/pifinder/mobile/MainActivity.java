@@ -116,6 +116,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int COLOR_MUTED = Color.rgb(127, 136, 153);
     private static final int COLOR_ACCENT = Color.rgb(255, 38, 92);
     private static final int COLOR_ACCENT_DARK = Color.rgb(92, 12, 35);
+    private static final int COLOR_PRIMARY = Color.rgb(255, 76, 121);
+    private static final int COLOR_PRIMARY_TEXT = Color.rgb(29, 4, 13);
+    private static final int COLOR_SECONDARY = Color.rgb(42, 49, 65);
+    private static final int COLOR_SECONDARY_STROKE = Color.rgb(75, 86, 108);
+    private static final int COLOR_ADVANCED = Color.rgb(13, 16, 24);
+    private static final int COLOR_ADVANCED_STROKE = Color.rgb(49, 56, 72);
     private static final int COLOR_PASS = Color.rgb(64, 214, 137);
     private static final int COLOR_WARN = Color.rgb(255, 190, 92);
     private static final int COLOR_FAIL = Color.rgb(255, 74, 107);
@@ -142,6 +148,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView captureView;
     private TextView cameraDiagnosticGuideView;
     private TextView phase2NightTestWizardView;
+    private TextView calibrationChecklistView;
     private Button startImuButton;
     private LinearLayout homeScreen;
     private LinearLayout capabilitiesScreen;
@@ -354,40 +361,40 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         scrollView.addView(root);
 
         titleView = new TextView(this);
-        titleView.setText("PIFINDER MOBILE");
-        titleView.setTextSize(24);
+        titleView.setText("PiFinder Mobile");
+        titleView.setTextSize(25);
         titleView.setTextColor(COLOR_TEXT);
-        titleView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
-        titleView.setLetterSpacing(0.18f);
+        titleView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        titleView.setLetterSpacing(0.0f);
         titleView.setGravity(Gravity.CENTER);
-        titleView.setPadding(0, dp(56), 0, dp(6));
+        titleView.setPadding(0, dp(42), 0, dp(6));
         root.addView(titleView);
 
         subtitleView = new TextView(this);
-        subtitleView.setText("COMPATIBILITY TESTER");
-        subtitleView.setTextSize(12);
+        subtitleView.setText("Field companion and diagnostics");
+        subtitleView.setTextSize(13);
         subtitleView.setTextColor(COLOR_ACCENT);
-        subtitleView.setLetterSpacing(0.24f);
+        subtitleView.setLetterSpacing(0.0f);
         subtitleView.setGravity(Gravity.CENTER);
-        subtitleView.setPadding(0, 0, 0, dp(34));
+        subtitleView.setPadding(0, 0, 0, dp(26));
         root.addView(subtitleView);
 
         homeScreen = screenContainer();
         root.addView(homeScreen);
         homeStatusView = statusCard();
         homeScreen.addView(homeStatusView);
-        Button capabilitiesNav = makeHeroButton("CHECK CAPABILITIES", "Sensors, GPS, IMU, and phone readiness");
-        capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
-        homeScreen.addView(capabilitiesNav);
-        Button cameraNav = makeHeroButton("CAMERA LAB", "Daylight framing, astro burst, RAW, and lens sweep");
-        cameraNav.setOnClickListener(v -> showScreen("camera"));
-        homeScreen.addView(cameraNav);
-        Button remoteNav = makeHeroButton("PIFINDER REMOTE", "Open the existing PiFinder web remote inside the app");
+        Button remoteNav = makeHeroButton("PiFinder Remote", "Use the normal telescope remote from this phone", true);
         remoteNav.setOnClickListener(v -> showScreen("remote"));
         homeScreen.addView(remoteNav);
-        Button calibrationNav = makeHeroButton("CALIBRATION", "Collect mounted phone reference evidence");
+        Button cameraNav = makeHeroButton("Camera Lab", "Run the guided Phase 2 field diagnostic", false);
+        cameraNav.setOnClickListener(v -> showScreen("camera"));
+        homeScreen.addView(cameraNav);
+        Button calibrationNav = makeHeroButton("Calibration #52", "Collect mounted phone IMU overlay evidence", false);
         calibrationNav.setOnClickListener(v -> showScreen("calibration"));
         homeScreen.addView(calibrationNav);
+        Button capabilitiesNav = makeHeroButton("Diagnostics", "Check sensors, GPS, IMU, camera, and readiness", false);
+        capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
+        homeScreen.addView(capabilitiesNav);
 
         capabilitiesScreen = screenContainer();
         root.addView(capabilitiesScreen);
@@ -403,15 +410,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(remoteWebScreen);
 
         addBackRow(capabilitiesScreen);
-        addSectionHeader(capabilitiesScreen, "01", "CHECK CAPABILITIES", "Sensor, GPS, camera, and readiness diagnostics.");
+        addSectionHeader(capabilitiesScreen, "01", "Diagnostics", "Sensor, GPS, camera, and readiness checks.");
         capabilityActionView = statusCard();
         capabilitiesScreen.addView(capabilityActionView);
         LinearLayout row1 = buttonRow();
         capabilitiesScreen.addView(row1);
-        startImuButton = makeGridButton("Start IMU");
+        startImuButton = makeSecondaryButton("Start IMU");
         startImuButton.setOnClickListener(v -> startLiveSensors());
         row1.addView(startImuButton);
-        Button stop = makeGridButton("Stop");
+        Button stop = makeAdvancedButton("Stop");
         stop.setOnClickListener(v -> {
             stopLiveSensors();
             stopLocation();
@@ -420,7 +427,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
         LinearLayout row2 = buttonRow();
         capabilitiesScreen.addView(row2);
-        Button refresh = makeGridButton("Run Check");
+        Button refresh = makePrimaryButton("Run check");
         refresh.setOnClickListener(v -> {
             compatibilityCheckRun = true;
             refreshReport();
@@ -429,36 +436,36 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             updateCapabilityAction("Review the readiness result and copy the report if needed.");
         });
         row2.addView(refresh);
-        Button copyCheck = makeGridButton("Copy Check Result");
+        Button copyCheck = makeSecondaryButton("Copy result");
         copyCheck.setOnClickListener(v -> copyCheckResult());
         row2.addView(copyCheck);
 
         LinearLayout rowCopy = buttonRow();
         capabilitiesScreen.addView(rowCopy);
-        Button copyTech = makeGridButton("Copy Tech Report");
+        Button copyTech = makeAdvancedButton("Copy tech report");
         copyTech.setOnClickListener(v -> copyTechReport());
         rowCopy.addView(copyTech);
-        Button copyProfile = makeGridButton("Copy Profile JSON");
+        Button copyProfile = makeAdvancedButton("Copy profile JSON");
         copyProfile.setOnClickListener(v -> copyProfileJson());
         rowCopy.addView(copyProfile);
 
         LinearLayout rowHistory = buttonRow();
         capabilitiesScreen.addView(rowHistory);
-        Button viewHistory = makeGridButton("View History");
+        Button viewHistory = makeSecondaryButton("View history");
         viewHistory.setOnClickListener(v -> {
             updateHistoryView();
             showScreen("history");
         });
         rowHistory.addView(viewHistory);
-        Button copyHistory = makeGridButton("Copy History");
+        Button copyHistory = makeAdvancedButton("Copy history");
         copyHistory.setOnClickListener(v -> copyHistoryJson());
         rowHistory.addView(copyHistory);
 
-        addAreaTitle(capabilitiesScreen, "READINESS");
+        addAreaTitle(capabilitiesScreen, "Readiness");
         readinessBadgeView = readinessBadge();
         capabilitiesScreen.addView(readinessBadgeView);
 
-        addAreaTitle(capabilitiesScreen, "CHECK DETAILS");
+        addAreaTitle(capabilitiesScreen, "Check details");
         compatibilityView = sectionText();
         capabilitiesScreen.addView(compatibilityView);
 
@@ -466,87 +473,90 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         liveView.setText("Live sensors stopped.");
         capabilitiesScreen.addView(liveView);
 
-        addSectionHeader(capabilitiesScreen, "02", "TECHNICAL REPORT", "Detailed sensor and system data for debugging.");
+        addSectionHeader(capabilitiesScreen, "02", "Technical report", "Detailed sensor and system data for debugging.");
         deviceReportView = sectionText();
         capabilitiesScreen.addView(deviceReportView);
         sensorReportView = sectionText();
         capabilitiesScreen.addView(sensorReportView);
 
         addBackRow(historyScreen, "capabilities");
-        addSectionHeader(historyScreen, "01", "RECENT CHECK HISTORY", "Saved locally on this device.");
+        addSectionHeader(historyScreen, "01", "Recent check history", "Saved locally on this device.");
         historyView = sectionText();
         historyScreen.addView(historyView);
 
         addBackRow(remoteScreen);
-        addSectionHeader(remoteScreen, "01", "PIFINDER REMOTE", "Loads the existing /remote page from your PiFinder.");
+        addSectionHeader(remoteScreen, "01", "PiFinder Remote", "Loads the existing /remote page from your PiFinder.");
         remoteStatusView = statusCard();
         remoteScreen.addView(remoteStatusView);
         remoteUrlInput = makeUrlInput();
         remoteScreen.addView(remoteUrlInput);
         LinearLayout remoteRow = buttonRow();
         remoteScreen.addView(remoteRow);
-        Button openRemote = makeGridButton("Open Remote");
+        Button openRemote = makePrimaryButton("Open remote");
         openRemote.setOnClickListener(v -> openRemoteWebView());
         remoteRow.addView(openRemote);
-        Button testConnection = makeGridButton("Test Connection");
+        Button testConnection = makeSecondaryButton("Test connection");
         testConnection.setOnClickListener(v -> testPiFinderConnection());
         remoteRow.addView(testConnection);
         LinearLayout remoteBridgeRow = buttonRow();
         remoteScreen.addView(remoteBridgeRow);
-        Button sendProfile = makeGridButton("Send Profile");
+        Button sendProfile = makeSecondaryButton("Send profile");
         sendProfile.setOnClickListener(v -> sendProfileToPiFinder());
         remoteBridgeRow.addView(sendProfile);
-        Button sendGps = makeGridButton("Send GPS");
+        Button sendGps = makeSecondaryButton("Send GPS");
         sendGps.setOnClickListener(v -> sendGpsToPiFinder());
         remoteBridgeRow.addView(sendGps);
-        Button sendEnvironment = makeGridButton("Send Env");
+        Button sendEnvironment = makeSecondaryButton("Send env");
         sendEnvironment.setOnClickListener(v -> sendEnvironmentToPiFinder());
         remoteBridgeRow.addView(sendEnvironment);
         LinearLayout remoteImuRow = buttonRow();
         remoteScreen.addView(remoteImuRow);
-        Button sendImu = makeGridButton("Send IMU Batch");
+        Button sendImu = makeAdvancedButton("Send IMU batch");
         sendImu.setOnClickListener(v -> sendImuBatchToPiFinder("diagnostic"));
         remoteImuRow.addView(sendImu);
-        Button sendMountReferenceImu = makeGridButton("Mount Ref IMU");
+        Button sendMountReferenceImu = makeAdvancedButton("Mount ref IMU");
         sendMountReferenceImu.setOnClickListener(v -> sendImuBatchToPiFinder("mounted_reference"));
         remoteImuRow.addView(sendMountReferenceImu);
 
         addBackRow(calibrationScreen);
-        addSectionHeader(calibrationScreen, "01", "CALIBRATION", "Collect phone-to-telescope reference evidence.");
+        addSectionHeader(calibrationScreen, "01", "Calibration #52", "Step through mounted phone IMU overlay evidence.");
         calibrationStatusView = statusCard();
         calibrationScreen.addView(calibrationStatusView);
+        calibrationChecklistView = statusCard();
+        calibrationChecklistView.setText(calibrationChecklistText());
+        calibrationScreen.addView(calibrationChecklistView);
         calibrationTargetInput = makeTextInput("Reference target or note");
         calibrationScreen.addView(calibrationTargetInput);
         LinearLayout calibrationConnectionRow = buttonRow();
         calibrationScreen.addView(calibrationConnectionRow);
-        Button calibrationTestConnection = makeGridButton("Test Connection");
+        Button calibrationTestConnection = makePrimaryButton("Test connection");
         calibrationTestConnection.setOnClickListener(v -> testPiFinderConnection());
         calibrationConnectionRow.addView(calibrationTestConnection);
-        Button calibrationProfile = makeGridButton("Send Profile");
+        Button calibrationProfile = makeSecondaryButton("Send profile");
         calibrationProfile.setOnClickListener(v -> sendProfileToPiFinder());
         calibrationConnectionRow.addView(calibrationProfile);
-        Button calibrationCheckProfile = makeGridButton("Check Profile");
+        Button calibrationCheckProfile = makeSecondaryButton("Check profile");
         calibrationCheckProfile.setOnClickListener(v -> checkMobileMountProfile());
         calibrationConnectionRow.addView(calibrationCheckProfile);
         LinearLayout calibrationDataRow = buttonRow();
         calibrationScreen.addView(calibrationDataRow);
-        Button calibrationGps = makeGridButton("Send GPS");
+        Button calibrationGps = makeSecondaryButton("Send GPS");
         calibrationGps.setOnClickListener(v -> sendGpsToPiFinder());
         calibrationDataRow.addView(calibrationGps);
-        Button calibrationStationary = makeGridButton("Stationary");
+        Button calibrationStationary = makePrimaryButton("Stationary");
         calibrationStationary.setOnClickListener(v -> sendCalibrationImuBatch("stationary"));
         calibrationDataRow.addView(calibrationStationary);
         LinearLayout calibrationBatchRow = buttonRow();
         calibrationScreen.addView(calibrationBatchRow);
-        Button calibrationMountReference = makeGridButton("Mount Ref");
+        Button calibrationMountReference = makePrimaryButton("Mount ref");
         calibrationMountReference.setOnClickListener(v -> sendCalibrationImuBatch("mounted_reference"));
         calibrationBatchRow.addView(calibrationMountReference);
-        Button calibrationRepeatCheck = makeGridButton("Repeat Check");
+        Button calibrationRepeatCheck = makePrimaryButton("Repeat check");
         calibrationRepeatCheck.setOnClickListener(v -> sendCalibrationImuBatch("repeat_check"));
         calibrationBatchRow.addView(calibrationRepeatCheck);
         LinearLayout calibrationEvidenceRow = buttonRow();
         calibrationScreen.addView(calibrationEvidenceRow);
-        Button copyCalibrationEvidence = makeGridButton("Copy Evidence");
+        Button copyCalibrationEvidence = makeSecondaryButton("Copy evidence");
         copyCalibrationEvidence.setOnClickListener(v -> copyCalibrationEvidence());
         calibrationEvidenceRow.addView(copyCalibrationEvidence);
 
@@ -555,91 +565,95 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteWebScreen.addView(remoteWebView);
 
         addBackRow(cameraScreen);
-        addSectionHeader(cameraScreen, "01", "CAMERA LAB", "Select a save folder before running any test.");
+        addSectionHeader(cameraScreen, "01", "Camera Lab", "Guided Phase 2 camera evidence flow.");
         cameraFolderStatusView = statusCard();
         cameraScreen.addView(cameraFolderStatusView);
 
-        addAreaTitle(cameraScreen, "MOBILE CAMERA DIAGNOSTIC");
+        addAreaTitle(cameraScreen, "Field test");
         cameraDiagnosticGuideView = statusCard();
         updateMobileCameraDiagnosticGuide("ready");
         cameraScreen.addView(cameraDiagnosticGuideView);
 
-        addAreaTitle(cameraScreen, "PHASE 2 NIGHT TEST WIZARD");
+        LinearLayout row3 = buttonRow();
+        cameraScreen.addView(row3);
+        Button pickFolder = makeSecondaryButton("Save folder");
+        pickFolder.setOnClickListener(v -> pickOutputFolder());
+        row3.addView(pickFolder);
+        Button phase2Wizard = makeSecondaryButton("Night wizard");
+        phase2Wizard.setOnClickListener(v -> showPhase2NightTestWizard());
+        row3.addView(phase2Wizard);
+
+        LinearLayout fullDiagnosticRow = buttonRow();
+        cameraScreen.addView(fullDiagnosticRow);
+        Button fullDiagnostic = makePrimaryButton("Run full diagnostic");
+        fullDiagnostic.setOnClickListener(v -> runFullMobileCameraDiagnostic());
+        fullDiagnosticRow.addView(fullDiagnostic);
+
+        LinearLayout reportRow = buttonRow();
+        cameraScreen.addView(reportRow);
+        Button viewReports = makeSecondaryButton("View reports");
+        viewReports.setOnClickListener(v -> requestCameraDiagnosticReports());
+        reportRow.addView(viewReports);
+        Button copyReportSummary = makeSecondaryButton("Copy summary");
+        copyReportSummary.setOnClickListener(v -> copyCameraReportSummary());
+        reportRow.addView(copyReportSummary);
+        Button markPhase2Repeat = makeSecondaryButton("Mark repeat");
+        markPhase2Repeat.setOnClickListener(v -> markPhase2NightTestRepeat());
+        reportRow.addView(markPhase2Repeat);
+
+        addAreaTitle(cameraScreen, "Phase 2 checklist");
         phase2NightTestWizardView = statusCard();
         updatePhase2NightTestWizard("ready");
         cameraScreen.addView(phase2NightTestWizardView);
         LinearLayout phase2WizardRow = buttonRow();
         cameraScreen.addView(phase2WizardRow);
-        Button phase2Wizard = makeGridButton("Night Test Wizard");
-        phase2Wizard.setOnClickListener(v -> showPhase2NightTestWizard());
-        phase2WizardRow.addView(phase2Wizard);
-        Button copyPhase2Plan = makeGridButton("Copy Night Test Plan");
+        Button copyPhase2Plan = makeSecondaryButton("Copy night plan");
         copyPhase2Plan.setOnClickListener(v -> copyPhase2NightTestPlan());
         phase2WizardRow.addView(copyPhase2Plan);
-        Button markPhase2Repeat = makeGridButton("Mark Repeat");
-        markPhase2Repeat.setOnClickListener(v -> markPhase2NightTestRepeat());
-        phase2WizardRow.addView(markPhase2Repeat);
-
-        LinearLayout fullDiagnosticRow = buttonRow();
-        cameraScreen.addView(fullDiagnosticRow);
-        Button fullDiagnostic = makeGridButton("Run Full Diagnostic");
-        fullDiagnostic.setOnClickListener(v -> runFullMobileCameraDiagnostic());
-        fullDiagnosticRow.addView(fullDiagnostic);
-        Button viewReports = makeGridButton("View Reports");
-        viewReports.setOnClickListener(v -> requestCameraDiagnosticReports());
-        fullDiagnosticRow.addView(viewReports);
-
-        LinearLayout diagnosticRow = buttonRow();
-        cameraScreen.addView(diagnosticRow);
-        Button guidedDiagnostic = makeGridButton("Run Diagnostic Burst");
-        guidedDiagnostic.setOnClickListener(v -> startMobileCameraDiagnostic());
-        diagnosticRow.addView(guidedDiagnostic);
-        Button copyReportSummary = makeGridButton("Copy Report Summary");
-        copyReportSummary.setOnClickListener(v -> copyCameraReportSummary());
-        diagnosticRow.addView(copyReportSummary);
 
         LinearLayout diagnosticToolsRow = buttonRow();
         cameraScreen.addView(diagnosticToolsRow);
-        Button copyDiagnosticPlan = makeGridButton("Copy Diagnostic Plan");
+        Button copyDiagnosticPlan = makeAdvancedButton("Copy diagnostic plan");
         copyDiagnosticPlan.setOnClickListener(v -> copyMobileCameraDiagnosticPlan());
         diagnosticToolsRow.addView(copyDiagnosticPlan);
 
-        LinearLayout row3 = buttonRow();
-        cameraScreen.addView(row3);
-        Button pickFolder = makeGridButton("Save Folder");
-        pickFolder.setOnClickListener(v -> pickOutputFolder());
-        row3.addView(pickFolder);
-        Button dayTest = makeGridButton("Day Test");
+        addAreaTitle(cameraScreen, "Advanced captures");
+        LinearLayout diagnosticRow = buttonRow();
+        cameraScreen.addView(diagnosticRow);
+        Button guidedDiagnostic = makeAdvancedButton("Diagnostic burst");
+        guidedDiagnostic.setOnClickListener(v -> startMobileCameraDiagnostic());
+        diagnosticRow.addView(guidedDiagnostic);
+        Button dayTest = makeAdvancedButton("Day test");
         dayTest.setOnClickListener(v -> startCaptureTest("day_test", 256));
-        row3.addView(dayTest);
+        diagnosticRow.addView(dayTest);
 
         LinearLayout row4 = buttonRow();
         cameraScreen.addView(row4);
-        Button manualBurst = makeGridButton("Manual Burst");
+        Button manualBurst = makeAdvancedButton("Manual burst");
         manualBurst.setOnClickListener(v -> startCaptureTest("manual_burst", 256));
         row4.addView(manualBurst);
-        Button isoSweep = makeGridButton("ISO Sweep");
+        Button isoSweep = makeAdvancedButton("ISO sweep");
         isoSweep.setOnClickListener(v -> startCaptureTest("iso_sweep", 256));
         row4.addView(isoSweep);
 
         LinearLayout row5 = buttonRow();
         cameraScreen.addView(row5);
-        Button rawBurst = makeGridButton("RAW Burst");
+        Button rawBurst = makeAdvancedButton("RAW burst");
         rawBurst.setOnClickListener(v -> startCaptureTest("raw_burst", 32));
         row5.addView(rawBurst);
-        Button cameraSweep = makeGridButton("Cam Sweep");
+        Button cameraSweep = makeAdvancedButton("Camera sweep");
         cameraSweep.setOnClickListener(v -> startCaptureTest("camera_sweep", 256));
         row5.addView(cameraSweep);
 
         LinearLayout row6 = buttonRow();
         cameraScreen.addView(row6);
-        Button solveCandidateBurst = makeGridButton("Solve Candidate Burst");
+        Button solveCandidateBurst = makeAdvancedButton("Candidate burst");
         solveCandidateBurst.setOnClickListener(v -> startCaptureTest("solve_candidate_burst", 256));
         row6.addView(solveCandidateBurst);
-        Button uploadLastJpeg = makeGridButton("Upload Last JPEG");
+        Button uploadLastJpeg = makeAdvancedButton("Upload JPEG");
         uploadLastJpeg.setOnClickListener(v -> uploadLastCapturedJpeg());
         row6.addView(uploadLastJpeg);
-        Button diagnosticSolve = makeGridButton("Diagnostic Solve");
+        Button diagnosticSolve = makeAdvancedButton("Solve frame");
         diagnosticSolve.setOnClickListener(v -> requestDiagnosticCameraSolve());
         row6.addView(diagnosticSolve);
 
@@ -651,13 +665,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraScreen.addView(cameraReportView);
 
         showScreen("home");
-        updateCapabilityAction("Start IMU, move the phone, stop it, then run the check.");
+        updateCapabilityAction("Run check first. Use live IMU only when you need sensor debugging.");
         updateCameraFolderStatus();
         updateHomeStatus();
         updateHistoryView();
-        updateRemoteStatus("Enter the PiFinder base URL, then open the remote.");
+        updateRemoteStatus("Enter the PiFinder base URL, test the connection, then open the remote.");
         updateCalibrationStatus(
-                "Mount the phone rigidly, choose a reference, then capture Stationary, Mount Ref, and Repeat Check."
+                "Start with Test connection, then capture Stationary, Mount ref, and Repeat check."
         );
 
         return scrollView;
@@ -744,7 +758,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         row.setPadding(dp(12), 0, dp(12), dp(6));
     }
 
-    private Button makeHeroButton(String title, String subtitle) {
+    private Button makeHeroButton(String title, String subtitle, boolean primary) {
         Button button = new Button(this);
         String text = title + "\n" + subtitle;
         SpannableString styledText = new SpannableString(text);
@@ -773,7 +787,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         );
         styledText.setSpan(
-                new ForegroundColorSpan(COLOR_MUTED),
+                new ForegroundColorSpan(primary ? Color.rgb(80, 14, 35) : COLOR_MUTED),
                 title.length() + 1,
                 text.length(),
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -781,13 +795,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         button.setText(styledText);
         button.setAllCaps(false);
         button.setTextSize(16);
-        button.setTextColor(COLOR_TEXT);
+        button.setTextColor(primary ? COLOR_PRIMARY_TEXT : COLOR_TEXT);
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
         button.setGravity(Gravity.CENTER);
-        button.setLetterSpacing(0.06f);
-        button.setMinHeight(dp(132));
-        button.setPadding(dp(18), dp(22), dp(18), dp(22));
-        button.setBackground(roundedRect(COLOR_PANEL, COLOR_ACCENT_DARK, 1, 8));
+        button.setLetterSpacing(0.0f);
+        button.setMinHeight(dp(primary ? 124 : 104));
+        button.setPadding(dp(18), dp(18), dp(18), dp(18));
+        button.setBackground(primary
+                ? roundedRect(COLOR_PRIMARY, COLOR_PRIMARY, 1, 28)
+                : roundedRect(COLOR_PANEL, COLOR_SECONDARY_STROKE, 1, 18));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -799,19 +815,19 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private Button makeSmallButton(String label) {
         Button button = new Button(this);
-        button.setText(label.toUpperCase(Locale.US));
-        button.setTextSize(10);
+        button.setText(label);
+        button.setTextSize(12);
         button.setTextColor(COLOR_MUTED);
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-        button.setLetterSpacing(0.08f);
+        button.setLetterSpacing(0.0f);
         button.setAllCaps(false);
-        button.setMinHeight(dp(32));
-        button.setMinWidth(dp(72));
-        button.setPadding(dp(10), 0, dp(10), 0);
-        button.setBackground(roundedRect(COLOR_BG, Color.rgb(45, 51, 66), 1, 3));
+        button.setMinHeight(dp(48));
+        button.setMinWidth(dp(88));
+        button.setPadding(dp(14), 0, dp(14), 0);
+        button.setBackground(roundedRect(COLOR_BG, Color.rgb(45, 51, 66), 1, 18));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(36)
+                dp(48)
         );
         params.setMargins(0, 0, dp(8), dp(10));
         button.setLayoutParams(params);
@@ -834,7 +850,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         index.setTextSize(13);
         index.setTextColor(COLOR_ACCENT);
         index.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-        index.setLetterSpacing(0.08f);
+        index.setLetterSpacing(0.0f);
         LinearLayout.LayoutParams indexParams = new LinearLayout.LayoutParams(
                 dp(34),
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -843,10 +859,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
         TextView heading = new TextView(this);
         heading.setText(title);
-        heading.setTextSize(16);
+        heading.setTextSize(18);
         heading.setTextColor(COLOR_TEXT);
-        heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
-        heading.setLetterSpacing(0.18f);
+        heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+        heading.setLetterSpacing(0.0f);
         titleRow.addView(heading);
 
         TextView caption = new TextView(this);
@@ -878,7 +894,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         heading.setTextSize(15);
         heading.setTextColor(COLOR_TEXT);
         heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-        heading.setLetterSpacing(0.14f);
+        heading.setLetterSpacing(0.0f);
         heading.setGravity(Gravity.START);
         block.addView(heading);
 
@@ -901,16 +917,40 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private Button makeGridButton(String label) {
+        return makeSecondaryButton(label);
+    }
+
+    private Button makePrimaryButton(String label) {
+        return makeActionButton(label, COLOR_PRIMARY, COLOR_PRIMARY, COLOR_PRIMARY_TEXT, 56, 24);
+    }
+
+    private Button makeSecondaryButton(String label) {
+        return makeActionButton(label, COLOR_SECONDARY, COLOR_SECONDARY_STROKE, COLOR_TEXT, 52, 18);
+    }
+
+    private Button makeAdvancedButton(String label) {
+        return makeActionButton(label, COLOR_ADVANCED, COLOR_ADVANCED_STROKE, COLOR_MUTED, 50, 14);
+    }
+
+    private Button makeActionButton(
+            String label,
+            int fill,
+            int stroke,
+            int textColor,
+            int minHeightDp,
+            int radiusDp
+    ) {
         Button button = new Button(this);
-        button.setText(label.toUpperCase(Locale.US));
-        button.setTextSize(11);
-        button.setTextColor(COLOR_TEXT);
+        button.setText(label);
+        button.setTextSize(13);
+        button.setTextColor(textColor);
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-        button.setLetterSpacing(0.08f);
+        button.setLetterSpacing(0.0f);
         button.setAllCaps(false);
         button.setSingleLine(false);
-        button.setMinHeight(dp(48));
-        button.setBackground(roundedRect(COLOR_PANEL_SOFT, COLOR_ACCENT_DARK, 1, 3));
+        button.setMinHeight(dp(minHeightDp));
+        button.setPadding(dp(12), 0, dp(12), 0);
+        button.setBackground(roundedRect(fill, stroke, 1, radiusDp));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -2013,11 +2053,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         if (cameraDiagnosticGuideView == null) {
             return;
         }
-        String text = "Mobile camera diagnostic\n"
-                + "1. Select a save folder.\n"
-                + "2. Tap Run Full Diagnostic.\n"
-                + "3. Review upload, score, solve/skipped state, and report.\n"
-                + "Advanced: use separate burst/upload/solve buttons when debugging.\n\n";
+        String text = "Guided field test\n"
+                + "1. Save folder.\n"
+                + "2. Night wizard if you need the checklist.\n"
+                + "3. Run full diagnostic.\n"
+                + "4. View reports, copy summary, then mark repeat.\n"
+                + "Advanced captures below are for debugging individual steps.\n\n";
         if ("capturing".equals(stage)) {
             text += "Status: capturing a solve-targeted JPEG burst.";
         } else if ("full_running".equals(stage)) {
@@ -2025,7 +2066,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } else if ("capture_ready".equals(stage)) {
             text += "Status: capture complete. Upload Last JPEG when PiFinder is reachable.";
         } else if ("capture_needed".equals(stage)) {
-            text += "Status: no JPEG is ready. Run Diagnostic Burst first.";
+            text += "Status: no JPEG is ready. Use Run full diagnostic, or Diagnostic burst in Advanced captures.";
         } else if ("remote_needed".equals(stage)) {
             text += "Status: PiFinder URL missing. Set it in PiFinder Remote.";
         } else if ("uploading".equals(stage)) {
@@ -2043,7 +2084,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } else if ("upload_failed".equals(stage)) {
             text += "Status: upload failed. Check PiFinder IP, Wi-Fi, and /mobile/status.";
         } else {
-            text += "Status: ready. Use this when validating PiFinder Lite camera flow.";
+            text += "Status: ready. Use this for Phase 2 rehearsal or clear-sky evidence collection.";
         }
         cameraDiagnosticGuideView.setText(text);
     }
@@ -2053,9 +2094,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "1. Start PiFinder Lite on Raspberry.\n"
                 + "2. Set the PiFinder base URL in the Android app.\n"
                 + "3. Camera Lab -> Save Folder.\n"
-                + "4. Tap Run Full Diagnostic.\n"
+                + "4. Tap Run full diagnostic.\n"
                 + "5. Review uploaded frame ID, quality score, solve/skipped state, and stored report.\n"
-                + "6. Use the separate burst/upload/solve buttons only when debugging individual steps.\n";
+                + "6. Use Advanced captures only when debugging individual steps.\n";
     }
 
     private void showPhase2NightTestWizard() {
@@ -2081,15 +2122,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 || latestCameraReportSummary.trim().length() == 0
                 ? "not loaded"
                 : "loaded";
-        String text = "Phase 2 Night Test Wizard\n"
+        String text = "Phase 2 checklist\n"
                 + "Goal: collect comparable clear-sky evidence without claiming camera proven reliable.\n"
                 + "Status: " + phase2NightTestWizardStatus(stage) + "\n\n"
                 + "Checklist\n"
                 + "1. PiFinder URL: " + (baseUrl.length() == 0 ? "missing" : baseUrl) + "\n"
                 + "2. In PiFinder Remote: TEST CONNECTION, SEND PROFILE, SEND ENV, SEND GPS.\n"
                 + "3. Save folder: " + folderStatus + "\n"
-                + "4. In Camera Lab: Run Full Diagnostic.\n"
-                + "5. Use View Reports, then Copy Report Summary for sanitized notes.\n"
+                + "4. In Camera Lab: Run full diagnostic.\n"
+                + "5. Use View reports, then Copy summary for sanitized notes.\n"
                 + "6. Repeat count marked here: " + phase2NightTestRepeatCount + "\n"
                 + "7. Report summary: " + reportStatus + "\n\n"
                 + "Decision boundary: test completed means the workflow ran. Camera proven reliable requires repeated clear-sky evidence and remains blocked until Phase 2 is summarized.\n"
@@ -2827,8 +2868,21 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private void updateCalibrationStatus(String message) {
         if (calibrationStatusView != null) {
-            calibrationStatusView.setText("Calibration\n" + message);
+            calibrationStatusView.setText("Current step\n" + message
+                    + "\n\nBoundary: read-only diagnostic overlay. Poor-night/day runs remain needs_more_data.");
         }
+    }
+
+    private String calibrationChecklistText() {
+        return "Mounted IMU checklist\n"
+                + "1. Test connection.\n"
+                + "2. Send profile and GPS.\n"
+                + "3. Capture Stationary with the tube untouched.\n"
+                + "4. Point at a repeatable reference and capture Mount ref.\n"
+                + "5. Capture Repeat check without moving the phone.\n"
+                + "6. Remount the phone and repeat Mount ref + Repeat check.\n"
+                + "7. Wait 5 minutes, capture one final Repeat check.\n"
+                + "8. Copy evidence for the #52 report.";
     }
 
     private TextView readinessBadge() {
@@ -3394,14 +3448,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         if (!compatibilityCheckRun) {
-            homeStatusView.setText("Readiness: NOT RUN\nStart with Check Capabilities to grade this phone.");
+            homeStatusView.setText("Ready for field setup\nStart with PiFinder Remote if the Raspberry is running, or Diagnostics to grade this phone.");
             homeStatusView.setTextColor(COLOR_MUTED);
             homeStatusView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
             return;
         }
         homeStatusView.setText(
                 "Readiness: " + latestReadinessGrade + " (" + latestReadinessPercent + "%)\n"
-                        + "Next: run Camera Lab tests with a saved output folder."
+                        + "Next: open Camera Lab for Phase 2, or Calibration #52 for mounted IMU rehearsal."
         );
         homeStatusView.setTextColor(COLOR_TEXT);
         homeStatusView.setBackground(roundedRect(COLOR_PANEL, readinessColor(), 1, 6));
@@ -3431,12 +3485,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         if (outputTreeUri == null) {
-            cameraFolderStatusView.setText("Save folder: NOT SELECTED\nChoose a folder before running camera tests.");
+            cameraFolderStatusView.setText("Save folder: not selected\nChoose a folder before running the field diagnostic.");
             cameraFolderStatusView.setTextColor(COLOR_WARN);
             cameraFolderStatusView.setBackground(roundedRect(COLOR_PANEL, COLOR_WARN, 1, 6));
             return;
         }
-        cameraFolderStatusView.setText("Save folder: SELECTED\n" + outputTreeUri);
+        cameraFolderStatusView.setText("Save folder: selected\n" + outputTreeUri);
         cameraFolderStatusView.setTextColor(COLOR_TEXT);
         cameraFolderStatusView.setBackground(roundedRect(COLOR_PANEL, COLOR_PASS, 1, 6));
     }
@@ -3681,7 +3735,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         liveImuSampleReceived = false;
         if (startImuButton != null) {
             startImuButton.setText("IMU RUNNING");
-            startImuButton.setBackground(roundedRect(Color.rgb(112, 22, 48), COLOR_ACCENT, 1, 3));
+            startImuButton.setBackground(roundedRect(Color.rgb(112, 22, 48), COLOR_ACCENT, 1, 18));
         }
         updateCapabilityAction("IMU is running. Move the phone gently, then stop and run the check.");
         liveView.setText("Live sensors started. Move the phone slowly to inspect updates.");
@@ -3702,8 +3756,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         liveImuStarted = false;
         liveSensorText.setLength(0);
         if (startImuButton != null) {
-            startImuButton.setText("START IMU");
-            startImuButton.setBackground(roundedRect(COLOR_PANEL_SOFT, COLOR_ACCENT_DARK, 1, 3));
+            startImuButton.setText("Start IMU");
+            startImuButton.setBackground(roundedRect(COLOR_SECONDARY, COLOR_SECONDARY_STROKE, 1, 18));
         }
         if (liveView != null) {
             liveView.setText("Live sensors stopped.");

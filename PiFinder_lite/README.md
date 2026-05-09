@@ -120,6 +120,7 @@ PiFinder Remote -> set base URL
 PiFinder Remote -> Test Connection
 PiFinder Remote -> Send Profile / Send Env / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
+Camera Lab -> Night Test Wizard
 Camera Lab -> Run Full Diagnostic
 PiFinder_lite -> generate_mobile_camera_profile.py
 ```
@@ -191,6 +192,7 @@ live under `documentation/`.
 | Document | Purpose |
 | --- | --- |
 | `documentation/phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
+| `documentation/no_good_night_rehearsal.md` | Combined poor-night/day rehearsal for camera diagnostics and #52 IMU overlay validation. |
 | `documentation/phase2_day_test_validation.md` | Day Test validation notes. |
 | `documentation/phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
 | `documentation/solve_candidate_burst.md` | Android burst mode tuned for solving. |
@@ -239,7 +241,10 @@ commit phone-test artifacts or local filesystem paths.
 Phase 4 hardware validation has passed. Phase 5 tooling is ready, but #52 still
 needs mounted field evidence before any guidance beyond read-only overlay.
 Use `documentation/phase5_field_validation_52.md` to run a day/poor-night
-workflow now and repeat the same protocol under clear sky later.
+workflow now and repeat the same protocol under clear sky later. If the next
+session is cloudy, bright, or mainly a shakedown, use
+`documentation/no_good_night_rehearsal.md` to rehearse both #52 and the Phase 2
+camera diagnostic flow without promoting either path.
 
 The next camera gate remains Phase 2 clear-sky camera validation:
 

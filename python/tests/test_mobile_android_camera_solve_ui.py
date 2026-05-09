@@ -8,11 +8,11 @@ MAIN_ACTIVITY = ROOT / "mobile/app/src/main/java/io/pifinder/mobile/MainActivity
 def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
-    assert 'makeGridButton("Run Full Diagnostic")' in source
+    assert 'makePrimaryButton("Run full diagnostic")' in source
     assert "runFullMobileCameraDiagnostic()" in source
     assert "fullDiagnosticRunning" in source
     assert "formatFullDiagnosticResult" in source
-    assert 'makeGridButton("Diagnostic Solve")' in source
+    assert 'makeAdvancedButton("Solve frame")' in source
     assert "requestDiagnosticCameraSolve()" in source
     assert '"/mobile/camera_solve"' in source
     assert "lastUploadedFrameId" in source
@@ -34,12 +34,12 @@ def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
 def test_android_camera_lab_exposes_diagnostic_report_history():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
-    assert 'makeGridButton("View Reports")' in source
+    assert 'makeSecondaryButton("View reports")' in source
     assert "requestCameraDiagnosticReports()" in source
     assert '"/mobile/camera_reports?limit=20"' in source
     assert "formatCameraReports" in source
     assert "latestCameraReportSummary" in source
-    assert 'makeGridButton("Copy Report Summary")' in source
+    assert 'makeSecondaryButton("Copy summary")' in source
     assert "copyCameraReportSummary()" in source
     assert '"session_summary"' in source
     assert '"status_counts"' in source
@@ -49,7 +49,7 @@ def test_android_camera_lab_exposes_diagnostic_report_history():
 def test_android_exposes_mobile_environment_metadata_bridge():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
-    assert 'makeGridButton("Send Env")' in source
+    assert 'makeSecondaryButton("Send env")' in source
     assert "sendEnvironmentToPiFinder()" in source
     assert "buildEnvironmentPayloadJson()" in source
     assert "postMobileEnvironment" in source
@@ -69,12 +69,12 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
     assert "phase2NightTestWizardView" in source
-    assert 'addAreaTitle(cameraScreen, "PHASE 2 NIGHT TEST WIZARD")' in source
-    assert 'makeGridButton("Night Test Wizard")' in source
+    assert 'addAreaTitle(cameraScreen, "Phase 2 checklist")' in source
+    assert 'makeSecondaryButton("Night wizard")' in source
     assert "showPhase2NightTestWizard()" in source
-    assert 'makeGridButton("Copy Night Test Plan")' in source
+    assert 'makeSecondaryButton("Copy night plan")' in source
     assert "copyPhase2NightTestPlan()" in source
-    assert 'makeGridButton("Mark Repeat")' in source
+    assert 'makeSecondaryButton("Mark repeat")' in source
     assert "markPhase2NightTestRepeat()" in source
     assert "phase2NightTestRepeatCount" in source
     assert "updatePhase2NightTestWizard" in source
@@ -87,8 +87,8 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "SEND PROFILE" in source
     assert "SEND ENV" in source
     assert "SEND GPS" in source
-    assert "Run Full Diagnostic" in source
-    assert "View Reports" in source
+    assert "Run full diagnostic" in source
+    assert "View reports" in source
 
 
 def test_android_full_diagnostic_ranks_dynamic_burst_candidates():
@@ -105,12 +105,12 @@ def test_android_full_diagnostic_ranks_dynamic_burst_candidates():
     assert "formatSolveCandidateRanking" in source
     assert "selected by Raspberry score" in source
     assert "distributed across burst" in source
-    assert "Run Full Diagnostic" in source
+    assert "Run full diagnostic" in source
     assert "postMobileCameraFrame(" in source
     assert "candidate.filename" in source
     assert "postDiagnosticCameraSolve(baseUrl, frameId)" in source
     assert '"solve_candidate_selector"' in source
     assert '"ranking_summary"' in source
     assert '"selected_candidate"' in source
-    assert "Upload Last JPEG" in source
+    assert "Upload JPEG" in source
     assert "manual debug" in source

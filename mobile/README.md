@@ -114,6 +114,9 @@ separates `test completed` from `camera proven reliable`: a completed test
 means the workflow ran and produced notes; camera reliability still requires
 repeated clear-sky evidence and the Phase 2 decision summary. The wizard remains
 diagnostic-only and does not feed mobile solves into pointing or the integrator.
+For cloudy, bright, or rehearsal sessions, use
+`../PiFinder_lite/documentation/no_good_night_rehearsal.md` to combine the
+Camera Lab workflow with #52 mounted IMU overlay checks.
 
 The burst frame selector is also diagnostic-only. Android only chooses a
 bounded, distributed subset from the burst so field uploads stay practical:
@@ -289,7 +292,9 @@ Next gates:
   can still validate remount, drift, and workflow logging, but cannot promote
   the overlay beyond read-only. Use
   `../PiFinder_lite/documentation/phase5_field_validation_52.md` for the guided
-  day/poor-night and clear-night protocol.
+  day/poor-night and clear-night protocol, or
+  `../PiFinder_lite/documentation/no_good_night_rehearsal.md` when combining
+  #52 with a Phase 2 camera shakedown.
 - Build Phase 6 as a diagnostic mobile-camera solve workflow first.
 - Keep uploaded frames diagnostic until mobile captures solve reliably under
   Phase 2 evidence.

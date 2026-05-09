@@ -31,6 +31,7 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | Document | Purpose |
 | --- | --- |
 | `phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
+| `no_good_night_rehearsal.md` | Combined poor-night/day rehearsal for Phase 2 camera diagnostics and #52 IMU overlay validation. |
 | `phase2_day_test_validation.md` | Day Test validation notes. |
 | `phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
 | `solve_candidate_burst.md` | Android burst mode tuned for solving. |
