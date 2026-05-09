@@ -48,3 +48,4 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | `mobile_mount_offset_tool.md` | Offline tool for computing a candidate phone-to-tube orientation offset. |
 | `mobile_mount_repeatability.md` | Offline repeatability validation for candidate mount profiles. |
 | `mobile_imu_integration_decision.md` | Decision record for the safe next mobile IMU integration level. |
+| `phase5_field_validation_52.md` | Guided day/poor-night and clear-night protocol for #52. |

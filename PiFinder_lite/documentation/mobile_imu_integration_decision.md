@@ -137,6 +137,9 @@ GitHub: https://github.com/oalexx/PiFinder_mobile_sensors/issues/52
 Goal:
 
 Run real mounted observing tests before any guidance or integrator work.
+Use `phase5_field_validation_52.md` as the execution protocol. It separates
+day / poor-night workflow validation from the clear-night evidence required for
+any later guidance decision.
 
 Acceptance:
 

@@ -206,6 +206,8 @@ commit phone-test artifacts or local filesystem paths.
 
 Phase 4 hardware validation has passed. Phase 5 tooling is ready, but #52 still
 needs mounted field evidence before any guidance beyond read-only overlay.
+Use `documentation/phase5_field_validation_52.md` to run a day/poor-night
+workflow now and repeat the same protocol under clear sky later.
 
 The next camera gate remains Phase 2 clear-sky camera validation:
 

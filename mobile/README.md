@@ -226,7 +226,9 @@ Next gates:
 - Complete Phase 2 clear-sky camera validation.
 - Field-validate the Phase 5 calibrated IMU overlay (#52). Poor/cloudy nights
   can still validate remount, drift, and workflow logging, but cannot promote
-  the overlay beyond read-only.
+  the overlay beyond read-only. Use
+  `../PiFinder_lite/documentation/phase5_field_validation_52.md` for the guided
+  day/poor-night and clear-night protocol.
 - Build Phase 6 as a diagnostic mobile-camera solve workflow first.
 - Keep uploaded frames diagnostic until mobile captures solve reliably under
   Phase 2 evidence.
