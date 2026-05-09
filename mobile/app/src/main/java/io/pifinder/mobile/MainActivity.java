@@ -156,6 +156,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String latestProfileJson = "";
     private String latestHistoryJson = "";
     private String latestCalibrationEvidenceJson = "";
+    private String latestCameraReportSummary = "";
     private String latestReport = "";
     private String latestReadinessGrade = "NOT RUN";
     private int latestReadinessPercent = -1;
@@ -491,15 +492,24 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button fullDiagnostic = makeGridButton("Run Full Diagnostic");
         fullDiagnostic.setOnClickListener(v -> runFullMobileCameraDiagnostic());
         fullDiagnosticRow.addView(fullDiagnostic);
+        Button viewReports = makeGridButton("View Reports");
+        viewReports.setOnClickListener(v -> requestCameraDiagnosticReports());
+        fullDiagnosticRow.addView(viewReports);
 
         LinearLayout diagnosticRow = buttonRow();
         cameraScreen.addView(diagnosticRow);
         Button guidedDiagnostic = makeGridButton("Run Diagnostic Burst");
         guidedDiagnostic.setOnClickListener(v -> startMobileCameraDiagnostic());
         diagnosticRow.addView(guidedDiagnostic);
+        Button copyReportSummary = makeGridButton("Copy Report Summary");
+        copyReportSummary.setOnClickListener(v -> copyCameraReportSummary());
+        diagnosticRow.addView(copyReportSummary);
+
+        LinearLayout diagnosticToolsRow = buttonRow();
+        cameraScreen.addView(diagnosticToolsRow);
         Button copyDiagnosticPlan = makeGridButton("Copy Diagnostic Plan");
         copyDiagnosticPlan.setOnClickListener(v -> copyMobileCameraDiagnosticPlan());
-        diagnosticRow.addView(copyDiagnosticPlan);
+        diagnosticToolsRow.addView(copyDiagnosticPlan);
 
         LinearLayout row3 = buttonRow();
         cameraScreen.addView(row3);
@@ -1554,6 +1564,55 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }).start();
     }
 
+    private void requestCameraDiagnosticReports() {
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            cameraReportView.setText("Camera reports unavailable\nSet the PiFinder URL in PiFinder Remote first.");
+            updateMobileCameraDiagnosticGuide("remote_needed");
+            return;
+        }
+        cameraReportView.setText("Loading camera diagnostic reports...\n" + baseUrl + "/mobile/camera_reports?limit=20");
+        new Thread(() -> {
+            String message = getCameraDiagnosticReports(baseUrl);
+            runOnUiThread(() -> {
+                cameraReportView.setText(message);
+                updateMobileCameraDiagnosticGuide(
+                        message.startsWith("Camera diagnostic history") ? "reports_loaded" : "solve_failed"
+                );
+            });
+        }).start();
+    }
+
+    private String getCameraDiagnosticReports(String baseUrl) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(baseUrl + "/mobile/camera_reports?limit=20");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(20000);
+            connection.setRequestProperty("Accept", "application/json");
+
+            int status = connection.getResponseCode();
+            String responseBody = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Camera reports failed\nHTTP " + status + "\n" + responseErrorSummary(responseBody);
+            }
+            JSONObject json = new JSONObject(responseBody);
+            if (!json.optBoolean("ok", false)) {
+                return "Camera reports failed\nServer returned ok=false.";
+            }
+            return formatCameraReports(json);
+        } catch (Exception e) {
+            return "Camera reports failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
     private void updateMobileCameraDiagnosticGuide(String stage) {
         if (cameraDiagnosticGuideView == null) {
             return;
@@ -1581,6 +1640,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             text += "Status: PiFinder is scoring and running diagnostic solve.";
         } else if ("solve_complete".equals(stage)) {
             text += "Status: diagnostic solve complete. Review score, solve result, and report path.";
+        } else if ("reports_loaded".equals(stage)) {
+            text += "Status: report history loaded. Use it to compare recent score/solve results.";
         } else if ("solve_failed".equals(stage)) {
             text += "Status: diagnostic solve request failed. Check PiFinder status and frame id.";
         } else if ("upload_failed".equals(stage)) {
@@ -1605,6 +1666,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder mobile diagnostic plan", mobileCameraDiagnosticPlanText()));
         Toast.makeText(this, "Diagnostic plan copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void copyCameraReportSummary() {
+        String summary = latestCameraReportSummary == null ? "" : latestCameraReportSummary.trim();
+        if (summary.length() == 0) {
+            summary = "No camera diagnostic report summary loaded.\nTap View Reports first.";
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder camera report summary", summary));
+        Toast.makeText(this, "Camera report summary copied", Toast.LENGTH_SHORT).show();
     }
 
     private String postMobileCameraFrame(
@@ -1767,6 +1838,92 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         result.append("\n\nDiagnostic solve\n").append(solveMessage);
         return result.toString();
+    }
+
+    private String formatCameraReports(JSONObject json) {
+        JSONObject sessionSummary = json.optJSONObject("session_summary");
+        JSONArray reports = json.optJSONArray("reports");
+        JSONObject statusCounts = sessionSummary == null ? null : sessionSummary.optJSONObject("status_counts");
+        StringBuilder result = new StringBuilder();
+        result.append("Camera diagnostic history\n");
+        if (sessionSummary != null) {
+            result.append("Reports: ")
+                    .append(sessionSummary.optInt("returned_reports", 0))
+                    .append("/")
+                    .append(sessionSummary.optInt("total_reports", 0))
+                    .append("\nSolved: ")
+                    .append(sessionSummary.optInt("solved_count", 0))
+                    .append("\nRejected: ")
+                    .append(sessionSummary.optInt("rejected_count", 0));
+            String bestFrame = sessionSummary.optString("best_frame_id", "");
+            if (bestFrame.length() > 0 && !"null".equals(bestFrame)) {
+                result.append("\nBest frame: ").append(bestFrame)
+                        .append(" score ")
+                        .append(sessionSummary.optDouble("best_quality_score", -1.0));
+            }
+            String recommendation = sessionSummary.optString("recommendation", "");
+            String nextAction = sessionSummary.optString("next_action", "");
+            if (statusCounts != null) {
+                result.append("\nStatus counts: ").append(statusCounts.toString());
+            }
+            if (recommendation.length() > 0) {
+                result.append("\nRecommendation: ").append(recommendation);
+            }
+            if (nextAction.length() > 0) {
+                result.append("\nNext: ").append(nextAction);
+            }
+        }
+        int malformedReports = json.optInt("malformed_reports", 0);
+        if (malformedReports > 0) {
+            result.append("\nWarnings: ").append(malformedReports).append(" malformed report(s) skipped");
+        }
+        result.append("\n\nRecent reports");
+        if (reports == null || reports.length() == 0) {
+            result.append("\nNo reports yet. Run Full Diagnostic first.");
+            latestCameraReportSummary = result.toString();
+            return latestCameraReportSummary;
+        }
+        int count = Math.min(reports.length(), 5);
+        for (int i = 0; i < count; i++) {
+            JSONObject report = reports.optJSONObject(i);
+            if (report == null) {
+                continue;
+            }
+            JSONObject summary = report.optJSONObject("summary");
+            JSONObject score = report.optJSONObject("score");
+            JSONObject solve = report.optJSONObject("solve");
+            String status = summary == null ? "unknown" : summary.optString("status", "unknown");
+            String label = summary == null ? "" : summary.optString("label", "");
+            String grade = summary == null ? "unknown" : summary.optString("grade", "unknown");
+            double qualityScore = summary == null ? -1.0 : summary.optDouble("quality_score", -1.0);
+            boolean attempted = solve != null && solve.optBoolean("attempted", false);
+            boolean solveOk = solve != null && solve.optBoolean("solve_ok", false);
+            String skippedReason = solve == null ? "" : solve.optString("skipped_reason", "");
+            if (score != null && qualityScore < 0) {
+                qualityScore = score.optDouble("quality_score", -1.0);
+            }
+            result.append("\n\n")
+                    .append(i + 1)
+                    .append(". ")
+                    .append(report.optString("frame_id", "unknown"))
+                    .append("\nStatus: ")
+                    .append(status)
+                    .append(label.length() > 0 ? " (" + label + ")" : "")
+                    .append("\nGrade: ")
+                    .append(grade)
+                    .append(" score ")
+                    .append(qualityScore)
+                    .append("\nAttempted: ")
+                    .append(attempted)
+                    .append(" solve_ok: ")
+                    .append(solveOk);
+            if (skippedReason.length() > 0) {
+                result.append("\nSkipped: ").append(skippedReason);
+            }
+            result.append("\nReport: ").append(report.optString("report_file", "unknown"));
+        }
+        latestCameraReportSummary = result.toString();
+        return latestCameraReportSummary;
     }
 
     private byte[] buildCameraFrameMultipartBody(

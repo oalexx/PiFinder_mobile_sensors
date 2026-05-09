@@ -72,6 +72,10 @@ Available tests:
 - `CAM SWEEP`: tests the available rear camera IDs.
 - `RUN FULL DIAGNOSTIC`: captures a solve-candidate JPEG, uploads it, asks
   Raspberry for score/diagnostic solve, and shows the stored report summary.
+- `VIEW REPORTS`: reads `/mobile/camera_reports` and shows recent diagnostic
+  reports, session counts, best score, recommendation, and next action.
+- `COPY REPORT SUMMARY`: copies the latest history/session summary from
+  `VIEW REPORTS`.
 - `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
 - `UPLOAD LAST JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
 - `DIAGNOSTIC SOLVE`: asks PiFinder to score and diagnostic-solve the uploaded
@@ -194,7 +198,9 @@ cd mobile
     `UPLOAD LAST JPEG`.
 13. Tap `DIAGNOSTIC SOLVE` to display quality score, solve/skipped state, and
     the Raspberry report path.
-14. Run the sky tests outdoors at night when conditions allow:
+14. Tap `VIEW REPORTS` to compare the recent diagnostic reports and copy the
+    session summary when needed.
+15. Run the sky tests outdoors at night when conditions allow:
     - `MANUAL BURST`
     - `ISO SWEEP`
     - `CAM SWEEP`

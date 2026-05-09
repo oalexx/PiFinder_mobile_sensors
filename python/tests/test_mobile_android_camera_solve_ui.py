@@ -27,3 +27,17 @@ def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
     assert 'updateMobileCameraDiagnosticGuide("full_running")' in source
     assert 'updateMobileCameraDiagnosticGuide("solving")' in source
     assert 'updateMobileCameraDiagnosticGuide("solve_complete")' in source
+
+
+def test_android_camera_lab_exposes_diagnostic_report_history():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert 'makeGridButton("View Reports")' in source
+    assert "requestCameraDiagnosticReports()" in source
+    assert '"/mobile/camera_reports?limit=20"' in source
+    assert "formatCameraReports" in source
+    assert "latestCameraReportSummary" in source
+    assert 'makeGridButton("Copy Report Summary")' in source
+    assert "copyCameraReportSummary()" in source
+    assert '"session_summary"' in source
+    assert '"status_counts"' in source

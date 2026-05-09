@@ -266,6 +266,49 @@ def diagnostic_camera_solve(
     return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
 
 
+def camera_report_history(
+    reports_dir: Optional[Path] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """Return recent mobile camera diagnostic reports and a session summary.
+
+    This is read-only diagnostic data. It intentionally returns sanitized,
+    compact report objects rather than raw files so mobile clients do not need
+    to understand every internal score/solve field.
+    """
+    target_dir = reports_dir or ensure_mobile_camera_solve_reports_dir()
+    safe_limit = max(1, min(int(limit), 100))
+    report_files = _camera_report_files(target_dir)
+    reports: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    malformed_reports = 0
+
+    for report_file in report_files:
+        payload, error = _load_camera_report(report_file)
+        if error:
+            malformed_reports += 1
+            warnings.append(error)
+            continue
+        reports.append(_camera_report_summary(report_file, payload))
+        if len(reports) >= safe_limit:
+            break
+
+    return {
+        "ok": True,
+        "api": API_VERSION,
+        "report_dir": CAMERA_SOLVE_REPORTS_DIRNAME,
+        "limit": safe_limit,
+        "total_report_files": len(report_files),
+        "malformed_reports": malformed_reports,
+        "session_summary": _camera_session_summary(
+            reports=reports,
+            total_reports=max(0, len(report_files) - malformed_reports),
+        ),
+        "reports": reports,
+        "warnings": warnings,
+    }
+
+
 def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
     required_fields = ("lat", "lon", "time_utc", "source")
     for field in required_fields:
@@ -484,6 +527,7 @@ def status_payload() -> Dict[str, Any]:
             "imu": "implemented_debug_only",
             "camera_frame": "implemented_storage_only",
             "camera_solve": "implemented_diagnostic_only",
+            "camera_reports": "implemented_read_only",
             "mount_profile": "implemented_read_only",
         },
     }
@@ -558,6 +602,126 @@ def _with_diagnostic_report(
     report_info = _write_diagnostic_report(payload, reports_dir)
     payload["report"] = report_info
     return payload
+
+
+def _camera_report_files(reports_dir: Path) -> List[Path]:
+    if not reports_dir.exists() or not reports_dir.is_dir():
+        return []
+    return sorted(
+        [path for path in reports_dir.glob("*.json") if path.is_file()],
+        key=lambda path: (path.name, path.stat().st_mtime),
+        reverse=True,
+    )
+
+
+def _load_camera_report(path: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+    try:
+        with open(path) as input_file:
+            payload = json.load(input_file)
+    except json.JSONDecodeError:
+        return {}, f"malformed_report:{path.name}"
+    except OSError as exc:
+        return {}, f"malformed_report:{path.name}:{exc}"
+    if not isinstance(payload, dict):
+        return {}, f"malformed_report:{path.name}:expected_object"
+    return _sanitize_diagnostic_report(payload), None
+
+
+def _camera_report_summary(report_file: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    score = payload.get("score") if isinstance(payload.get("score"), dict) else {}
+    solve = payload.get("solve") if isinstance(payload.get("solve"), dict) else {}
+    report_mtime_utc = (
+        datetime.fromtimestamp(report_file.stat().st_mtime, timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    return {
+        "report_file": report_file.name,
+        "report_mtime_utc": report_mtime_utc,
+        "frame_id": str(payload.get("frame_id") or "unknown"),
+        "diagnostic_only": bool(payload.get("diagnostic_only", True)),
+        "summary": summary,
+        "score": {
+            "path": score.get("path"),
+            "grade": summary.get("grade", score.get("grade", "unknown")),
+            "quality_score": summary.get(
+                "quality_score",
+                score.get("quality_score"),
+            ),
+            "accepted_for_diagnostic_solve": score.get(
+                "accepted_for_diagnostic_solve"
+            ),
+            "rejection_reasons": score.get("rejection_reasons", []),
+        },
+        "solve": {
+            "attempted": bool(summary.get("attempted", solve.get("attempted"))),
+            "solve_ok": bool(summary.get("solve_ok", solve.get("solve_ok"))),
+            "skipped_reason": summary.get(
+                "skipped_reason",
+                solve.get("skipped_reason", ""),
+            ),
+            "best": solve.get("best"),
+        },
+        "recommendation": str(payload.get("recommendation") or ""),
+        "next_action": str(payload.get("next_action") or ""),
+        "elapsed_ms": payload.get("elapsed_ms"),
+    }
+
+
+def _camera_session_summary(
+    reports: List[Dict[str, Any]],
+    total_reports: int,
+) -> Dict[str, Any]:
+    status_counts: Dict[str, int] = {}
+    best_frame_id = None
+    best_quality_score = None
+    best_solved_frame_id = None
+
+    for report in reports:
+        summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+        status = str(summary.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        quality_score = summary.get("quality_score")
+        if isinstance(quality_score, (int, float)) and (
+            best_quality_score is None or quality_score > best_quality_score
+        ):
+            best_quality_score = quality_score
+            best_frame_id = report.get("frame_id")
+        if bool(summary.get("solve_ok")) and best_solved_frame_id is None:
+            best_solved_frame_id = report.get("frame_id")
+
+    solved_count = status_counts.get("solved", 0)
+    returned_reports = len(reports)
+    if returned_reports == 0:
+        recommendation = "run_full_diagnostic"
+        next_action = "Run Full Diagnostic from Camera Lab to create the first report."
+    elif solved_count > 0:
+        recommendation = "collect_clear_sky_evidence"
+        next_action = (
+            "Keep this solved report and repeat with more clear-sky frames "
+            "before changing runtime pointing."
+        )
+    else:
+        recommendation = "capture_better_frames"
+        next_action = (
+            "Run Full Diagnostic again with darker sky, steadier framing, or "
+            "different camera settings."
+        )
+
+    return {
+        "total_reports": total_reports,
+        "returned_reports": returned_reports,
+        "status_counts": status_counts,
+        "solved_count": solved_count,
+        "rejected_count": status_counts.get("rejected", 0),
+        "best_frame_id": best_frame_id,
+        "best_solved_frame_id": best_solved_frame_id,
+        "best_quality_score": best_quality_score,
+        "recommendation": recommendation,
+        "next_action": next_action,
+    }
 
 
 def _with_diagnostic_summary(payload: Dict[str, Any]) -> Dict[str, Any]:

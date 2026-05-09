@@ -31,6 +31,7 @@ Endpoint paths are appended to the base URL:
 <base-url>/mobile/imu
 <base-url>/mobile/camera_frame
 <base-url>/mobile/camera_solve
+<base-url>/mobile/camera_reports
 ```
 
 ## Versioning
@@ -64,6 +65,7 @@ allowed in v0.
 | `/mobile/imu` | `POST` | Implemented, debug only | Yes |
 | `/mobile/camera_frame` | `POST` | Implemented, storage only | Yes |
 | `/mobile/camera_solve` | `POST` | Implemented, diagnostic only | Yes |
+| `/mobile/camera_reports` | `GET` | Implemented, read-only | Yes |
 
 ## Common Response Shape
 
@@ -131,7 +133,8 @@ Response:
     "gps": "implemented",
     "imu": "implemented_debug_only",
     "camera_frame": "implemented_storage_only",
-    "camera_solve": "implemented_diagnostic_only"
+    "camera_solve": "implemented_diagnostic_only",
+    "camera_reports": "implemented_read_only"
   }
 }
 ```
@@ -670,6 +673,75 @@ Report guardrails:
 - The endpoint never updates PiFinder runtime pointing.
 - The endpoint never feeds the integrator.
 - The endpoint does not change classic PiFinder solver behavior.
+
+## GET `/mobile/camera_reports`
+
+Status: implemented, read-only.
+
+Purpose:
+
+Return a sanitized recent-history view of persisted mobile camera diagnostic
+solve reports plus a session summary. Android uses this after `Run Full
+Diagnostic` to show whether recent frames were rejected, attempted, solved, or
+need better capture conditions.
+
+Request:
+
+```http
+GET /mobile/camera_reports?limit=20
+```
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "api": "mobile-bridge-v0",
+  "report_dir": "camera_solve_reports",
+  "session_summary": {
+    "total_reports": 2,
+    "returned_reports": 2,
+    "status_counts": {
+      "solved": 1,
+      "rejected": 1
+    },
+    "solved_count": 1,
+    "rejected_count": 1,
+    "best_frame_id": "20260508T233307Z_d0c205ca",
+    "best_solved_frame_id": "20260508T233307Z_d0c205ca",
+    "best_quality_score": 0.91,
+    "recommendation": "collect_clear_sky_evidence",
+    "next_action": "Keep this solved report and repeat with more clear-sky frames before changing runtime pointing."
+  },
+  "reports": [
+    {
+      "report_file": "20260508T233308Z_20260508T233307Z_d0c205ca.json",
+      "frame_id": "20260508T233307Z_d0c205ca",
+      "summary": {
+        "status": "solved",
+        "label": "Diagnostic solve succeeded",
+        "grade": "HIGH",
+        "quality_score": 0.91,
+        "attempted": true,
+        "solve_ok": true,
+        "skipped_reason": ""
+      },
+      "recommendation": "keep_collecting_clear_sky_evidence",
+      "next_action": "Save this report as evidence and repeat Run Full Diagnostic across more clear-sky frames."
+    }
+  ],
+  "warnings": []
+}
+```
+
+Rules:
+
+- `limit` is clamped to `1..100`; default is `20`.
+- Malformed report JSON files are skipped and counted in `malformed_reports`.
+- Returned reports are compact and sanitized: local absolute paths become
+  basenames, and precise location fields are removed where practical.
+- The endpoint is diagnostic/read-only. It never updates pointing, solver
+  runtime state, or the integrator.
 
 ## Security And Trust
 

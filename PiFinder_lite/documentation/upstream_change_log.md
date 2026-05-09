@@ -1082,6 +1082,62 @@ Status:
 Keep. This improves evidence collection for Phase 6 while remaining
 diagnostic-only.
 
+### 2026-05-09: Mobile camera diagnostic report history
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/PiFinder/server.py`
+- `python/tests/test_mobile_bridge.py`
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `python/tests/test_mobile_android_camera_solve_ui.py`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+- `PiFinder_lite/README.md`
+- `mobile/README.md`
+
+Why:
+
+Once `Run Full Diagnostic` can create reports, the operator needs a quick way
+to compare recent captures without SSH. Phase 6 issues #60, #61, and #62 add a
+read-only report history and session summary so each capture produces an
+actionable result: solved, rejected, solve failed, score failed, or no reports
+yet.
+
+Change:
+
+- Added read-only `GET /mobile/camera_reports`.
+- The endpoint reads sanitized local reports from
+  `~/PiFinder_data/mobile/camera_solve_reports/`.
+- It returns compact recent report summaries plus `session_summary` counts,
+  best frame/score, recommendation, and next action.
+- Malformed report JSON files are skipped and counted in warnings.
+- Android Camera Lab now has `View Reports` and `Copy Report Summary` to show
+  and copy the latest camera diagnostic session summary.
+
+Classic PiFinder impact:
+
+Low. This is read-only diagnostic metadata for optional mobile workflows. It
+does not update runtime pointing, feed the integrator, alter solver loops, or
+change startup defaults.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_android_camera_solve_ui.py -q
+23 passed
+
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_imu_analysis.py python\tests\test_mobile_android_calibration_ui.py python\tests\test_mobile_android_camera_solve_ui.py python\tests\test_mobile_mount_offset.py python\tests\test_mobile_mount_repeatability.py python\tests\test_lite_runtime_compat.py -q
+39 passed
+
+cd mobile
+.\gradlew.bat assembleDebug
+BUILD SUCCESSFUL
+```
+
+Status:
+
+Keep. This is required for Phase 6 issues #60, #61, and #62.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

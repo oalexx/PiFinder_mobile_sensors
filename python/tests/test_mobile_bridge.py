@@ -120,6 +120,12 @@ def test_status_payload_advertises_diagnostic_camera_solve():
     assert status["mobile_bridge"]["camera_solve"] == "implemented_diagnostic_only"
 
 
+def test_status_payload_advertises_camera_report_history():
+    status = mobile_bridge.status_payload()
+
+    assert status["mobile_bridge"]["camera_reports"] == "implemented_read_only"
+
+
 def test_validate_imu_payload_rejects_unknown_batch_label():
     payload = {
         "batch_label": "surprise_mode",
@@ -326,6 +332,121 @@ def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
     assert "42.40404584" not in report_path.read_text(encoding="utf-8")
 
 
+def test_camera_report_history_returns_empty_session_summary(tmp_path):
+    result = mobile_bridge.camera_report_history(reports_dir=tmp_path)
+
+    assert result["ok"] is True
+    assert result["reports"] == []
+    assert result["session_summary"]["total_reports"] == 0
+    assert result["session_summary"]["returned_reports"] == 0
+    assert result["session_summary"]["recommendation"] == "run_full_diagnostic"
+    assert result["session_summary"]["next_action"].startswith("Run Full Diagnostic")
+
+
+def test_camera_report_history_lists_sanitized_reports_and_session_summary(tmp_path):
+    private_path = "C:/Users/aleja/private/frame.jpg"
+    old_report = {
+        "frame_id": "frame_rejected",
+        "diagnostic_only": True,
+        "metadata": {
+            "device": {"model": "SM-S948B"},
+            "location": {"lat": 42.40404584, "lon": -7.1594411},
+        },
+        "score": {
+            "path": private_path,
+            "grade": "LOW",
+            "quality_score": 0.12,
+        },
+        "solve": {
+            "attempted": False,
+            "solve_ok": False,
+            "skipped_reason": "quality_score_rejected",
+        },
+        "summary": {
+            "status": "rejected",
+            "label": "Rejected by quality score",
+            "grade": "LOW",
+            "quality_score": 0.12,
+            "attempted": False,
+            "solve_ok": False,
+            "skipped_reason": "quality_score_rejected",
+        },
+        "recommendation": "capture_better_frame",
+        "next_action": "Run Full Diagnostic again.",
+        "elapsed_ms": 14,
+    }
+    new_report = {
+        "frame_id": "frame_solved",
+        "diagnostic_only": True,
+        "metadata": {
+            "metadata": {
+                "gps": {"lat": 42.40404584, "lon": -7.1594411},
+            },
+        },
+        "score": {
+            "path": "/home/pi/PiFinder_data/mobile/frames/frame_solved.jpg",
+            "grade": "HIGH",
+            "quality_score": 0.91,
+        },
+        "solve": {
+            "attempted": True,
+            "solve_ok": True,
+            "best": {"path": "/home/pi/private/preprocessed.jpg"},
+        },
+        "summary": {
+            "status": "solved",
+            "label": "Diagnostic solve succeeded",
+            "grade": "HIGH",
+            "quality_score": 0.91,
+            "attempted": True,
+            "solve_ok": True,
+            "skipped_reason": "",
+        },
+        "recommendation": "keep_collecting_clear_sky_evidence",
+        "next_action": "Save this report as evidence.",
+        "elapsed_ms": 101,
+    }
+    (tmp_path / "20260508T000000Z_frame_rejected.json").write_text(
+        json.dumps(old_report),
+        encoding="utf-8",
+    )
+    (tmp_path / "20260508T000001Z_frame_solved.json").write_text(
+        json.dumps(new_report),
+        encoding="utf-8",
+    )
+
+    result = mobile_bridge.camera_report_history(reports_dir=tmp_path, limit=10)
+
+    assert result["ok"] is True
+    assert result["malformed_reports"] == 0
+    assert result["session_summary"]["total_reports"] == 2
+    assert result["session_summary"]["returned_reports"] == 2
+    assert result["session_summary"]["status_counts"]["solved"] == 1
+    assert result["session_summary"]["status_counts"]["rejected"] == 1
+    assert result["session_summary"]["best_frame_id"] == "frame_solved"
+    assert result["session_summary"]["best_quality_score"] == 0.91
+    assert result["session_summary"]["recommendation"] == "collect_clear_sky_evidence"
+    assert result["reports"][0]["frame_id"] == "frame_solved"
+    assert result["reports"][0]["report_file"] == "20260508T000001Z_frame_solved.json"
+    assert result["reports"][0]["score"]["path"] == "frame_solved.jpg"
+    assert result["reports"][0]["solve"]["best"]["path"] == "preprocessed.jpg"
+    serialized = json.dumps(result)
+    assert private_path not in serialized
+    assert "42.40404584" not in serialized
+    assert "/home/pi/PiFinder_data" not in serialized
+
+
+def test_camera_report_history_skips_malformed_json(tmp_path):
+    (tmp_path / "broken.json").write_text("{not-json", encoding="utf-8")
+
+    result = mobile_bridge.camera_report_history(reports_dir=tmp_path)
+
+    assert result["ok"] is True
+    assert result["reports"] == []
+    assert result["malformed_reports"] == 1
+    assert "malformed_report:broken.json" in result["warnings"]
+
+
 def test_server_exposes_read_only_mount_profile_endpoint():
     source = SERVER.read_text(encoding="utf-8")
 
@@ -338,3 +459,10 @@ def test_server_exposes_diagnostic_camera_solve_endpoint():
 
     assert '@app.route("/mobile/camera_solve", method="POST")' in source
     assert "mobile_bridge.diagnostic_camera_solve(" in source
+
+
+def test_server_exposes_camera_report_history_endpoint():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert '@app.route("/mobile/camera_reports")' in source
+    assert "mobile_bridge.camera_report_history(" in source

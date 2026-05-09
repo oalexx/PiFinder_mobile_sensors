@@ -36,6 +36,8 @@ Validated capabilities:
 - Diagnostic `/mobile/camera_solve` endpoint for uploaded frames.
 - Local diagnostic solve reports under
   `~/PiFinder_data/mobile/camera_solve_reports/`.
+- Read-only `/mobile/camera_reports` history/session summary for recent
+  diagnostic reports.
 
 Still intentionally diagnostic-only:
 
@@ -115,7 +117,10 @@ Camera Lab -> Run Full Diagnostic
 `Run Full Diagnostic` captures a solve-candidate JPEG, uploads it to
 `/mobile/camera_frame`, calls `/mobile/camera_solve`, and displays upload,
 quality score, solve/skipped state, next action, and the persisted report path.
-The separate burst/upload/solve buttons remain available for debugging.
+`View Reports` then reads `/mobile/camera_reports` and shows the recent report
+history, solved/rejected counts, best score, recommendation, and next action.
+`Copy Report Summary` copies that human-readable summary. The separate
+burst/upload/solve buttons remain available for debugging.
 
 Optional Raspberry-side batch checks:
 

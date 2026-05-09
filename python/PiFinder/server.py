@@ -344,6 +344,14 @@ class Server:
                 "solver_invoked": False,
             }
 
+        @app.route("/mobile/camera_reports")
+        def mobile_camera_reports():
+            try:
+                limit = int(request.query.get("limit", 20))
+            except (TypeError, ValueError):
+                limit = 20
+            return mobile_bridge.camera_report_history(limit=limit)
+
         @app.route("/mobile/camera_solve", method="POST")
         def mobile_camera_solve():
             payload = request.json
