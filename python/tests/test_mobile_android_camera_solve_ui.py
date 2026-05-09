@@ -89,3 +89,28 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "SEND GPS" in source
     assert "Run Full Diagnostic" in source
     assert "View Reports" in source
+
+
+def test_android_full_diagnostic_ranks_dynamic_burst_candidates():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "SolveCandidateFrame" in source
+    assert "SolveCandidateResult" in source
+    assert "solveCandidateFrames" in source
+    assert "recordSolveCandidateFrame" in source
+    assert "candidateUploadLimitForBurst" in source
+    assert "selectSolveCandidateFramesForUpload" in source
+    assert "scoreSolveCandidateResult" in source
+    assert "rankSolveCandidateResults" in source
+    assert "formatSolveCandidateRanking" in source
+    assert "selected by Raspberry score" in source
+    assert "distributed across burst" in source
+    assert "Run Full Diagnostic" in source
+    assert "postMobileCameraFrame(" in source
+    assert "candidate.filename" in source
+    assert "postDiagnosticCameraSolve(baseUrl, frameId)" in source
+    assert '"solve_candidate_selector"' in source
+    assert '"ranking_summary"' in source
+    assert '"selected_candidate"' in source
+    assert "Upload Last JPEG" in source
+    assert "manual debug" in source

@@ -184,10 +184,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String lastUploadedFrameId = "";
     private boolean fullDiagnosticRunning = false;
     private int phase2NightTestRepeatCount = 0;
+    private SolveCandidateFrame selectedSolveCandidateFrame;
+    private String latestSolveCandidateRankingSummary = "";
 
     private final List<Sensor> activeSensors = new ArrayList<>();
     private final List<Sensor> imuBatchSensors = new ArrayList<>();
     private final List<Sensor> environmentSensors = new ArrayList<>();
+    private final List<SolveCandidateFrame> solveCandidateFrames = new ArrayList<>();
     private final JSONArray imuBatchSamples = new JSONArray();
     private final StringBuilder liveSensorText = new StringBuilder();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -219,6 +222,62 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private final StringBuilder captureMetadata = new StringBuilder();
     private final List<String> cameraSweepIds = new ArrayList<>();
     private int cameraSweepIndex = 0;
+
+    private static class SolveCandidateFrame {
+        final int burstIndex;
+        final int totalFrames;
+        final String filename;
+        final String label;
+        final byte[] bytes;
+        final String selectionReason;
+
+        SolveCandidateFrame(
+                int burstIndex,
+                int totalFrames,
+                String filename,
+                String label,
+                byte[] bytes,
+                String selectionReason
+        ) {
+            this.burstIndex = burstIndex;
+            this.totalFrames = totalFrames;
+            this.filename = filename;
+            this.label = label;
+            this.bytes = bytes;
+            this.selectionReason = selectionReason;
+        }
+    }
+
+    private static class SolveCandidateResult {
+        final SolveCandidateFrame candidate;
+        final String frameId;
+        final String uploadMessage;
+        final String solveMessage;
+        final boolean uploadOk;
+        final boolean solveOk;
+        final double qualityScore;
+        final String grade;
+
+        SolveCandidateResult(
+                SolveCandidateFrame candidate,
+                String frameId,
+                String uploadMessage,
+                String solveMessage,
+                boolean uploadOk,
+                boolean solveOk,
+                double qualityScore,
+                String grade
+        ) {
+            this.candidate = candidate;
+            this.frameId = frameId;
+            this.uploadMessage = uploadMessage;
+            this.solveMessage = solveMessage;
+            this.uploadOk = uploadOk;
+            this.solveOk = solveOk;
+            this.qualityScore = qualityScore;
+            this.grade = grade;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -1805,7 +1864,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         if (!fullDiagnosticRunning) {
             return;
         }
-        if (lastCapturedJpegBytes == null || lastCapturedJpegBytes.length == 0) {
+        List<SolveCandidateFrame> candidates = selectSolveCandidateFramesForUpload();
+        if (candidates.isEmpty() && (lastCapturedJpegBytes == null || lastCapturedJpegBytes.length == 0)) {
             fullDiagnosticRunning = false;
             captureView.setText("Full diagnostic failed.\nNo JPEG was captured.");
             updateMobileCameraDiagnosticGuide("capture_needed");
@@ -1818,25 +1878,76 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             updateMobileCameraDiagnosticGuide("remote_needed");
             return;
         }
-        byte[] frameBytes = Arrays.copyOf(lastCapturedJpegBytes, lastCapturedJpegBytes.length);
-        String filename = lastCapturedJpegName;
-        String metadataJson = lastCapturedJpegMetadataJson;
-        captureView.setText("Full diagnostic running...\n2. Uploading JPEG.\n" + filename);
+        if (candidates.isEmpty()) {
+            candidates.add(new SolveCandidateFrame(
+                    1,
+                    1,
+                    lastCapturedJpegName,
+                    "manual_debug",
+                    Arrays.copyOf(lastCapturedJpegBytes, lastCapturedJpegBytes.length),
+                    "fallback manual debug latest JPEG"
+            ));
+        }
+        captureView.setText("Full diagnostic running...\n2. Uploading "
+                + candidates.size() + " distributed candidate(s).");
         updateMobileCameraDiagnosticGuide("uploading");
         new Thread(() -> {
-            String uploadMessage = postMobileCameraFrame(baseUrl, filename, frameBytes, metadataJson);
-            String frameId = lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim();
-            String solveMessage = "";
-            if (uploadMessage.startsWith("Camera frame uploaded") && frameId.length() > 0) {
+            List<SolveCandidateResult> results = new ArrayList<>();
+            int total = candidates.size();
+            for (int i = 0; i < total; i++) {
+                SolveCandidateFrame candidate = candidates.get(i);
+                int displayIndex = i + 1;
                 runOnUiThread(() -> {
-                    captureView.setText("Full diagnostic running...\n3. Scoring and solving.\nFrame ID: " + frameId);
+                    captureView.setText("Full diagnostic running...\n"
+                            + "Candidate " + displayIndex + "/" + total
+                            + "\n" + candidate.filename);
                     updateMobileCameraDiagnosticGuide("solving");
                 });
-                solveMessage = postDiagnosticCameraSolve(baseUrl, frameId);
+                String metadataJson = buildCameraFrameMetadataJson(
+                        candidate.filename,
+                        candidate.bytes.length,
+                        candidate,
+                        latestSolveCandidateRankingSummary
+                );
+                String uploadMessage = postMobileCameraFrame(
+                        baseUrl,
+                        candidate.filename,
+                        Arrays.copyOf(candidate.bytes, candidate.bytes.length),
+                        metadataJson
+                );
+                String frameId = lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim();
+                String solveMessage = "";
+                if (uploadMessage.startsWith("Camera frame uploaded") && frameId.length() > 0) {
+                    solveMessage = postDiagnosticCameraSolve(baseUrl, frameId);
+                }
+                results.add(new SolveCandidateResult(
+                        candidate,
+                        frameId,
+                        uploadMessage,
+                        solveMessage,
+                        uploadMessage.startsWith("Camera frame uploaded"),
+                        solveMessage.contains("Solve OK: true"),
+                        parseDiagnosticQualityScore(solveMessage),
+                        parseDiagnosticGrade(solveMessage)
+                ));
             }
-            String finalMessage = formatFullDiagnosticResult(uploadMessage, solveMessage);
-            boolean success = uploadMessage.startsWith("Camera frame uploaded")
-                    && solveMessage.startsWith("Diagnostic solve complete");
+            rankSolveCandidateResults(results);
+            SolveCandidateResult selected = results.isEmpty() ? null : results.get(0);
+            if (selected != null) {
+                selectedSolveCandidateFrame = selected.candidate;
+                lastUploadedFrameId = selected.frameId;
+                lastCapturedJpegBytes = Arrays.copyOf(selected.candidate.bytes, selected.candidate.bytes.length);
+                lastCapturedJpegName = selected.candidate.filename;
+                lastCapturedJpegMetadataJson = buildCameraFrameMetadataJson(
+                        selected.candidate.filename,
+                        selected.candidate.bytes.length,
+                        selected.candidate,
+                        formatSolveCandidateRanking(results)
+                );
+            }
+            String finalMessage = formatFullDiagnosticResult(results);
+            boolean success = selected != null && selected.uploadOk
+                    && selected.solveMessage.startsWith("Diagnostic solve complete");
             runOnUiThread(() -> {
                 fullDiagnosticRunning = false;
                 captureView.setText(finalMessage);
@@ -2221,6 +2332,175 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return result.toString();
     }
 
+    private String formatFullDiagnosticResult(List<SolveCandidateResult> results) {
+        StringBuilder result = new StringBuilder();
+        result.append("Full diagnostic report\n");
+        if (results == null || results.isEmpty()) {
+            result.append("\nNo candidate frames were available.");
+            return result.toString();
+        }
+        result.append("\nCandidate ranking\n").append(formatSolveCandidateRanking(results));
+        SolveCandidateResult selected = results.get(0);
+        result.append("\n\nSelected frame\n")
+                .append(selected.candidate.filename)
+                .append("\nReason: selected by Raspberry score from ")
+                .append(results.size())
+                .append(" candidate(s) distributed across burst.")
+                .append("\nFrame ID: ")
+                .append(selected.frameId.length() > 0 ? selected.frameId : "not uploaded")
+                .append("\nQuality score: ")
+                .append(selected.qualityScore)
+                .append("\nSolve OK: ")
+                .append(selected.solveOk)
+                .append("\n\nSelected upload\n")
+                .append(selected.uploadMessage);
+        if (selected.solveMessage == null || selected.solveMessage.length() == 0) {
+            result.append("\n\nSelected diagnostic solve\nNot requested because upload did not return a frame ID.");
+        } else {
+            result.append("\n\nSelected diagnostic solve\n").append(selected.solveMessage);
+        }
+        return result.toString();
+    }
+
+    private void recordSolveCandidateFrame(String filename, String label, byte[] bytes, int burstIndex) {
+        solveCandidateFrames.add(new SolveCandidateFrame(
+                burstIndex,
+                captureFrameCount,
+                filename,
+                label,
+                Arrays.copyOf(bytes, bytes.length),
+                "eligible solve-candidate JPEG"
+        ));
+    }
+
+    private int candidateUploadLimitForBurst(int count) {
+        if (count <= 3) {
+            return count;
+        }
+        if (count <= 12) {
+            return 3;
+        }
+        if (count <= 24) {
+            return 5;
+        }
+        return 7;
+    }
+
+    private List<SolveCandidateFrame> selectSolveCandidateFramesForUpload() {
+        List<SolveCandidateFrame> selected = new ArrayList<>();
+        int count = solveCandidateFrames.size();
+        int limit = candidateUploadLimitForBurst(count);
+        if (limit <= 0) {
+            return selected;
+        }
+        if (count <= limit) {
+            selected.addAll(solveCandidateFrames);
+        } else {
+            int start = count > limit + 2 ? 1 : 0;
+            int end = count > limit + 2 ? count - 2 : count - 1;
+            for (int i = 0; i < limit; i++) {
+                int index = limit == 1
+                        ? count / 2
+                        : Math.round(start + (i * (end - start) / (float) (limit - 1)));
+                SolveCandidateFrame candidate = solveCandidateFrames.get(index);
+                if (!selected.contains(candidate)) {
+                    selected.add(candidate);
+                }
+            }
+            for (SolveCandidateFrame candidate : solveCandidateFrames) {
+                if (selected.size() >= limit) {
+                    break;
+                }
+                if (!selected.contains(candidate)) {
+                    selected.add(candidate);
+                }
+            }
+        }
+        latestSolveCandidateRankingSummary = "Android preselected " + selected.size()
+                + "/" + count + " candidates distributed across burst for Raspberry scoring.";
+        captureMetadata.append("solve_candidate_selector=").append(latestSolveCandidateRankingSummary).append("\n");
+        return selected;
+    }
+
+    private void rankSolveCandidateResults(List<SolveCandidateResult> results) {
+        Collections.sort(results, (left, right) -> Double.compare(
+                scoreSolveCandidateResult(right),
+                scoreSolveCandidateResult(left)
+        ));
+    }
+
+    private double scoreSolveCandidateResult(SolveCandidateResult result) {
+        double score = result.qualityScore >= 0.0 ? result.qualityScore : 0.0;
+        if (result.solveOk) {
+            score += 10000.0;
+        }
+        if (result.uploadOk) {
+            score += 1000.0;
+        }
+        score += Math.min(result.candidate.bytes.length / 100000.0, 99.0);
+        return score;
+    }
+
+    private String formatSolveCandidateRanking(List<SolveCandidateResult> results) {
+        StringBuilder ranking = new StringBuilder();
+        ranking.append("selected by Raspberry score; candidates distributed across burst");
+        for (int i = 0; i < results.size(); i++) {
+            SolveCandidateResult item = results.get(i);
+            ranking.append("\n")
+                    .append(i + 1)
+                    .append(". ")
+                    .append(item.candidate.filename)
+                    .append(" frame ")
+                    .append(item.candidate.burstIndex)
+                    .append("/")
+                    .append(item.candidate.totalFrames)
+                    .append(" score ")
+                    .append(item.qualityScore)
+                    .append(" grade ")
+                    .append(item.grade)
+                    .append(" solve_ok ")
+                    .append(item.solveOk)
+                    .append(" frame_id ")
+                    .append(item.frameId.length() > 0 ? item.frameId : "none");
+        }
+        latestSolveCandidateRankingSummary = ranking.toString();
+        return latestSolveCandidateRankingSummary;
+    }
+
+    private double parseDiagnosticQualityScore(String solveMessage) {
+        return parseDoubleAfterLabel(solveMessage, "Score: ");
+    }
+
+    private String parseDiagnosticGrade(String solveMessage) {
+        if (solveMessage == null) {
+            return "unknown";
+        }
+        for (String line : solveMessage.split("\n")) {
+            if (line.startsWith("Grade: ")) {
+                return line.substring("Grade: ".length()).trim();
+            }
+        }
+        return "unknown";
+    }
+
+    private double parseDoubleAfterLabel(String text, String label) {
+        if (text == null) {
+            return -1.0;
+        }
+        int start = text.indexOf(label);
+        if (start < 0) {
+            return -1.0;
+        }
+        start += label.length();
+        int end = text.indexOf("\n", start);
+        String value = (end >= 0 ? text.substring(start, end) : text.substring(start)).trim();
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            return -1.0;
+        }
+    }
+
     private String formatCameraReports(JSONObject json) {
         JSONObject sessionSummary = json.optJSONObject("session_summary");
         JSONArray reports = json.optJSONArray("reports");
@@ -2394,6 +2674,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private String buildCameraFrameMetadataJson(String filename, int byteCount) {
+        return buildCameraFrameMetadataJson(filename, byteCount, selectedSolveCandidateFrame, latestSolveCandidateRankingSummary);
+    }
+
+    private String buildCameraFrameMetadataJson(
+            String filename,
+            int byteCount,
+            SolveCandidateFrame selectedCandidate,
+            String rankingSummary
+    ) {
         try {
             JSONObject metadata = new JSONObject();
             metadata.put("schema", "pifinder-mobile-camera-frame-v0");
@@ -2416,6 +2705,19 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             }
             metadata.put("storage_only", true);
             metadata.put("solver_requested", false);
+            if (selectedCandidate != null) {
+                JSONObject selector = new JSONObject();
+                selector.put("strategy", "dynamic_distributed_raspberry_score");
+                selector.put("reason", selectedCandidate.selectionReason);
+                selector.put("ranking_summary", rankingSummary == null ? "" : rankingSummary);
+                JSONObject selected = new JSONObject();
+                selected.put("filename", selectedCandidate.filename);
+                selected.put("burst_index", selectedCandidate.burstIndex);
+                selected.put("total_frames", selectedCandidate.totalFrames);
+                selected.put("label", selectedCandidate.label);
+                selector.put("selected_candidate", selected);
+                metadata.put("solve_candidate_selector", selector);
+            }
             metadata.put("environment", new JSONObject(buildEnvironmentPayloadJson()));
             return metadata.toString();
         } catch (JSONException e) {
@@ -3812,6 +4114,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             completedFrames = 0;
             queuedRequests = new ArrayList<>();
             queuedLabels.clear();
+            solveCandidateFrames.clear();
+            selectedSolveCandidateFrame = null;
+            latestSolveCandidateRankingSummary = "";
             captureMetadata.setLength(0);
             appendCaptureMetadataHeader(cameraId, c, captureSize, timestamp);
 
@@ -4284,6 +4589,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 lastCapturedJpegBytes = Arrays.copyOf(bytes, bytes.length);
                 lastCapturedJpegName = name;
                 lastCapturedJpegMetadataJson = buildCameraFrameMetadataJson(name, bytes.length);
+                if ("solve_candidate_burst".equals(captureTestName)) {
+                    recordSolveCandidateFrame(name, label, bytes, savedFrames + 1);
+                }
             }
             captureMetadata.append("savedFile=").append(name)
                     .append(" label=").append(label)

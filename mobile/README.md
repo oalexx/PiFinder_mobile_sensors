@@ -75,6 +75,9 @@ Available tests:
 - `CAM SWEEP`: tests the available rear camera IDs.
 - `RUN FULL DIAGNOSTIC`: captures a solve-candidate JPEG, uploads it, asks
   Raspberry for score/diagnostic solve, and shows the stored report summary.
+  For solve-candidate bursts, Android keeps multiple JPEG candidates, uploads a
+  dynamic distributed subset, asks Raspberry to score/solve each one, and
+  selects the best result by solve success and quality score.
 - `NIGHT TEST WIZARD`: shows the Phase 2 field checklist for connection,
   profile/environment/GPS, save folder, full diagnostic, repeats, and report
   summary.
@@ -89,6 +92,8 @@ Available tests:
   `VIEW REPORTS`.
 - `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
 - `UPLOAD LAST JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
+  This remains available as a manual debug path; `RUN FULL DIAGNOSTIC` uses the
+  ranked candidate flow instead.
 - `DIAGNOSTIC SOLVE`: asks PiFinder to score and diagnostic-solve the uploaded
   frame via `/mobile/camera_solve`.
 
@@ -106,6 +111,13 @@ separates `test completed` from `camera proven reliable`: a completed test
 means the workflow ran and produced notes; camera reliability still requires
 repeated clear-sky evidence and the Phase 2 decision summary. The wizard remains
 diagnostic-only and does not feed mobile solves into pointing or the integrator.
+
+The burst frame selector is also diagnostic-only. Android only chooses a
+bounded, distributed subset from the burst so field uploads stay practical:
+small bursts upload all frames, medium bursts upload three to five, and large
+bursts upload up to seven. Raspberry remains the source of truth for quality:
+the selected frame is chosen from Raspberry diagnostic solve results, preferring
+`solve_ok`, then higher quality score, with JPEG size only as a fallback.
 
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:
@@ -225,8 +237,9 @@ cd mobile
     - `SEND IMU BATCH`
 12. Go back to `CAMERA LAB`, tap `NIGHT TEST WIZARD`, then `COPY NIGHT TEST
     PLAN` if you want a field checklist.
-13. Tap `RUN FULL DIAGNOSTIC` to capture, upload, score, diagnostic-solve, and
-    summarize one solve-candidate frame.
+13. Tap `RUN FULL DIAGNOSTIC` to capture a solve-candidate burst, upload a
+    dynamic distributed subset, score/diagnostic-solve candidates on Raspberry,
+    and summarize the selected frame plus ranking.
 14. Tap `MARK REPEAT` after each completed attempt, even if the frame is
     rejected or solve fails.
 15. Tap `VIEW REPORTS` to compare recent diagnostic reports and copy the
