@@ -2,6 +2,8 @@ import json
 from datetime import timezone
 from pathlib import Path
 
+from PIL import Image
+
 from PiFinder import mobile_bridge
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,6 +112,12 @@ def test_status_payload_advertises_read_only_mount_profile_loader():
     status = mobile_bridge.status_payload()
 
     assert status["mobile_bridge"]["mount_profile"] == "implemented_read_only"
+
+
+def test_status_payload_advertises_diagnostic_camera_solve():
+    status = mobile_bridge.status_payload()
+
+    assert status["mobile_bridge"]["camera_solve"] == "implemented_diagnostic_only"
 
 
 def test_validate_imu_payload_rejects_unknown_batch_label():
@@ -229,8 +237,97 @@ def test_mount_profile_status_handles_missing_profiles(tmp_path):
     assert status["warnings"] == ["no_mount_profiles_found"]
 
 
+def test_diagnostic_camera_solve_rejects_unsafe_frame_id(tmp_path):
+    result = mobile_bridge.diagnostic_camera_solve(
+        "../escape",
+        frames_dir=tmp_path,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_frame_id"
+
+
+def test_diagnostic_camera_solve_reports_missing_frame(tmp_path):
+    result = mobile_bridge.diagnostic_camera_solve(
+        "20260508T000000Z_missing",
+        frames_dir=tmp_path,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "frame_not_found"
+
+
+def test_diagnostic_camera_solve_skips_low_quality_frame_without_runtime_effect(tmp_path):
+    frame_id = "20260508T000000Z_low"
+    frame_path = tmp_path / f"{frame_id}.jpg"
+    Image.new("RGB", (128, 128), color=(200, 200, 200)).save(frame_path)
+    (tmp_path / f"{frame_id}.json").write_text(
+        json.dumps({"frame_id": frame_id, "metadata": {"test": True}}),
+        encoding="utf-8",
+    )
+
+    result = mobile_bridge.diagnostic_camera_solve(
+        frame_id,
+        frames_dir=tmp_path,
+    )
+
+    assert result["ok"] is True
+    assert result["frame_id"] == frame_id
+    assert result["diagnostic_only"] is True
+    assert result["integrator_updated"] is False
+    assert result["runtime_pointing_updated"] is False
+    assert result["score"]["grade"] == "LOW"
+    assert result["solve"]["attempted"] is False
+    assert result["solve"]["skipped_reason"] == "quality_score_rejected"
+
+
+def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
+    frames_dir = tmp_path / "frames"
+    reports_dir = tmp_path / "reports"
+    frames_dir.mkdir()
+    frame_id = "20260508T000000Z_report"
+    frame_path = frames_dir / f"{frame_id}.jpg"
+    Image.new("RGB", (128, 128), color=(200, 200, 200)).save(frame_path)
+    (frames_dir / f"{frame_id}.json").write_text(
+        json.dumps(
+            {
+                "frame_id": frame_id,
+                "frame_file": "C:/private/local/path/frame.jpg",
+                "metadata": {
+                    "device": {"model": "SM-S948B"},
+                    "location": {"lat": 42.40404584, "lon": -7.1594411},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = mobile_bridge.diagnostic_camera_solve(
+        frame_id,
+        frames_dir=frames_dir,
+        reports_dir=reports_dir,
+    )
+
+    assert result["report"]["stored"] is True
+    report_path = Path(result["report"]["json_report"])
+    assert report_path.exists()
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report_payload["frame_id"] == frame_id
+    assert report_payload["diagnostic_only"] is True
+    assert report_payload["integrator_updated"] is False
+    assert "C:/private" not in report_path.read_text(encoding="utf-8")
+    assert "42.40404584" not in report_path.read_text(encoding="utf-8")
+
+
 def test_server_exposes_read_only_mount_profile_endpoint():
     source = SERVER.read_text(encoding="utf-8")
 
     assert '@app.route("/mobile/mount_profile")' in source
     assert "mobile_bridge.mount_profile_status(" in source
+
+
+def test_server_exposes_diagnostic_camera_solve_endpoint():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert '@app.route("/mobile/camera_solve", method="POST")' in source
+    assert "mobile_bridge.diagnostic_camera_solve(" in source

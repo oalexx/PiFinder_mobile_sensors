@@ -33,6 +33,9 @@ Validated capabilities:
 - Runtime GPS updates from Android GPS.
 - IMU batch capture and confidence scoring.
 - Mobile JPEG upload, quality scoring, and diagnostic solve tooling.
+- Diagnostic `/mobile/camera_solve` endpoint for uploaded frames.
+- Local diagnostic solve reports under
+  `~/PiFinder_data/mobile/camera_solve_reports/`.
 
 Still intentionally diagnostic-only:
 
@@ -108,6 +111,7 @@ PiFinder Remote -> Send Profile / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
 Camera Lab -> Run Diagnostic Burst
 Camera Lab -> Upload Last JPEG
+Camera Lab -> Diagnostic Solve
 ```
 
 Then on Raspberry:
@@ -116,6 +120,10 @@ Then on Raspberry:
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
 ```
+
+The Android `Diagnostic Solve` action calls `/mobile/camera_solve` for the last
+uploaded `frame_id` and shows the score, solve/skipped state, and report path
+directly in the app.
 
 ## Documentation Map
 

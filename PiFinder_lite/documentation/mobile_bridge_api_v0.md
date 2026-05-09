@@ -30,6 +30,7 @@ Endpoint paths are appended to the base URL:
 <base-url>/mobile/gps
 <base-url>/mobile/imu
 <base-url>/mobile/camera_frame
+<base-url>/mobile/camera_solve
 ```
 
 ## Versioning
@@ -62,6 +63,7 @@ allowed in v0.
 | `/mobile/gps` | `POST` | Implemented | Yes |
 | `/mobile/imu` | `POST` | Implemented, debug only | Yes |
 | `/mobile/camera_frame` | `POST` | Implemented, storage only | Yes |
+| `/mobile/camera_solve` | `POST` | Implemented, diagnostic only | Yes |
 
 ## Common Response Shape
 
@@ -128,7 +130,8 @@ Response:
     "mount_profile": "implemented_read_only",
     "gps": "implemented",
     "imu": "implemented_debug_only",
-    "camera_frame": "implemented_storage_only"
+    "camera_frame": "implemented_storage_only",
+    "camera_solve": "implemented_diagnostic_only"
   }
 }
 ```
@@ -577,6 +580,82 @@ Rules for this storage-only implementation:
 - Do not invoke the solver.
 - Do not feed PiFinder's integrator or live pointing state.
 - Do not assume mobile-camera solving will work.
+
+## POST `/mobile/camera_solve`
+
+Status: implemented, diagnostic only.
+
+Purpose:
+
+Run the Mobile Camera diagnostic chain against a previously uploaded JPEG frame:
+quality score first, then an explicit diagnostic solve attempt only when the
+score accepts the frame or a debug override is provided.
+
+Request:
+
+```http
+POST /mobile/camera_solve
+Content-Type: application/json
+```
+
+Example body:
+
+```json
+{
+  "frame_id": "20260504T210000Z_a1b2c3d4",
+  "solve_timeout_ms": 1000,
+  "preprocess_modes": "baseline,background_subtract"
+}
+```
+
+Response when the score rejects the frame:
+
+```json
+{
+  "ok": true,
+  "api": "mobile-bridge-v0",
+  "frame_id": "20260504T210000Z_a1b2c3d4",
+  "diagnostic_only": true,
+  "integrator_updated": false,
+  "runtime_pointing_updated": false,
+  "score": {
+    "grade": "LOW",
+    "quality_score": 12.0,
+    "accept_for_diagnostic_solve": false
+  },
+  "solve": {
+    "attempted": false,
+    "solve_ok": false,
+    "skipped_reason": "quality_score_rejected"
+  },
+  "report": {
+    "stored": true,
+    "json_report": "/home/pi/PiFinder_data/mobile/camera_solve_reports/<report>.json"
+  }
+}
+```
+
+Validation rules:
+
+- Body must be a JSON object.
+- `frame_id` must match a stored upload under
+  `~/PiFinder_data/mobile/frames/<frame_id>.jpg`.
+- `frame_id` may contain only letters, numbers, underscores, and hyphens.
+- Missing or unsafe frame IDs return `400`.
+
+Persistence:
+
+```text
+~/PiFinder_data/mobile/camera_solve_reports/<timestamp>_<frame_id>.json
+```
+
+Report guardrails:
+
+- Reports are local diagnostics and should not be committed unless sanitized.
+- Reports remove local frame paths and precise location fields where practical.
+- The endpoint never updates PiFinder runtime pointing.
+- The endpoint never feeds the integrator.
+- The endpoint does not change classic PiFinder solver behavior.
 
 ## Security And Trust
 

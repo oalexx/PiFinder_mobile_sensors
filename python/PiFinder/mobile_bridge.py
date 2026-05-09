@@ -4,6 +4,10 @@
 
 import json
 import os
+import re
+import sys
+import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,9 +29,11 @@ IMU_BATCH_LABELS = {
     "stationary",
 }
 FRAMES_DIRNAME = "frames"
+CAMERA_SOLVE_REPORTS_DIRNAME = "camera_solve_reports"
 MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 DEFAULT_MOBILE_GPS_ERROR_M = 9999
 MOUNT_PROFILE_SCHEMA = "pifinder-mobile-mount-profile-v0"
+CAMERA_SOLVE_FRAME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,96}$")
 MOUNT_PROFILE_STATUSES = {"uncalibrated", "candidate", "usable", "invalidated"}
 MOUNT_PROFILE_VALIDATION_STATES = {
     "not_validated",
@@ -61,6 +67,12 @@ def ensure_mobile_mount_profiles_dir() -> Path:
     profiles_dir = ensure_mobile_data_dir() / MOUNT_PROFILES_DIRNAME
     utils.create_path(profiles_dir)
     return profiles_dir
+
+
+def ensure_mobile_camera_solve_reports_dir() -> Path:
+    reports_dir = ensure_mobile_data_dir() / CAMERA_SOLVE_REPORTS_DIRNAME
+    utils.create_path(reports_dir)
+    return reports_dir
 
 
 def write_debug_json(filename: str, payload: Dict[str, Any]) -> Path:
@@ -156,6 +168,102 @@ def store_camera_frame(
         output.write("\n")
     os.replace(temp_metadata_path, metadata_path)
     return stored_metadata
+
+
+def diagnostic_camera_solve(
+    frame_id: str,
+    frames_dir: Optional[Path] = None,
+    reports_dir: Optional[Path] = None,
+    solve_timeout_ms: int = 1000,
+    preprocess_modes: Optional[List[str]] = None,
+    force_attempt: bool = False,
+) -> Dict[str, Any]:
+    """Score and optionally diagnostic-solve one stored mobile frame.
+
+    This is intentionally diagnostic-only. It never updates PiFinder live
+    pointing, solver state, or the integrator.
+    """
+    start_time = time.perf_counter()
+    if not isinstance(frame_id, str) or not CAMERA_SOLVE_FRAME_ID_RE.match(frame_id):
+        return error_payload(
+            "invalid_frame_id",
+            "frame_id must contain only letters, numbers, underscores, or hyphens.",
+        )
+
+    frame_root = frames_dir or ensure_mobile_frames_dir()
+    frame_path = frame_root / f"{frame_id}.jpg"
+    metadata_path = frame_root / f"{frame_id}.json"
+    if not frame_path.exists() or not frame_path.is_file():
+        return error_payload(
+            "frame_not_found",
+            f"No stored mobile frame exists for frame_id: {frame_id}.",
+        )
+
+    metadata = _load_optional_json(metadata_path)
+    try:
+        score_mobile_frame = _import_lite_module("score_mobile_frame")
+        score = score_mobile_frame.score_frame(frame_path)
+        score_payload = asdict(score)
+    except Exception as exc:
+        payload = {
+            "ok": True,
+            "api": API_VERSION,
+            "frame_id": frame_id,
+            "diagnostic_only": True,
+            "integrator_updated": False,
+            "runtime_pointing_updated": False,
+            "metadata": metadata,
+            "score": None,
+            "solve": {
+                "attempted": False,
+                "solve_ok": False,
+                "skipped_reason": "quality_score_error",
+                "error": f"{exc.__class__.__name__}: {exc}",
+            },
+            "elapsed_ms": _elapsed_ms(start_time),
+        }
+        return _with_diagnostic_report(payload, reports_dir)
+
+    should_attempt = bool(score.accept_for_diagnostic_solve or force_attempt)
+    if not should_attempt:
+        payload = {
+            "ok": True,
+            "api": API_VERSION,
+            "frame_id": frame_id,
+            "diagnostic_only": True,
+            "integrator_updated": False,
+            "runtime_pointing_updated": False,
+            "metadata": metadata,
+            "score": score_payload,
+            "solve": {
+                "attempted": False,
+                "solve_ok": False,
+                "skipped_reason": "quality_score_rejected",
+                "rejection_reasons": score.rejection_reasons,
+            },
+            "elapsed_ms": _elapsed_ms(start_time),
+        }
+        return _with_diagnostic_report(payload, reports_dir)
+
+    solve_payload = _attempt_diagnostic_solve(
+        frame_path=frame_path,
+        score=score,
+        solve_timeout_ms=solve_timeout_ms,
+        preprocess_modes=preprocess_modes or ["baseline", "background_subtract"],
+    )
+    payload = {
+        "ok": True,
+        "api": API_VERSION,
+        "frame_id": frame_id,
+        "diagnostic_only": True,
+        "integrator_updated": False,
+        "runtime_pointing_updated": False,
+        "metadata": metadata,
+        "score": score_payload,
+        "solve": solve_payload,
+        "elapsed_ms": _elapsed_ms(start_time),
+    }
+    return _with_diagnostic_report(payload, reports_dir)
 
 
 def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -375,9 +483,129 @@ def status_payload() -> Dict[str, Any]:
             "gps": "implemented",
             "imu": "implemented_debug_only",
             "camera_frame": "implemented_storage_only",
+            "camera_solve": "implemented_diagnostic_only",
             "mount_profile": "implemented_read_only",
         },
     }
+
+
+def _elapsed_ms(start_time: float) -> int:
+    return int((time.perf_counter() - start_time) * 1000)
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _import_lite_module(module_name: str):
+    lite_dir = _repo_root() / "PiFinder_lite"
+    lite_path = str(lite_dir)
+    if lite_path not in sys.path:
+        sys.path.insert(0, lite_path)
+    return __import__(module_name)
+
+
+def _load_optional_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as input_file:
+            payload = json.load(input_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _attempt_diagnostic_solve(
+    frame_path: Path,
+    score: Any,
+    solve_timeout_ms: int,
+    preprocess_modes: List[str],
+) -> Dict[str, Any]:
+    try:
+        diagnostic_solve = _import_lite_module("diagnostic_solve_mobile_frame")
+        t3 = diagnostic_solve.tetra3.Tetra3(str(diagnostic_solve.TETRA3_DB))
+        results = diagnostic_solve.solve_one(
+            t3=t3,
+            frame_path=frame_path,
+            score=score,
+            candidate_rank=1,
+            preprocess_modes=preprocess_modes,
+            solve_timeout_ms=solve_timeout_ms,
+            continue_after_solve=False,
+        )
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "solve_ok": False,
+            "error": f"{exc.__class__.__name__}: {exc}",
+        }
+
+    rows = [asdict(result) for result in results]
+    solved_rows = [row for row in rows if row.get("solve_ok")]
+    return {
+        "attempted": True,
+        "solve_ok": bool(solved_rows),
+        "rows": rows,
+        "best": solved_rows[0] if solved_rows else (rows[0] if rows else None),
+    }
+
+
+def _with_diagnostic_report(
+    payload: Dict[str, Any],
+    reports_dir: Optional[Path],
+) -> Dict[str, Any]:
+    report_info = _write_diagnostic_report(payload, reports_dir)
+    payload["report"] = report_info
+    return payload
+
+
+def _write_diagnostic_report(
+    payload: Dict[str, Any],
+    reports_dir: Optional[Path],
+) -> Dict[str, Any]:
+    target_dir = reports_dir or ensure_mobile_camera_solve_reports_dir()
+    utils.create_path(target_dir)
+    frame_id = str(payload.get("frame_id") or "unknown")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_path = target_dir / f"{timestamp}_{frame_id}.json"
+    report_payload = _sanitize_diagnostic_report(payload)
+    temp_path = report_path.with_suffix(".json.tmp")
+    with open(temp_path, "w") as output:
+        json.dump(report_payload, output, indent=2, sort_keys=True)
+        output.write("\n")
+    os.replace(temp_path, report_path)
+    return {
+        "stored": True,
+        "json_report": str(report_path),
+    }
+
+
+def _sanitize_diagnostic_report(payload: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized = json.loads(json.dumps(payload, default=str))
+    metadata = sanitized.get("metadata")
+    if isinstance(metadata, dict):
+        metadata.pop("frame_file", None)
+        metadata.pop("metadata_file", None)
+        nested = metadata.get("metadata")
+        if isinstance(nested, dict):
+            for key in ("location", "gps", "lat", "lon", "latitude", "longitude"):
+                nested.pop(key, None)
+        for key in ("location", "gps", "lat", "lon", "latitude", "longitude"):
+            metadata.pop(key, None)
+    score = sanitized.get("score")
+    if isinstance(score, dict):
+        score["path"] = Path(str(score.get("path", ""))).name
+    solve = sanitized.get("solve")
+    if isinstance(solve, dict):
+        for row in solve.get("rows") or []:
+            if isinstance(row, dict) and "path" in row:
+                row["path"] = Path(str(row["path"])).name
+        best = solve.get("best")
+        if isinstance(best, dict) and "path" in best:
+            best["path"] = Path(str(best["path"])).name
+    sanitized.pop("report", None)
+    return sanitized
 
 
 def _mount_profile_files(profiles_dir: Path) -> List[Path]:

@@ -271,9 +271,9 @@ Recommended first implementation after Phase 2 passes:
 
 Phase 6 issue plan:
 
-- #54: Add a diagnostic mobile frame solve job endpoint.
-- #55: Add an Android guided upload-and-diagnostic-solve workflow.
-- #56: Persist mobile camera diagnostic solve reports.
+- #54: Add a diagnostic mobile frame solve job endpoint. Implemented.
+- #55: Add an Android guided upload-and-diagnostic-solve workflow. Implemented.
+- #56: Persist mobile camera diagnostic solve reports. Implemented.
 - #57: Tune mobile camera quality thresholds from accepted/rejected night
   frames.
 - #58: Evaluate RAW mobile frames for diagnostic solving.

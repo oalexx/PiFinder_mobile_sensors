@@ -72,6 +72,8 @@ Available tests:
 - `CAM SWEEP`: tests the available rear camera IDs.
 - `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
 - `UPLOAD LAST JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
+- `DIAGNOSTIC SOLVE`: asks PiFinder to score and diagnostic-solve the uploaded
+  frame via `/mobile/camera_solve`.
 
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:
@@ -188,7 +190,9 @@ cd mobile
     - `SEND IMU BATCH`
 12. Go back to `CAMERA LAB`, run `SOLVE CANDIDATE BURST`, then tap
     `UPLOAD LAST JPEG`.
-13. Run the sky tests outdoors at night when conditions allow:
+13. Tap `DIAGNOSTIC SOLVE` to display quality score, solve/skipped state, and
+    the Raspberry report path.
+14. Run the sky tests outdoors at night when conditions allow:
     - `MANUAL BURST`
     - `ISO SWEEP`
     - `CAM SWEEP`

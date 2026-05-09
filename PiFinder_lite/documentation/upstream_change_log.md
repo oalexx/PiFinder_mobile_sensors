@@ -974,6 +974,66 @@ Status:
 
 Keep. This is required before implementing a calibrated mobile IMU overlay.
 
+### 2026-05-09: `/mobile/camera_solve` diagnostic endpoint
+
+Files:
+
+- `python/PiFinder/mobile_bridge.py`
+- `python/PiFinder/server.py`
+- `python/tests/test_mobile_bridge.py`
+- `mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java`
+- `python/tests/test_mobile_android_camera_solve_ui.py`
+- `PiFinder_lite/documentation/mobile_bridge_api_v0.md`
+
+Why:
+
+Phase 6 needs a guided mobile-camera diagnostic path after Android uploads a
+JPEG. The first safe runtime surface is an explicit diagnostic endpoint that
+scores a stored frame and only attempts a solve when the quality score accepts
+it. This keeps mobile camera work measurable without turning it into live
+PiFinder pointing input.
+
+Change:
+
+- Added `POST /mobile/camera_solve`.
+- The endpoint accepts a stored `frame_id` and looks up
+  `~/PiFinder_data/mobile/frames/<frame_id>.jpg`.
+- It rejects unsafe or missing frame IDs.
+- It runs the existing Lite quality score before any solve attempt.
+- It skips LOW/rejected frames with `skipped_reason:
+  quality_score_rejected`.
+- It can attempt an explicit diagnostic solve for accepted frames using the
+  existing Lite diagnostic solve helper.
+- It writes a sanitized JSON report under
+  `~/PiFinder_data/mobile/camera_solve_reports/`.
+- Android Camera Lab now has `Diagnostic Solve`, which calls the endpoint for
+  the last uploaded frame and displays score, solve/skipped state, and report
+  path.
+
+Classic PiFinder impact:
+
+Low. This adds an optional `/mobile/*` endpoint and Android action only. It
+does not update runtime pointing, does not feed the integrator, does not alter
+classic camera/solver loops, and does not change startup defaults.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py -q
+16 passed
+
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_imu_analysis.py python\tests\test_mobile_android_calibration_ui.py python\tests\test_mobile_android_camera_solve_ui.py python\tests\test_mobile_mount_offset.py python\tests\test_mobile_mount_repeatability.py python\tests\test_lite_runtime_compat.py -q
+33 passed
+
+cd mobile
+.\gradlew.bat assembleDebug
+BUILD SUCCESSFUL
+```
+
+Status:
+
+Keep. This is the Phase 6 diagnostic bridge for issues #54, #56, and #55.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

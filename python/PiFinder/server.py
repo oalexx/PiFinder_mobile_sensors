@@ -344,6 +344,38 @@ class Server:
                 "solver_invoked": False,
             }
 
+        @app.route("/mobile/camera_solve", method="POST")
+        def mobile_camera_solve():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            frame_id = payload.get("frame_id")
+            solve_timeout_ms = int(payload.get("solve_timeout_ms", 1000))
+            preprocess_modes = payload.get("preprocess_modes")
+            if isinstance(preprocess_modes, str):
+                preprocess_modes = [
+                    mode.strip()
+                    for mode in preprocess_modes.split(",")
+                    if mode.strip()
+                ]
+            elif not isinstance(preprocess_modes, list):
+                preprocess_modes = None
+
+            result = mobile_bridge.diagnostic_camera_solve(
+                frame_id=frame_id,
+                solve_timeout_ms=solve_timeout_ms,
+                preprocess_modes=preprocess_modes,
+                force_attempt=bool(payload.get("force_attempt", False)),
+            )
+            if result.get("ok") is False:
+                response.status = 400
+            return result
+
         @app.route("/advanced")
         @auth_required
         def advanced():

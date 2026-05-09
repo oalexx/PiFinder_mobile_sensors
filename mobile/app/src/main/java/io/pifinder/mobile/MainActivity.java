@@ -168,6 +168,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private boolean imuBatchCaptureActive = false;
     private String pendingImuBaseUrl = "";
     private String pendingImuBatchLabel = "diagnostic";
+    private String lastUploadedFrameId = "";
 
     private final List<Sensor> activeSensors = new ArrayList<>();
     private final List<Sensor> imuBatchSensors = new ArrayList<>();
@@ -528,6 +529,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button uploadLastJpeg = makeGridButton("Upload Last JPEG");
         uploadLastJpeg.setOnClickListener(v -> uploadLastCapturedJpeg());
         row6.addView(uploadLastJpeg);
+        Button diagnosticSolve = makeGridButton("Diagnostic Solve");
+        diagnosticSolve.setOnClickListener(v -> requestDiagnosticCameraSolve());
+        row6.addView(diagnosticSolve);
 
         captureView = sectionText();
         captureView.setText("Capture test: waiting for a save folder.");
@@ -1449,6 +1453,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         byte[] frameBytes = Arrays.copyOf(lastCapturedJpegBytes, lastCapturedJpegBytes.length);
         String filename = lastCapturedJpegName;
         String metadataJson = lastCapturedJpegMetadataJson;
+        lastUploadedFrameId = "";
         captureView.setText("Uploading last JPEG...\n" + filename + "\n" + baseUrl + "/mobile/camera_frame");
         updateMobileCameraDiagnosticGuide("uploading");
         new Thread(() -> {
@@ -1489,7 +1494,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } else if ("uploading".equals(stage)) {
             text += "Status: uploading the latest JPEG to PiFinder.";
         } else if ("uploaded".equals(stage)) {
-            text += "Status: uploaded. Next gate is Raspberry scoring and diagnostic solve.";
+            text += "Status: uploaded. Tap Diagnostic Solve to score and solve on PiFinder.";
+        } else if ("solving".equals(stage)) {
+            text += "Status: PiFinder is scoring and running diagnostic solve.";
+        } else if ("solve_complete".equals(stage)) {
+            text += "Status: diagnostic solve complete. Review score, solve result, and report path.";
+        } else if ("solve_failed".equals(stage)) {
+            text += "Status: diagnostic solve request failed. Check PiFinder status and frame id.";
         } else if ("upload_failed".equals(stage)) {
             text += "Status: upload failed. Check PiFinder IP, Wi-Fi, and /mobile/status.";
         } else {
@@ -1505,9 +1516,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "3. Camera Lab -> Save Folder.\n"
                 + "4. Run Diagnostic Burst / Solve Candidate Burst.\n"
                 + "5. Upload Last JPEG.\n"
-                + "6. On Raspberry run:\n"
-                + "python PiFinder_lite/score_mobile_frame.py --input \"$HOME/PiFinder_data/mobile/frames\"\n"
-                + "python PiFinder_lite/diagnostic_solve_mobile_frame.py --input \"$HOME/PiFinder_data/mobile/frames\" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract\n";
+                + "6. Tap Diagnostic Solve to call /mobile/camera_solve.\n"
+                + "7. Review the quality score, solve result, and stored report.\n";
     }
 
     private void copyMobileCameraDiagnosticPlan() {
@@ -1554,6 +1564,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             if (!json.optBoolean("ok", false)) {
                 return "Camera frame upload failed\nServer returned ok=false.";
             }
+            lastUploadedFrameId = json.optString("frame_id", "");
             return "Camera frame uploaded\nFrame ID: " + json.optString("frame_id", "unknown")
                     + "\nBytes: " + json.optLong("bytes", frameBytes.length)
                     + "\nElapsed: " + json.optInt("elapsed_ms", -1) + " ms";
@@ -1566,6 +1577,97 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.disconnect();
             }
         }
+    }
+
+    private void requestDiagnosticCameraSolve() {
+        String frameId = lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim();
+        if (frameId.length() == 0) {
+            captureView.setText("No uploaded frame ID ready.\nUpload Last JPEG before Diagnostic Solve.");
+            updateMobileCameraDiagnosticGuide("capture_needed");
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            captureView.setText("PiFinder URL missing.\nSet it in PiFinder Remote first.");
+            updateMobileCameraDiagnosticGuide("remote_needed");
+            return;
+        }
+        captureView.setText("Requesting diagnostic solve...\nFrame ID: " + frameId
+                + "\n" + baseUrl + "/mobile/camera_solve");
+        updateMobileCameraDiagnosticGuide("solving");
+        new Thread(() -> {
+            String message = postDiagnosticCameraSolve(baseUrl, frameId);
+            runOnUiThread(() -> {
+                captureView.setText(message);
+                if (message.startsWith("Diagnostic solve complete")) {
+                    updateMobileCameraDiagnosticGuide("solve_complete");
+                } else {
+                    updateMobileCameraDiagnosticGuide("solve_failed");
+                }
+            });
+        }).start();
+    }
+
+    private String postDiagnosticCameraSolve(String baseUrl, String frameId) {
+        HttpURLConnection connection = null;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("frame_id", frameId);
+            payload.put("solve_timeout_ms", 1000);
+            payload.put("preprocess_modes", "baseline,background_subtract");
+            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
+            URL url = new URL(baseUrl + "/mobile/camera_solve");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(45000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+
+            int status = connection.getResponseCode();
+            String responseBody = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "Diagnostic solve failed\nHTTP " + status + "\n" + responseErrorSummary(responseBody);
+            }
+            JSONObject json = new JSONObject(responseBody);
+            if (!json.optBoolean("ok", false)) {
+                return "Diagnostic solve failed\nServer returned ok=false.";
+            }
+            return formatDiagnosticSolveResult(json);
+        } catch (Exception e) {
+            return "Diagnostic solve failed\n" + shortError(e)
+                    + "\nFrame ID: " + frameId
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String formatDiagnosticSolveResult(JSONObject json) {
+        JSONObject score = json.optJSONObject("score");
+        JSONObject solve = json.optJSONObject("solve");
+        JSONObject report = json.optJSONObject("report");
+        String grade = score == null ? "unknown" : score.optString("grade", "unknown");
+        double qualityScore = score == null ? -1.0 : score.optDouble("quality_score", -1.0);
+        boolean attempted = solve != null && solve.optBoolean("attempted", false);
+        boolean solveOk = solve != null && solve.optBoolean("solve_ok", false);
+        String skippedReason = solve == null ? "" : solve.optString("skipped_reason", "");
+        String reportPath = report == null ? "not stored" : report.optString("json_report", "not stored");
+        return "Diagnostic solve complete\nFrame ID: " + json.optString("frame_id", "unknown")
+                + "\nGrade: " + grade
+                + "\nScore: " + qualityScore
+                + "\nAttempted: " + attempted
+                + "\nSolve OK: " + solveOk
+                + (skippedReason.length() > 0 ? "\nSkipped: " + skippedReason : "")
+                + "\nReport: " + reportPath
+                + "\nDiagnostic only: " + json.optBoolean("diagnostic_only", true);
     }
 
     private byte[] buildCameraFrameMultipartBody(
