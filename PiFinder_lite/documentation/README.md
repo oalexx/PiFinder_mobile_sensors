@@ -38,6 +38,7 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | `mobile_frame_diagnostic_solve.md` | Diagnostic solve workflow. |
 | `mobile_camera_solver_path_decision.md` | Product/technical decision for solver path. |
 | `mobile_camera_profile.md` | Per-device recommendation profile format. |
+| `mobile_companion_status_2026-05-09.md` | Current inflection-point summary: what works, what remains diagnostic, and gates. |
 
 ## Phase 5 Calibration
 

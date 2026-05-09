@@ -22,6 +22,44 @@ real Raspberry Pi.
 
 ## Change Records
 
+### 2026-05-09: Mobile camera profile generator
+
+Files:
+
+- `PiFinder_lite/generate_mobile_camera_profile.py`
+- `PiFinder_lite/documentation/mobile_camera_profile.md`
+- `PiFinder_lite/configs/mobile_camera_profile.samsung_sm-s948b.example.json`
+- `python/tests/test_mobile_camera_profile.py`
+
+Reason:
+
+Phase 6 diagnostics now produce enough report history to summarize what is
+known per phone model. Field users need a conservative recommendation profile
+that records camera ID, capture mode, JPEG/RAW status, confidence, evidence
+counts, and caveats without claiming runtime support.
+
+Change:
+
+Added a Raspberry-side generator for sanitized per-phone mobile camera
+recommendation profiles from diagnostic report JSON. Updated the profile schema
+to v1 and documented confidence rules from `UNKNOWN` through `HIGH`.
+
+Classic PiFinder impact:
+
+None. This is an offline diagnostic tool under `PiFinder_lite/`; it does not
+change startup, solver, integrator, GPS, IMU, or pointing behavior.
+
+Validation:
+
+```text
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_camera_profile.py -q
+```
+
+Status:
+
+Keep. This creates the per-phone evidence bridge needed for #66 while preserving
+the diagnostic-only guardrail.
+
 ### 2026-05-09: Mobile environment metadata bridge
 
 Files:

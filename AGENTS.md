@@ -19,9 +19,13 @@ Current status:
 - Phase 2 night-sky camera validation remains the active evidence gate.
 - Phase 5 field validation (#52) remains open as the mounted/real-sky evidence
   gate before any guidance or integrator work.
-- Phase 6 mobile camera work has been planned as diagnostic-only issues
-  (#54-#59). Some scaffolding can proceed before Phase 2, but threshold tuning
-  and runtime decisions remain blocked by clear-sky Phase 2 evidence.
+- Phase 6 diagnostic mobile camera scaffolding is implemented through #67:
+  diagnostic solve endpoint, Android guided flow, persisted reports, report
+  history/session summary, exposure advisor, environment metadata, night-test
+  wizard, dynamic burst candidate ranking, and per-phone recommendation profile
+  generation.
+- Phase 6 threshold tuning (#57), RAW decision (#58), and runtime-path decision
+  (#59) remain blocked by clear-sky Phase 2 evidence.
 
 Validated Phase 4 capabilities:
 
@@ -31,6 +35,11 @@ Validated Phase 4 capabilities:
 - Mobile IMU batches are stored for diagnostics and confidence analysis.
 - Mobile JPEG upload is storage/diagnostic-only, with quality scoring and
   diagnostic solve tooling.
+- Mobile camera diagnostic reports can be summarized and converted into
+  conservative per-phone camera recommendation profiles.
+- Android `Run Full Diagnostic` ranks a dynamic subset of burst frames using
+  Raspberry diagnostic solve results instead of blindly uploading only the last
+  JPEG.
 
 Validated Phase 5 capabilities:
 
@@ -49,6 +58,8 @@ Guardrails:
 - Do not feed mobile IMU into the integrator yet.
 - Keep mobile camera work diagnostic until Phase 2 produces reliable clear-sky
   evidence.
+- Treat per-phone mobile camera profiles as evidence summaries, not runtime
+  configuration.
 - Keep mobile IMU overlay/read-only unless #52 field validation explicitly
   supports moving to a later optional guidance issue.
 - Do not commit phone captures, generated analysis output, local paths, or
@@ -121,7 +132,7 @@ upgrading the Android build.
 
 **Focused Lite/mobile tests:**
 ```powershell
-.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_imu_analysis.py python\tests\test_lite_runtime_compat.py -q
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py python\tests\test_mobile_camera_profile.py python\tests\test_mobile_imu_analysis.py python\tests\test_lite_runtime_compat.py -q
 ```
 
 ## Architecture Overview
@@ -211,6 +222,7 @@ Tests use pytest with custom markers for different test types. The smoke tests p
 ```bash
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
+python PiFinder_lite/generate_mobile_camera_profile.py --reports-dir "$HOME/PiFinder_data/mobile/camera_solve_reports" --device-model SM-S948B
 python PiFinder_lite/analyze_mobile_imu.py --input "$HOME/PiFinder_data/mobile/imu_latest.json"
 python PiFinder_lite/compute_mobile_mount_offset.py --help
 python PiFinder_lite/validate_mobile_mount_repeatability.py --help

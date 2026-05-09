@@ -44,6 +44,9 @@ Validated capabilities:
   diagnostic reports.
 - Environment summaries in camera reports when Android has sent
   `/mobile/environment` or embedded a camera-frame environment snapshot.
+- Phase 2 Android night-test wizard and dynamic burst candidate ranking.
+- Per-phone mobile camera recommendation profile generation from diagnostic
+  reports.
 
 Still intentionally diagnostic-only:
 
@@ -118,14 +121,16 @@ PiFinder Remote -> Test Connection
 PiFinder Remote -> Send Profile / Send Env / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
 Camera Lab -> Run Full Diagnostic
+PiFinder_lite -> generate_mobile_camera_profile.py
 ```
 
-`Run Full Diagnostic` captures a solve-candidate JPEG, uploads it to
-`/mobile/camera_frame`, calls `/mobile/camera_solve`, and displays upload,
-quality score, solve/skipped state, next action, and the persisted report path.
-It also shows a conservative exposure/capture advice line, for example
-background too bright, noise too high, too few candidates, saturation present,
-or solved but collect more evidence. `View Reports` then reads
+`Run Full Diagnostic` captures a solve-candidate burst, uploads a bounded
+distributed subset to `/mobile/camera_frame`, calls `/mobile/camera_solve` for
+each candidate, and displays the selected frame, ranking, quality score,
+solve/skipped state, next action, and persisted report path. It also shows a
+conservative exposure/capture advice line, for example background too bright,
+noise too high, too few candidates, saturation present, or solved but collect
+more evidence. `View Reports` then reads
 `/mobile/camera_reports` and shows the recent report history, solved/rejected
 counts, best score, dominant advice, available environment metadata,
 recommendation, and next action. `Copy
@@ -144,6 +149,7 @@ Optional Raspberry-side batch checks:
 ```bash
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
+python PiFinder_lite/generate_mobile_camera_profile.py --reports-dir "$HOME/PiFinder_data/mobile/camera_solve_reports" --device-model SM-S948B
 ```
 
 The Android diagnostic actions remain diagnostic-only and do not update live
@@ -192,6 +198,7 @@ live under `documentation/`.
 | `documentation/mobile_frame_diagnostic_solve.md` | Diagnostic solve workflow. |
 | `documentation/mobile_camera_solver_path_decision.md` | Product/technical decision for solver path. |
 | `documentation/mobile_camera_profile.md` | Per-device recommendation profile format. |
+| `documentation/mobile_companion_status_2026-05-09.md` | Current inflection-point status: what works, what remains diagnostic, and gates. |
 
 ### Tools
 
@@ -200,6 +207,7 @@ live under `documentation/`.
 | `analyze_phase2_camera.py` | Offline Phase 2 frame analysis and Tetra3 attempts. |
 | `score_mobile_frame.py` | Score JPEGs before diagnostic solving. |
 | `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
+| `generate_mobile_camera_profile.py` | Generate conservative per-phone camera recommendation profiles from diagnostic reports. |
 | `analyze_mobile_imu.py` | Analyze stored `/mobile/imu` batches. |
 | `compute_mobile_mount_offset.py` | Compute a diagnostic candidate phone-to-tube offset profile. |
 | `validate_mobile_mount_repeatability.py` | Compare candidate offsets and recommend proceed/recalibrate/reject. |
@@ -249,6 +257,6 @@ Until that evidence is reliable, mobile camera remains diagnostic-only and
 PiFinder Lite should continue to use the original PiFinder camera path for live
 solving.
 
-Phase 6 has been split into issues #54-#59. Endpoint/UI/report scaffolding can
-be built with existing uploaded frames, but threshold tuning, RAW decisions, and
-any runtime promotion remain blocked by Phase 2 evidence.
+Phase 6 diagnostic scaffolding through #67 is implemented. Threshold tuning,
+RAW decisions, and any runtime promotion remain blocked by Phase 2 evidence and
+the #57-#59 decision chain.

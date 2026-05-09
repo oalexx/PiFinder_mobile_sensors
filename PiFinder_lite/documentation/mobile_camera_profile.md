@@ -1,70 +1,109 @@
 # Mobile Camera Recommendation Profile
 
-This document explains the first mobile camera recommendation profile.
+This document defines the per-phone mobile camera recommendation profile used
+by Phase 6 diagnostics.
 
-Profile:
+The profile is an evidence summary, not a runtime config. It must not enable
+mobile camera solves as live PiFinder pointing input.
 
-```text
-PiFinder_lite/configs/mobile_camera_profile.samsung_sm-s948b.example.json
+## Generator
+
+Use the Raspberry-side tool after one or more Android `Run Full Diagnostic`
+sessions:
+
+```bash
+python PiFinder_lite/generate_mobile_camera_profile.py \
+  --reports-dir "$HOME/PiFinder_data/mobile/camera_solve_reports" \
+  --manufacturer samsung \
+  --device-model SM-S948B \
+  --output "$HOME/PiFinder_data/mobile/profiles/mobile_camera_profile.SM-S948B.json" \
+  --markdown-output "$HOME/PiFinder_data/mobile/profiles/mobile_camera_profile.SM-S948B.md"
 ```
 
-## Purpose
+Generated output under `~/PiFinder_data/mobile/` is local evidence. Do not
+commit generated profiles unless they have been sanitized and intentionally
+turned into examples.
 
-The profile captures what the current evidence says about a specific phone
-model. It is not a permanent truth and it is not a live runtime config yet.
-
-It is an evidence-backed starting point for:
-
-- Android Camera Lab defaults;
-- PiFinder Lite scoring;
-- diagnostic solving;
-- future per-device recommendation storage.
-
-## Current Device
-
-```text
-Samsung SM-S948B
-```
-
-Current decision:
-
-```text
-PROMISING_TUNE_FIRST
-```
-
-## Recommendation
+## Schema V1
 
 ```json
 {
-  "recommended_camera_id": "2",
-  "format": "jpeg",
-  "capture_mode": "solve_candidate_burst",
-  "recommended_iso_priority": [400, 800],
-  "fov_estimate_deg": 74.0,
-  "preprocess_order": ["baseline", "background_subtract"],
-  "quality_score_required": true,
-  "live_solver_ready": false
+  "schema": "pifinder-mobile-camera-profile-v1",
+  "status": "diagnostic",
+  "decision": "PROMISING_TUNE_FIRST",
+  "device": {
+    "manufacturer": "samsung",
+    "model": "SM-S948B",
+    "app_build": "debug-local"
+  },
+  "recommendation": {
+    "recommended_camera_id": "2",
+    "preferred_capture_mode": "solve_candidate_burst",
+    "preferred_format": "jpeg",
+    "raw_status": "not_recommended_until_58",
+    "confidence": "MEDIUM",
+    "runtime_support": "diagnostic_only",
+    "quality_score_required": true,
+    "diagnostic_solve_required": true
+  },
+  "evidence": {
+    "source": "camera_solve_reports",
+    "total_reports": 2,
+    "attempted_reports": 2,
+    "solved_reports": 1,
+    "rejected_reports": 1,
+    "failed_reports": 0,
+    "best_quality_score": 0.91,
+    "clear_sky_evidence": false,
+    "status_counts": {
+      "rejected": 1,
+      "solved": 1
+    }
+  },
+  "caveats": [
+    "clear_sky_phase2_required",
+    "thresholds_not_tuned_until_57",
+    "runtime_decision_blocked_until_59",
+    "diagnostic_only_no_integrator_feed"
+  ]
 }
 ```
 
-## Why
+## Confidence Rules
 
-The current evidence says:
+Use confidence conservatively:
 
-- baseline JPEG solves better than aggressive preprocessing;
-- ISO400/ISO800 dark-background frames are better first candidates;
-- ISO3200 frames with lifted gray backgrounds can produce many false-looking
-  points and should not dominate selection;
-- score before solve is required;
-- diagnostic solve is promising, but live integration is not ready.
+| Confidence | Meaning |
+| --- | --- |
+| `UNKNOWN` | No useful diagnostic reports for this phone. |
+| `LOW` | Reports exist, but no diagnostic solves succeeded yet. |
+| `MEDIUM` | At least one diagnostic solve succeeded, but Phase 2 clear-sky evidence and #57 tuning are not complete. |
+| `HIGH` | Reserved for repeated clear-sky evidence after threshold tuning and runtime decision work. Not expected before #57/#59. |
 
-## How This Should Evolve
+`HIGH` must not imply runtime support. Runtime support remains
+`diagnostic_only` until #59 explicitly changes the product decision.
 
-Eventually the app should be able to generate a similar profile for any phone:
+## Recommendation Rules
 
-```text
-Compatibility Tester -> Camera Lab -> Upload -> Score -> Diagnostic Solve -> Profile
-```
+The generator prefers solved diagnostic reports when choosing camera ID, capture
+mode, and format. If no report solved, it falls back to the most common
+available metadata.
 
-The final product should use known profiles when available and learn a new one
-when a phone model has no existing recommendation.
+Current defaults remain intentionally conservative:
+
+- preferred capture mode: `solve_candidate_burst`;
+- preferred format: `jpeg`;
+- RAW status: `not_recommended_until_58` when JPEG is the preferred format;
+- quality score and diagnostic solve remain required.
+
+## Privacy And Commit Safety
+
+Generated profiles must not include:
+
+- raw frame paths;
+- local absolute paths;
+- precise GPS coordinates;
+- phone captures or generated analysis artifacts.
+
+The committed Samsung example is a schema/example profile, not proof that this
+phone is runtime-ready.

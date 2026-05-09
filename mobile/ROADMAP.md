@@ -274,6 +274,14 @@ Phase 6 issue plan:
 - #54: Add a diagnostic mobile frame solve job endpoint. Implemented.
 - #55: Add an Android guided upload-and-diagnostic-solve workflow. Implemented.
 - #56: Persist mobile camera diagnostic solve reports. Implemented.
+- #60: Add camera diagnostic report history endpoint. Implemented.
+- #61: Add Android camera diagnostic history view. Implemented.
+- #62: Add camera diagnostic session summary. Implemented.
+- #63: Add exposure advisor v1 from quality-score diagnostics. Implemented.
+- #64: Add mobile environment metadata bridge. Implemented.
+- #65: Add guided night test wizard for Phase 2 evidence. Implemented.
+- #66: Build per-phone camera recommendation profile from diagnostics. Implemented.
+- #67: Improve burst frame selector before upload. Implemented.
 - #57: Tune mobile camera quality thresholds from accepted/rejected night
   frames.
 - #58: Evaluate RAW mobile frames for diagnostic solving.
@@ -284,6 +292,7 @@ Work that can proceed before a good night:
 - Diagnostic endpoint/job scaffolding using existing uploaded frames.
 - Android result UI and timeout/error handling.
 - Local report persistence and sanitization rules.
+- Per-phone camera profile generation from diagnostic report history.
 
 Work blocked by Phase 2 clear-sky evidence:
 
@@ -373,10 +382,10 @@ Still open / next:
 - Compare Manual Burst, ISO Sweep, Cam Sweep, and RAW Burst under clearer sky.
 - Summarize the mobile camera solve decision from real night evidence.
 - Field-validate the calibrated mobile IMU overlay (#52).
-- Build the Phase 6 diagnostic mobile camera solve workflow (#54-#56).
+- Use the Phase 6 diagnostic mobile camera solve workflow in the field
+  (#54-#56, #60-#67 implemented).
 - Tune/promote mobile camera frames only if Phase 2 evidence supports it
   (#57-#59).
-- Add exposure advisor after enough accepted/rejected night frames exist.
 
 ## Main Risks
 

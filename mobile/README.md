@@ -10,7 +10,8 @@ PiFinder `/remote` page, and can send GPS, IMU batches, profile data, mount
 calibration evidence, and JPEG diagnostic frames to a Raspberry Pi running
 PiFinder Lite. It can also send optional environment metadata so camera
 reports can show whether ambient light, barometer, battery, and network context
-were available during a session.
+were available during a session. Raspberry tools can turn those diagnostic
+reports into conservative per-phone camera recommendation profiles.
 
 Current validated bridge status:
 
@@ -22,6 +23,8 @@ Current validated bridge status:
 - `CALIBRATION` stores labeled `stationary`, `mounted_reference`, and
   `repeat_check` IMU batches.
 - `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
+- `RUN FULL DIAGNOSTIC` ranks a dynamic subset of burst frames with Raspberry
+  diagnostic solve results.
 - `CALIBRATION` starts the Phase 5 phone-to-telescope evidence flow.
 
 Camera and IMU data are still diagnostic paths. Live mobile camera solving and
@@ -118,6 +121,12 @@ small bursts upload all frames, medium bursts upload three to five, and large
 bursts upload up to seven. Raspberry remains the source of truth for quality:
 the selected frame is chosen from Raspberry diagnostic solve results, preferring
 `solve_ok`, then higher quality score, with JPEG size only as a fallback.
+
+After reports are collected, Raspberry can generate a per-phone recommendation
+profile with `PiFinder_lite/generate_mobile_camera_profile.py`. That profile
+summarizes recommended camera ID, capture mode, JPEG/RAW status, confidence,
+evidence counts, and caveats. It remains diagnostic-only until the Phase 2/#57
+/#59 evidence chain supports any runtime decision.
 
 Each run creates a dated folder and writes images with descriptive names. The
 metadata file is also named after the test run, for example:
