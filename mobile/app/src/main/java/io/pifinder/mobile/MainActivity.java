@@ -60,6 +60,7 @@ import android.view.Surface;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -129,6 +130,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final String PREFS_NAME = "pifinder_mobile";
     private static final String KEY_CHECK_HISTORY = "check_history";
     private static final String KEY_REMOTE_BASE_URL = "remote_base_url";
+    private static final String KEY_NIGHT_VISION_ENABLED = "night_vision_enabled";
     private static final int MAX_HISTORY_RECORDS = 20;
 
     private SensorManager sensorManager;
@@ -158,8 +160,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private LinearLayout calibrationScreen;
     private LinearLayout remoteWebScreen;
     private LinearLayout rootLayout;
+    private ImageView logoView;
     private TextView titleView;
     private TextView subtitleView;
+    private Button nightVisionToggleButton;
     private EditText remoteUrlInput;
     private TextView remoteStatusView;
     private TextView calibrationStatusView;
@@ -174,6 +178,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String latestReadinessGrade = "NOT RUN";
     private int latestReadinessPercent = -1;
     private boolean compatibilityCheckRun = false;
+    private boolean nightVisionEnabled = false;
     private boolean liveImuStarted = false;
     private boolean liveImuSampleReceived = false;
     private Uri outputTreeUri;
@@ -294,6 +299,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
 
+        nightVisionEnabled = loadNightVisionEnabled();
+        applySystemBars();
         setContentView(buildUi());
         requestRuntimePermissions();
         refreshReport();
@@ -316,6 +323,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     @Override
     protected void onResume() {
         super.onResume();
+        applySystemBars();
         if (remoteWebView != null) {
             remoteWebView.onResume();
         }
@@ -357,27 +365,38 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         rootLayout = root;
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
-        root.setBackgroundColor(COLOR_BG);
+        root.setBackgroundColor(themeBg());
         scrollView.addView(root);
+
+        logoView = new ImageView(this);
+        logoView.setImageResource(R.drawable.ic_launcher);
+        logoView.setAdjustViewBounds(true);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(72), dp(72));
+        logoParams.gravity = Gravity.CENTER_HORIZONTAL;
+        logoParams.setMargins(0, dp(24), 0, dp(8));
+        root.addView(logoView, logoParams);
 
         titleView = new TextView(this);
         titleView.setText("PiFinder Mobile");
         titleView.setTextSize(25);
-        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextColor(themeText());
         titleView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
         titleView.setLetterSpacing(0.0f);
         titleView.setGravity(Gravity.CENTER);
-        titleView.setPadding(0, dp(42), 0, dp(6));
+        titleView.setPadding(0, dp(4), 0, dp(6));
         root.addView(titleView);
 
         subtitleView = new TextView(this);
         subtitleView.setText("Field companion and diagnostics");
         subtitleView.setTextSize(13);
-        subtitleView.setTextColor(COLOR_ACCENT);
+        subtitleView.setTextColor(themeAccent());
         subtitleView.setLetterSpacing(0.0f);
         subtitleView.setGravity(Gravity.CENTER);
-        subtitleView.setPadding(0, 0, 0, dp(26));
+        subtitleView.setPadding(0, 0, 0, dp(14));
         root.addView(subtitleView);
+
+        nightVisionToggleButton = makeNightVisionToggleButton();
+        root.addView(nightVisionToggleButton);
 
         homeScreen = screenContainer();
         root.addView(homeScreen);
@@ -386,13 +405,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button remoteNav = makeHeroButton("PiFinder Remote", "Use the normal telescope remote from this phone", true);
         remoteNav.setOnClickListener(v -> showScreen("remote"));
         homeScreen.addView(remoteNav);
-        Button cameraNav = makeHeroButton("Camera Lab", "Run the guided Phase 2 field diagnostic", false);
+        addAreaTitle(homeScreen, "Phone setup");
+        Button cameraNav = makeHeroButton("Camera Lab", "Capture and review phone camera diagnostics", false);
         cameraNav.setOnClickListener(v -> showScreen("camera"));
         homeScreen.addView(cameraNav);
-        Button calibrationNav = makeHeroButton("Calibration #52", "Collect mounted phone IMU overlay evidence", false);
+        Button calibrationNav = makeHeroButton("Calibration", "Calibrate and check the phone mount", false);
         calibrationNav.setOnClickListener(v -> showScreen("calibration"));
         homeScreen.addView(calibrationNav);
-        Button capabilitiesNav = makeHeroButton("Diagnostics", "Check sensors, GPS, IMU, camera, and readiness", false);
+        Button capabilitiesNav = makeHeroButton("Diagnostics", "Check phone sensors, GPS, camera, and readiness", false);
         capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
         homeScreen.addView(capabilitiesNav);
 
@@ -519,7 +539,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteImuRow.addView(sendMountReferenceImu);
 
         addBackRow(calibrationScreen);
-        addSectionHeader(calibrationScreen, "01", "Calibration #52", "Step through mounted phone IMU overlay evidence.");
+        addSectionHeader(calibrationScreen, "01", "Calibration", "Step through phone mount checks.");
         calibrationStatusView = statusCard();
         calibrationScreen.addView(calibrationStatusView);
         calibrationChecklistView = statusCard();
@@ -565,7 +585,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteWebScreen.addView(remoteWebView);
 
         addBackRow(cameraScreen);
-        addSectionHeader(cameraScreen, "01", "Camera Lab", "Guided Phase 2 camera evidence flow.");
+        addSectionHeader(cameraScreen, "01", "Camera Lab", "Capture, upload, and review camera diagnostics.");
         cameraFolderStatusView = statusCard();
         cameraScreen.addView(cameraFolderStatusView);
 
@@ -601,7 +621,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         markPhase2Repeat.setOnClickListener(v -> markPhase2NightTestRepeat());
         reportRow.addView(markPhase2Repeat);
 
-        addAreaTitle(cameraScreen, "Phase 2 checklist");
+        addAreaTitle(cameraScreen, "Night checklist");
         phase2NightTestWizardView = statusCard();
         updatePhase2NightTestWizard("ready");
         cameraScreen.addView(phase2NightTestWizardView);
@@ -712,8 +732,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         calibrationScreen.setVisibility("calibration".equals(screenName) ? View.VISIBLE : View.GONE);
         remoteWebScreen.setVisibility("remoteWeb".equals(screenName) ? View.VISIBLE : View.GONE);
         boolean fullRemote = "remoteWeb".equals(screenName);
+        if (logoView != null) {
+            logoView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+        }
         titleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
         subtitleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+        if (nightVisionToggleButton != null) {
+            nightVisionToggleButton.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+        }
         if (rootLayout != null) {
             if (fullRemote) {
                 rootLayout.setPadding(0, dp(18), 0, 0);
@@ -787,7 +813,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         );
         styledText.setSpan(
-                new ForegroundColorSpan(primary ? Color.rgb(80, 14, 35) : COLOR_MUTED),
+                new ForegroundColorSpan(primary ? themePrimarySupportText() : themeMuted()),
                 title.length() + 1,
                 text.length(),
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -795,15 +821,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         button.setText(styledText);
         button.setAllCaps(false);
         button.setTextSize(16);
-        button.setTextColor(primary ? COLOR_PRIMARY_TEXT : COLOR_TEXT);
+        button.setTextColor(primary ? themePrimaryText() : themeText());
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
         button.setGravity(Gravity.CENTER);
         button.setLetterSpacing(0.0f);
         button.setMinHeight(dp(primary ? 124 : 104));
         button.setPadding(dp(18), dp(18), dp(18), dp(18));
         button.setBackground(primary
-                ? roundedRect(COLOR_PRIMARY, COLOR_PRIMARY, 1, 28)
-                : roundedRect(COLOR_PANEL, COLOR_SECONDARY_STROKE, 1, 18));
+                ? roundedRect(themePrimary(), themePrimary(), 1, 28)
+                : roundedRect(themePanel(), themeSecondaryStroke(), 1, 18));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -817,14 +843,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button button = new Button(this);
         button.setText(label);
         button.setTextSize(12);
-        button.setTextColor(COLOR_MUTED);
+        button.setTextColor(themeMuted());
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
         button.setLetterSpacing(0.0f);
         button.setAllCaps(false);
         button.setMinHeight(dp(48));
         button.setMinWidth(dp(88));
         button.setPadding(dp(14), 0, dp(14), 0);
-        button.setBackground(roundedRect(COLOR_BG, Color.rgb(45, 51, 66), 1, 18));
+        button.setBackground(roundedRect(themeBg(), themeHairline(), 1, 18));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 dp(48)
@@ -848,7 +874,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         TextView index = new TextView(this);
         index.setText(number + ".");
         index.setTextSize(13);
-        index.setTextColor(COLOR_ACCENT);
+        index.setTextColor(themeAccent());
         index.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
         index.setLetterSpacing(0.0f);
         LinearLayout.LayoutParams indexParams = new LinearLayout.LayoutParams(
@@ -860,7 +886,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         TextView heading = new TextView(this);
         heading.setText(title);
         heading.setTextSize(18);
-        heading.setTextColor(COLOR_TEXT);
+        heading.setTextColor(themeText());
         heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
         heading.setLetterSpacing(0.0f);
         titleRow.addView(heading);
@@ -868,13 +894,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         TextView caption = new TextView(this);
         caption.setText(subtitle);
         caption.setTextSize(12);
-        caption.setTextColor(COLOR_MUTED);
+        caption.setTextColor(themeMuted());
         caption.setLineSpacing(dp(2), 1.0f);
         caption.setPadding(dp(34), dp(4), 0, dp(8));
         block.addView(caption);
 
         View accent = new View(this);
-        accent.setBackgroundColor(COLOR_ACCENT);
+        accent.setBackgroundColor(themeAccent());
         LinearLayout.LayoutParams accentParams = new LinearLayout.LayoutParams(
                 dp(56),
                 dp(1)
@@ -892,14 +918,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         TextView heading = new TextView(this);
         heading.setText(title);
         heading.setTextSize(15);
-        heading.setTextColor(COLOR_TEXT);
+        heading.setTextColor(themeText());
         heading.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
         heading.setLetterSpacing(0.0f);
         heading.setGravity(Gravity.START);
         block.addView(heading);
 
         View underline = new View(this);
-        underline.setBackgroundColor(COLOR_ACCENT);
+        underline.setBackgroundColor(themeAccent());
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 dp(92),
                 dp(2)
@@ -921,15 +947,37 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private Button makePrimaryButton(String label) {
-        return makeActionButton(label, COLOR_PRIMARY, COLOR_PRIMARY, COLOR_PRIMARY_TEXT, 56, 24);
+        return makeActionButton(label, themePrimary(), themePrimary(), themePrimaryText(), 56, 24);
     }
 
     private Button makeSecondaryButton(String label) {
-        return makeActionButton(label, COLOR_SECONDARY, COLOR_SECONDARY_STROKE, COLOR_TEXT, 52, 18);
+        return makeActionButton(label, themeSecondary(), themeSecondaryStroke(), themeText(), 52, 18);
     }
 
     private Button makeAdvancedButton(String label) {
-        return makeActionButton(label, COLOR_ADVANCED, COLOR_ADVANCED_STROKE, COLOR_MUTED, 50, 14);
+        return makeActionButton(label, themeAdvanced(), themeAdvancedStroke(), themeMuted(), 50, 14);
+    }
+
+    private Button makeNightVisionToggleButton() {
+        String label = nightVisionEnabled ? "Night Vision" : "Night Vision";
+        Button button = makeActionButton(
+                label,
+                nightVisionEnabled ? themePrimary() : themeAdvanced(),
+                nightVisionEnabled ? themePrimary() : themeAdvancedStroke(),
+                nightVisionEnabled ? themePrimaryText() : themeMuted(),
+                48,
+                24
+        );
+        button.setTextSize(12);
+        button.setOnClickListener(v -> toggleNightVision());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.setMargins(0, 0, 0, dp(16));
+        button.setLayoutParams(params);
+        return button;
     }
 
     private Button makeActionButton(
@@ -964,11 +1012,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView sectionText() {
         TextView textView = new TextView(this);
         textView.setTextSize(13);
-        textView.setTextColor(COLOR_TEXT);
+        textView.setTextColor(themeText());
         textView.setTypeface(Typeface.MONOSPACE);
         textView.setTextIsSelectable(true);
         textView.setPadding(dp(14), dp(14), dp(14), dp(14));
-        textView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 4));
+        textView.setBackground(roundedRect(themePanel(), themeHairline(), 1, 10));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -981,11 +1029,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView statusCard() {
         TextView textView = new TextView(this);
         textView.setTextSize(14);
-        textView.setTextColor(COLOR_TEXT);
+        textView.setTextColor(themeText());
         textView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
         textView.setLineSpacing(dp(4), 1.0f);
-        textView.setPadding(dp(16), dp(14), dp(16), dp(14));
-        textView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
+        textView.setPadding(dp(18), dp(16), dp(18), dp(16));
+        textView.setBackground(roundedRect(themePanel(), themeHairline(), 1, 18));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -999,14 +1047,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setText(loadRemoteBaseUrl());
-        input.setTextColor(COLOR_TEXT);
-        input.setHintTextColor(COLOR_MUTED);
+        input.setTextColor(themeText());
+        input.setHintTextColor(themeMuted());
         input.setHint("http://pifinder.local or http://192.168.8.167:8080");
         input.setTextSize(14);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         input.setSelectAllOnFocus(false);
         input.setPadding(dp(14), 0, dp(14), 0);
-        input.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 4));
+        input.setBackground(roundedRect(themePanel(), themeHairline(), 1, 16));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(52)
@@ -1019,13 +1067,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private EditText makeTextInput(String hint) {
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setTextColor(COLOR_TEXT);
-        input.setHintTextColor(COLOR_MUTED);
+        input.setTextColor(themeText());
+        input.setHintTextColor(themeMuted());
         input.setHint(hint);
         input.setTextSize(14);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setPadding(dp(14), 0, dp(14), 0);
-        input.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 4));
+        input.setBackground(roundedRect(themePanel(), themeHairline(), 1, 16));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(52)
@@ -2084,7 +2132,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } else if ("upload_failed".equals(stage)) {
             text += "Status: upload failed. Check PiFinder IP, Wi-Fi, and /mobile/status.";
         } else {
-            text += "Status: ready. Use this for Phase 2 rehearsal or clear-sky evidence collection.";
+            text += "Status: ready. Use this for night testing or camera checks.";
         }
         cameraDiagnosticGuideView.setText(text);
     }
@@ -2122,8 +2170,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 || latestCameraReportSummary.trim().length() == 0
                 ? "not loaded"
                 : "loaded";
-        String text = "Phase 2 checklist\n"
-                + "Goal: collect comparable clear-sky evidence without claiming camera proven reliable.\n"
+        String text = "Night checklist\n"
+                + "Goal: collect clear, comparable camera diagnostics without changing telescope pointing.\n"
                 + "Status: " + phase2NightTestWizardStatus(stage) + "\n\n"
                 + "Checklist\n"
                 + "1. PiFinder URL: " + (baseUrl.length() == 0 ? "missing" : baseUrl) + "\n"
@@ -2133,7 +2181,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "5. Use View reports, then Copy summary for sanitized notes.\n"
                 + "6. Repeat count marked here: " + phase2NightTestRepeatCount + "\n"
                 + "7. Report summary: " + reportStatus + "\n\n"
-                + "Decision boundary: test completed means the workflow ran. Camera proven reliable requires repeated clear-sky evidence and remains blocked until Phase 2 is summarized.\n"
+                + "Decision boundary: test completed means the workflow ran. Camera reliability needs repeated clear-sky results.\n"
                 + "Safety: diagnostic-only; no mobile camera solve updates pointing or the integrator.";
         phase2NightTestWizardView.setText(text);
     }
@@ -2143,7 +2191,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return "repeat marked; run another full diagnostic or load reports.";
         }
         if ("reports_loaded".equals(stage)) {
-            return "reports loaded; copy the summary for Phase 2 evidence.";
+            return "reports loaded; copy the summary for your notes.";
         }
         if ("review".equals(stage)) {
             return "review the checklist and run each field step deliberately.";
@@ -2153,9 +2201,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private String phase2NightTestPlanText() {
         String summary = latestCameraReportSummary == null ? "" : latestCameraReportSummary.trim();
-        return "Phase 2 Night Test Wizard\n"
-                + "Purpose: collect repeatable phone-camera evidence for PiFinder Lite.\n"
-                + "This can record a test completed session, but not camera proven reliable without repeated clear-sky evidence.\n\n"
+        return "Night Test Wizard\n"
+                + "Purpose: collect repeatable phone-camera diagnostics.\n"
+                + "This records a completed test session. Camera reliability still needs repeated clear-sky results.\n\n"
                 + "Field steps\n"
                 + "1. Start PiFinder Lite on Raspberry.\n"
                 + "2. Set Android PiFinder base URL and run TEST CONNECTION.\n"
@@ -2171,7 +2219,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "- Latest report summary loaded: " + (summary.length() == 0 ? "no" : "yes") + "\n\n"
                 + "Decision boundary\n"
                 + "- test completed: checklist ran and report summary was captured.\n"
-                + "- camera proven reliable: requires repeated clear-sky evidence and Phase 2 decision summary.\n"
+                + "- reliable camera use: requires repeated clear-sky results.\n"
                 + "- diagnostic-only: do not feed mobile solves into pointing or the integrator.\n";
     }
 
@@ -2184,7 +2232,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private void copyPhase2NightTestPlan() {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder Phase 2 night test plan", phase2NightTestPlanText()));
+        clipboard.setPrimaryClip(ClipData.newPlainText("PiFinder night test plan", phase2NightTestPlanText()));
         Toast.makeText(this, "Night test plan copied", Toast.LENGTH_SHORT).show();
     }
 
@@ -2874,7 +2922,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private String calibrationChecklistText() {
-        return "Mounted IMU checklist\n"
+        return "Phone mount checklist\n"
                 + "1. Test connection.\n"
                 + "2. Send profile and GPS.\n"
                 + "3. Capture Stationary with the tube untouched.\n"
@@ -2882,7 +2930,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "5. Capture Repeat check without moving the phone.\n"
                 + "6. Remount the phone and repeat Mount ref + Repeat check.\n"
                 + "7. Wait 5 minutes, capture one final Repeat check.\n"
-                + "8. Copy evidence for the #52 report.";
+                + "8. Copy evidence for your calibration notes.";
     }
 
     private TextView readinessBadge() {
@@ -2897,7 +2945,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView proseText() {
         TextView textView = new TextView(this);
         textView.setTextSize(14);
-        textView.setTextColor(COLOR_MUTED);
+        textView.setTextColor(themeMuted());
         textView.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
         textView.setLineSpacing(dp(4), 1.0f);
         textView.setPadding(dp(2), dp(8), dp(2), dp(8));
@@ -2916,6 +2964,98 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         drawable.setCornerRadius(dp(radiusDp));
         drawable.setStroke(dp(strokeWidthDp), stroke);
         return drawable;
+    }
+
+    private int themeBg() {
+        return nightVisionEnabled ? Color.rgb(4, 0, 0) : COLOR_BG;
+    }
+
+    private int themePanel() {
+        return nightVisionEnabled ? Color.rgb(18, 2, 3) : COLOR_PANEL;
+    }
+
+    private int themeText() {
+        return nightVisionEnabled ? Color.rgb(255, 88, 88) : COLOR_TEXT;
+    }
+
+    private int themeMuted() {
+        return nightVisionEnabled ? Color.rgb(148, 45, 45) : COLOR_MUTED;
+    }
+
+    private int themeAccent() {
+        return nightVisionEnabled ? Color.rgb(255, 48, 48) : COLOR_ACCENT;
+    }
+
+    private int themePrimary() {
+        return nightVisionEnabled ? Color.rgb(156, 20, 22) : COLOR_PRIMARY;
+    }
+
+    private int themePrimaryText() {
+        return nightVisionEnabled ? Color.rgb(255, 180, 172) : COLOR_PRIMARY_TEXT;
+    }
+
+    private int themePrimarySupportText() {
+        return nightVisionEnabled ? Color.rgb(255, 132, 124) : Color.rgb(80, 14, 35);
+    }
+
+    private int themeSecondary() {
+        return nightVisionEnabled ? Color.rgb(34, 6, 7) : COLOR_SECONDARY;
+    }
+
+    private int themeSecondaryStroke() {
+        return nightVisionEnabled ? Color.rgb(90, 20, 22) : COLOR_SECONDARY_STROKE;
+    }
+
+    private int themeAdvanced() {
+        return nightVisionEnabled ? Color.rgb(10, 0, 0) : COLOR_ADVANCED;
+    }
+
+    private int themeAdvancedStroke() {
+        return nightVisionEnabled ? Color.rgb(54, 10, 11) : COLOR_ADVANCED_STROKE;
+    }
+
+    private int themeHairline() {
+        return nightVisionEnabled ? Color.rgb(58, 11, 12) : Color.rgb(37, 43, 57);
+    }
+
+    private int themePass() {
+        return nightVisionEnabled ? Color.rgb(255, 104, 96) : COLOR_PASS;
+    }
+
+    private int themeWarn() {
+        return nightVisionEnabled ? Color.rgb(255, 126, 70) : COLOR_WARN;
+    }
+
+    private int themeFail() {
+        return nightVisionEnabled ? Color.rgb(255, 48, 60) : COLOR_FAIL;
+    }
+
+    private boolean loadNightVisionEnabled() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(KEY_NIGHT_VISION_ENABLED, false);
+    }
+
+    private void saveNightVisionEnabled(boolean enabled) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_NIGHT_VISION_ENABLED, enabled)
+                .apply();
+    }
+
+    private void toggleNightVision() {
+        saveNightVisionEnabled(!nightVisionEnabled);
+        recreate();
+    }
+
+    private void applySystemBars() {
+        getWindow().setStatusBarColor(nightVisionEnabled ? themePanel() : themeBg());
+        getWindow().setNavigationBarColor(nightVisionEnabled ? themePanel() : themeBg());
+        int flags = getWindow().getDecorView().getSystemUiVisibility();
+        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(flags);
     }
 
     private void requestRuntimePermissions() {
@@ -3375,15 +3515,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private SpannableString colorizeCompatibility(String report) {
         SpannableString styled = new SpannableString(report);
-        colorToken(styled, report, "PASS", COLOR_PASS);
-        colorToken(styled, report, "WARN", COLOR_WARN);
-        colorToken(styled, report, "FAIL", COLOR_FAIL);
-        colorToken(styled, report, "HIGH", COLOR_PASS);
-        colorToken(styled, report, "MEDIUM", COLOR_WARN);
-        colorToken(styled, report, "LOW", COLOR_FAIL);
-        colorToken(styled, report, "NOT RUN", COLOR_MUTED);
-        colorToken(styled, report, "NOT TESTED", COLOR_MUTED);
-        colorToken(styled, report, "RECOMMENDATION", COLOR_ACCENT);
+        colorToken(styled, report, "PASS", themePass());
+        colorToken(styled, report, "WARN", themeWarn());
+        colorToken(styled, report, "FAIL", themeFail());
+        colorToken(styled, report, "HIGH", themePass());
+        colorToken(styled, report, "MEDIUM", themeWarn());
+        colorToken(styled, report, "LOW", themeFail());
+        colorToken(styled, report, "NOT RUN", themeMuted());
+        colorToken(styled, report, "NOT TESTED", themeMuted());
+        colorToken(styled, report, "RECOMMENDATION", themeAccent());
         boldToken(styled, report, "RECOMMENDATION");
         return styled;
     }
@@ -3420,8 +3560,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (!compatibilityCheckRun) {
             readinessBadgeView.setText("NOT RUN\nReady for first check");
-            readinessBadgeView.setTextColor(COLOR_MUTED);
-            readinessBadgeView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
+            readinessBadgeView.setTextColor(themeMuted());
+            readinessBadgeView.setBackground(roundedRect(themePanel(), themeHairline(), 1, 18));
             return;
         }
 
@@ -3439,8 +3579,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                         + latestReadinessPercent + "%\n"
                         + detail
         );
-        readinessBadgeView.setTextColor(COLOR_TEXT);
-        readinessBadgeView.setBackground(roundedRect(COLOR_PANEL, color, 2, 6));
+        readinessBadgeView.setTextColor(themeText());
+        readinessBadgeView.setBackground(roundedRect(themePanel(), color, 2, 18));
     }
 
     private void updateHomeStatus() {
@@ -3448,30 +3588,30 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         if (!compatibilityCheckRun) {
-            homeStatusView.setText("Ready for field setup\nStart with PiFinder Remote if the Raspberry is running, or Diagnostics to grade this phone.");
-            homeStatusView.setTextColor(COLOR_MUTED);
-            homeStatusView.setBackground(roundedRect(COLOR_PANEL, Color.rgb(37, 43, 57), 1, 6));
+            homeStatusView.setText("Ready for field setup\nStart with PiFinder Remote if the Raspberry is running, or use Phone setup for camera and calibration tools.");
+            homeStatusView.setTextColor(themeMuted());
+            homeStatusView.setBackground(roundedRect(themePanel(), themeHairline(), 1, 18));
             return;
         }
         homeStatusView.setText(
                 "Readiness: " + latestReadinessGrade + " (" + latestReadinessPercent + "%)\n"
-                        + "Next: open Camera Lab for Phase 2, or Calibration #52 for mounted IMU rehearsal."
+                        + "Next: open PiFinder Remote, Camera Lab, or Calibration."
         );
-        homeStatusView.setTextColor(COLOR_TEXT);
-        homeStatusView.setBackground(roundedRect(COLOR_PANEL, readinessColor(), 1, 6));
+        homeStatusView.setTextColor(themeText());
+        homeStatusView.setBackground(roundedRect(themePanel(), readinessColor(), 1, 18));
     }
 
     private int readinessColor() {
         if ("HIGH".equals(latestReadinessGrade)) {
-            return COLOR_PASS;
+            return themePass();
         }
         if ("MEDIUM".equals(latestReadinessGrade)) {
-            return COLOR_WARN;
+            return themeWarn();
         }
         if ("LOW".equals(latestReadinessGrade)) {
-            return COLOR_FAIL;
+            return themeFail();
         }
-        return COLOR_MUTED;
+        return themeMuted();
     }
 
     private void updateCapabilityAction(String text) {
@@ -3486,13 +3626,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (outputTreeUri == null) {
             cameraFolderStatusView.setText("Save folder: not selected\nChoose a folder before running the field diagnostic.");
-            cameraFolderStatusView.setTextColor(COLOR_WARN);
-            cameraFolderStatusView.setBackground(roundedRect(COLOR_PANEL, COLOR_WARN, 1, 6));
+            cameraFolderStatusView.setTextColor(themeWarn());
+            cameraFolderStatusView.setBackground(roundedRect(themePanel(), themeWarn(), 1, 18));
             return;
         }
         cameraFolderStatusView.setText("Save folder: selected\n" + outputTreeUri);
-        cameraFolderStatusView.setTextColor(COLOR_TEXT);
-        cameraFolderStatusView.setBackground(roundedRect(COLOR_PANEL, COLOR_PASS, 1, 6));
+        cameraFolderStatusView.setTextColor(themeText());
+        cameraFolderStatusView.setBackground(roundedRect(themePanel(), themePass(), 1, 18));
     }
 
     private String buildCompatibilityReport() {
@@ -3735,7 +3875,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         liveImuSampleReceived = false;
         if (startImuButton != null) {
             startImuButton.setText("IMU RUNNING");
-            startImuButton.setBackground(roundedRect(Color.rgb(112, 22, 48), COLOR_ACCENT, 1, 18));
+            startImuButton.setBackground(roundedRect(themePrimary(), themeAccent(), 1, 18));
         }
         updateCapabilityAction("IMU is running. Move the phone gently, then stop and run the check.");
         liveView.setText("Live sensors started. Move the phone slowly to inspect updates.");
@@ -3757,7 +3897,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         liveSensorText.setLength(0);
         if (startImuButton != null) {
             startImuButton.setText("Start IMU");
-            startImuButton.setBackground(roundedRect(COLOR_SECONDARY, COLOR_SECONDARY_STROKE, 1, 18));
+            startImuButton.setBackground(roundedRect(themeSecondary(), themeSecondaryStroke(), 1, 18));
         }
         if (liveView != null) {
             liveView.setText("Live sensors stopped.");

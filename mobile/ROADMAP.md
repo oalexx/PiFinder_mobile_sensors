@@ -26,6 +26,7 @@ Android app
   - GPS / IMU bridge
   - PiFinder remote WebView
   - Calibration workflow
+  - Professional dark UI and Night Vision mode
   - Future camera frame uploader
 
 Raspberry Pi / PiFinder Lite
@@ -58,6 +59,10 @@ Status: completed.
 Tasks:
 
 - Polish the current Home, Check Capabilities, and Camera Lab UI.
+- Add a professional product-facing look and feel with PiFinder Remote as the
+  primary Home action.
+- Add a persistent Night Vision mode with a red astronomy-friendly app palette.
+- Replace the launcher icon with a minimal constellation/phone vector mark.
 - Separate `Copy Check Result` from `Copy Tech Report`.
 - Export a structured phone profile as JSON.
 - Store historical compatibility check results.
@@ -67,6 +72,13 @@ Tasks:
 
 Expected result: a user installs the app, runs the checks, and gets a clear
 PiFinder Lite readiness result: `HIGH`, `MEDIUM`, or `LOW`.
+
+Current product-facing UI status:
+
+- Home uses `PiFinder Remote` as the main field action.
+- Camera, calibration, and diagnostics are grouped as phone setup tools.
+- UI labels avoid project-internal phase/issue names.
+- Night Vision persists locally and updates Android system bars where supported.
 
 ## Phase 2: Night Sky Validation
 

@@ -6,6 +6,11 @@ Companion fork.
 ## What Works Now
 
 - Android compatibility tester and profile export.
+- Android product-facing UI polish:
+  - PiFinder Remote is the primary Home action.
+  - Camera Lab, Calibration, and Diagnostics are grouped as phone setup tools.
+  - Night Vision provides a persistent red-light app palette for field use.
+  - Launcher and in-app branding use a minimal constellation/phone vector mark.
 - PiFinder Lite headless startup with `--keyboard none`.
 - Phone access to the existing PiFinder `/remote` UI.
 - Mobile bridge endpoints:
@@ -27,8 +32,8 @@ Companion fork.
 - Android can display the loaded mobile mount profile as read-only overlay
   metadata.
 - Android Camera Lab can capture solve-candidate bursts, upload frames, request
-  diagnostic solves, view report history, copy summaries, and run a Phase 2
-  night-test wizard.
+  diagnostic solves, view report history, copy summaries, and run a night-test
+  wizard.
 - `Run Full Diagnostic` ranks a dynamic distributed subset of burst frames by
   Raspberry diagnostic solve results instead of blindly using the last JPEG.
 - Raspberry can generate conservative per-phone camera recommendation profiles

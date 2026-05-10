@@ -3,6 +3,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MAIN_ACTIVITY = ROOT / "mobile/app/src/main/java/io/pifinder/mobile/MainActivity.java"
+MANIFEST = ROOT / "mobile/app/src/main/AndroidManifest.xml"
+LAUNCHER_ICON = ROOT / "mobile/app/src/main/res/drawable/ic_launcher.xml"
+STRINGS = ROOT / "mobile/app/src/main/res/values/strings.xml"
 
 
 def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
@@ -69,7 +72,7 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
     assert "phase2NightTestWizardView" in source
-    assert 'addAreaTitle(cameraScreen, "Phase 2 checklist")' in source
+    assert 'addAreaTitle(cameraScreen, "Night checklist")' in source
     assert 'makeSecondaryButton("Night wizard")' in source
     assert "showPhase2NightTestWizard()" in source
     assert 'makeSecondaryButton("Copy night plan")' in source
@@ -79,10 +82,10 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "phase2NightTestRepeatCount" in source
     assert "updatePhase2NightTestWizard" in source
     assert "phase2NightTestPlanText" in source
-    assert "Phase 2 Night Test Wizard" in source
+    assert "Night Test Wizard" in source
     assert "test completed" in source
-    assert "camera proven reliable" in source
-    assert "clear-sky evidence" in source
+    assert "reliable camera use" in source
+    assert "clear-sky results" in source
     assert "diagnostic-only" in source
     assert "SEND PROFILE" in source
     assert "SEND ENV" in source
@@ -114,3 +117,38 @@ def test_android_full_diagnostic_ranks_dynamic_burst_candidates():
     assert '"selected_candidate"' in source
     assert "Upload JPEG" in source
     assert "manual debug" in source
+
+
+def test_android_exposes_persistent_night_vision_theme_toggle():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "KEY_NIGHT_VISION_ENABLED" in source
+    assert '"night_vision_enabled"' in source
+    assert "nightVisionEnabled" in source
+    assert "makeNightVisionToggleButton()" in source
+    assert "Night Vision" in source
+    assert "toggleNightVision()" in source
+    assert "loadNightVisionEnabled()" in source
+    assert "saveNightVisionEnabled(boolean enabled)" in source
+    assert "getSharedPreferences(PREFS_NAME, MODE_PRIVATE)" in source
+    assert "recreate()" in source
+    assert "applySystemBars()" in source
+    assert "setStatusBarColor(nightVisionEnabled ? themePanel() : themeBg())" in source
+    assert "setNavigationBarColor(nightVisionEnabled ? themePanel() : themeBg())" in source
+    assert "SYSTEM_UI_FLAG_LIGHT_STATUS_BAR" in source
+    assert "SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR" in source
+
+
+def test_android_launcher_branding_is_pifinder_mobile():
+    manifest = MANIFEST.read_text(encoding="utf-8")
+    icon = LAUNCHER_ICON.read_text(encoding="utf-8")
+    strings = STRINGS.read_text(encoding="utf-8")
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert 'android:icon="@drawable/ic_launcher"' in manifest
+    assert 'android:roundIcon="@drawable/ic_launcher"' in manifest
+    assert "<string name=\"app_name\">PiFinder Mobile</string>" in strings
+    assert 'logoView.setImageResource(R.drawable.ic_launcher)' in source
+    assert "#E63845" in icon
+    assert "#FF6B65" in icon
+    assert "android:strokeColor=\"#A71D28\"" in icon

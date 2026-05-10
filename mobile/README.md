@@ -1,7 +1,8 @@
 # PiFinder Mobile
 
-Native Android companion prototype for exploring whether a phone can be used as
-part of a PiFinder Lite setup.
+Native Android companion app for PiFinder Lite field use, phone diagnostics,
+camera checks, GPS/IMU bridge data, calibration evidence, and access to the
+existing PiFinder remote.
 
 The current app now covers the Phase 1 tester, the Phase 4 bridge prototype,
 and the Phase 5 calibration evidence flow. It checks what the phone actually
@@ -13,6 +14,17 @@ reports can show whether ambient light, barometer, battery, and network context
 were available during a session. Raspberry tools can turn those diagnostic
 reports into conservative per-phone camera recommendation profiles.
 
+Current app/product status:
+
+- Home is organized around `PiFinder Remote` as the primary field action.
+- Phone setup tools are grouped under Camera Lab, Calibration, and Diagnostics.
+- A persistent `Night Vision` mode switches the app to a red, astronomy-friendly
+  palette and updates Android system bars where the platform allows it.
+- The launcher icon and in-app brand mark use a minimal constellation/phone
+  vector logo.
+- User-facing labels avoid internal project issue/phase names; development
+  gates remain documented here and in `PiFinder_lite/`.
+
 Current validated bridge status:
 
 - `/mobile/status` connection check works.
@@ -23,9 +35,9 @@ Current validated bridge status:
 - `CALIBRATION` stores labeled `stationary`, `mounted_reference`, and
   `repeat_check` IMU batches.
 - `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
-- `RUN FULL DIAGNOSTIC` ranks a dynamic subset of burst frames with Raspberry
+- `Run full diagnostic` ranks a dynamic subset of burst frames with Raspberry
   diagnostic solve results.
-- `CALIBRATION` starts the Phase 5 phone-to-telescope evidence flow.
+- `CALIBRATION` starts the phone-to-telescope evidence flow.
 
 Camera and IMU data are still diagnostic paths. Live mobile camera solving and
 mobile IMU integration are intentionally deferred until later phases. The
@@ -33,7 +45,24 @@ current calibrated IMU path is read-only overlay/status only.
 
 ## Current Screens
 
-### Check Capabilities
+### Home And Night Vision
+
+The Home screen is designed for field use:
+
+- `PiFinder Remote` is the primary action.
+- `Phone setup` groups the secondary tools:
+  - `Camera Lab`
+  - `Calibration`
+  - `Diagnostics`
+- `Night Vision` is a compact global toggle. It is saved locally and remains
+  active when the app is reopened.
+
+Night Vision affects the app palette and Android status/navigation bar colors.
+Android does not allow normal apps to recolor the system clock or status icons
+directly; the app instead uses dark red bars and forces non-light system icon
+flags so the surrounding system chrome is as night-safe as Android permits.
+
+### Diagnostics
 
 Checks the phone as a possible PiFinder companion device:
 
@@ -50,10 +79,10 @@ Checks the phone as a possible PiFinder companion device:
 
 The screen also exposes:
 
-- `START IMU` to begin live sensor sampling.
-- `STOP` to stop live sensor sampling.
-- `RUN CHECK` to generate the compatibility result.
-- `COPY REPORT` to copy the full technical report.
+- `Start IMU` to begin live sensor sampling.
+- `Stop` to stop live sensor sampling.
+- `Run check` to generate the compatibility result.
+- `Copy result`, `Copy tech report`, `Copy profile JSON`, and history actions.
 
 The compatibility result uses:
 
@@ -71,33 +100,36 @@ Always tap `SAVE FOLDER` before running a test.
 
 Available tests:
 
-- `DAY TEST`: automatic exposure/focus test for indoor or daylight framing.
-- `MANUAL BURST`: high ISO, long exposure JPEG burst for sky testing.
-- `ISO SWEEP`: multiple ISO groups for exposure comparison.
-- `RAW BURST`: raw sensor byte captures for technical experiments.
-- `CAM SWEEP`: tests the available rear camera IDs.
-- `RUN FULL DIAGNOSTIC`: captures a solve-candidate JPEG, uploads it, asks
+- `Run full diagnostic`: captures a solve-candidate JPEG, uploads it, asks
   Raspberry for score/diagnostic solve, and shows the stored report summary.
   For solve-candidate bursts, Android keeps multiple JPEG candidates, uploads a
   dynamic distributed subset, asks Raspberry to score/solve each one, and
   selects the best result by solve success and quality score.
-- `NIGHT TEST WIZARD`: shows the Phase 2 field checklist for connection,
+- `Night wizard`: shows the field checklist for connection,
   profile/environment/GPS, save folder, full diagnostic, repeats, and report
   summary.
-- `VIEW REPORTS`: reads `/mobile/camera_reports` and shows recent diagnostic
+- `View reports`: reads `/mobile/camera_reports` and shows recent diagnostic
   reports, session counts, best score, dominant advice, recommendation, and
   next action.
-- `COPY NIGHT TEST PLAN`: copies a sanitized Phase 2 field checklist and
+- `Copy night plan`: copies a sanitized field checklist and
   evidence-state summary.
-- `MARK REPEAT`: increments the local repeat counter after each completed
+- `Mark repeat`: increments the local repeat counter after each completed
   diagnostic attempt.
-- `COPY REPORT SUMMARY`: copies the latest history/session summary from
-  `VIEW REPORTS`.
-- `SOLVE CANDIDATE BURST`: tuned JPEG capture for PiFinder Lite diagnostics.
-- `UPLOAD LAST JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
-  This remains available as a manual debug path; `RUN FULL DIAGNOSTIC` uses the
+- `Copy summary`: copies the latest history/session summary from
+  `View reports`.
+
+Advanced captures:
+
+- `Day test`: automatic exposure/focus test for indoor or daylight framing.
+- `Manual burst`: high ISO, long exposure JPEG burst for sky testing.
+- `ISO sweep`: multiple ISO groups for exposure comparison.
+- `RAW burst`: raw sensor byte captures for technical experiments.
+- `Camera sweep`: tests the available rear camera IDs.
+- `Candidate burst`: tuned JPEG capture for PiFinder Lite diagnostics.
+- `Upload JPEG`: sends the newest saved JPEG to `/mobile/camera_frame`.
+  This remains available as a manual debug path; `Run full diagnostic` uses the
   ranked candidate flow instead.
-- `DIAGNOSTIC SOLVE`: asks PiFinder to score and diagnostic-solve the uploaded
+- `Solve frame`: asks PiFinder to score and diagnostic-solve the uploaded
   frame via `/mobile/camera_solve`.
 
 Diagnostic results include rule-based exposure/capture advice such as
@@ -109,14 +141,13 @@ Camera-frame metadata includes a diagnostic environment snapshot. Missing
 light or pressure sensors are recorded as unavailable rather than treated as an
 error.
 
-The Phase 2 night test wizard is a checklist, not a runtime promotion. It
-separates `test completed` from `camera proven reliable`: a completed test
-means the workflow ran and produced notes; camera reliability still requires
-repeated clear-sky evidence and the Phase 2 decision summary. The wizard remains
+The night test wizard is a checklist, not a runtime promotion. A completed test
+means the workflow ran and produced notes; reliable camera use still requires
+repeated clear-sky results and the project decision summary. The wizard remains
 diagnostic-only and does not feed mobile solves into pointing or the integrator.
 For cloudy, bright, or rehearsal sessions, use
-`../PiFinder_lite/documentation/no_good_night_rehearsal.md` to combine the
-Camera Lab workflow with #52 mounted IMU overlay checks.
+  `../PiFinder_lite/documentation/no_good_night_rehearsal.md` to combine the
+  Camera Lab workflow with mounted IMU overlay checks.
 
 The burst frame selector is also diagnostic-only. Android only chooses a
 bounded, distributed subset from the burst so field uploads stay practical:
@@ -147,14 +178,14 @@ Connects the app to a Raspberry/PiFinder Lite instance.
 
 Available actions:
 
-- `TEST CONNECTION`: checks `/mobile/status`.
-- `OPEN REMOTE`: opens the existing PiFinder `/remote` page full-screen.
-- `SEND PROFILE`: sends the phone capability/profile JSON.
-- `SEND ENV`: sends ambient-light/barometer availability, battery, network,
+- `Test connection`: checks `/mobile/status`.
+- `Open remote`: opens the existing PiFinder `/remote` page full-screen.
+- `Send profile`: sends the phone capability/profile JSON.
+- `Send env`: sends ambient-light/barometer availability, battery, network,
   app/device time, and coarse device state to `/mobile/environment`.
-- `SEND GPS`: posts the current Android location to PiFinder.
-- `SEND IMU BATCH`: captures and uploads a short rotation-vector batch.
-- `MOUNT REF IMU`: captures a still phone/tube reference batch for Phase 5
+- `Send GPS`: posts the current Android location to PiFinder.
+- `Send IMU batch`: captures and uploads a short rotation-vector batch.
+- `Mount ref IMU`: captures a still phone/tube reference batch for Phase 5
   calibration experiments from the remote tools screen.
 
 The embedded remote is a wrapper around the existing PiFinder web UI. If layout
@@ -168,18 +199,18 @@ pointing.
 
 Available actions:
 
-- `TEST CONNECTION`: checks the saved PiFinder base URL.
-- `SEND PROFILE`: uploads the current phone capability profile.
-- `CHECK PROFILE`: reads `GET /mobile/mount_profile` and shows the mounted
+- `Test connection`: checks the saved PiFinder base URL.
+- `Send profile`: uploads the current phone capability profile.
+- `Check profile`: reads `GET /mobile/mount_profile` and shows the mounted
   profile as a read-only overlay/status card.
-- `SEND GPS`: uploads the current Android location.
-- `STATIONARY`: uploads a labeled `stationary` IMU batch while the mounted
+- `Send GPS`: uploads the current Android location.
+- `Stationary`: uploads a labeled `stationary` IMU batch while the mounted
   phone and tube remain still.
-- `MOUNT REF`: uploads a labeled `mounted_reference` IMU batch against the
+- `Mount ref`: uploads a labeled `mounted_reference` IMU batch against the
   selected reference target/note.
-- `REPEAT CHECK`: uploads a labeled `repeat_check` IMU batch after returning
+- `Repeat check`: uploads a labeled `repeat_check` IMU batch after returning
   to the same reference.
-- `COPY EVIDENCE`: copies a calibration evidence JSON with the reference note,
+- `Copy evidence`: copies a calibration evidence JSON with the reference note,
   app/device metadata, readiness, optional location, and expected batch label.
 
 Use the reference field for the star/object/manual pointing note used during
@@ -232,35 +263,36 @@ cd mobile
 ## Suggested Test Flow
 
 1. Open the app.
-2. Go to `CHECK CAPABILITIES`.
-3. Tap `START IMU`.
-4. Move the phone gently for a few seconds.
-5. Tap `STOP`.
-6. Tap `RUN CHECK`.
-7. Use `COPY REPORT` if the full diagnostic report is needed.
-8. Go to `CAMERA LAB`.
-9. Tap `SAVE FOLDER`.
-10. Run `DAY TEST` indoors to check framing.
-11. Go to `PIFINDER REMOTE`, set the Raspberry base URL, then run:
-    - `TEST CONNECTION`
-    - `SEND PROFILE`
-    - `SEND ENV`
-    - `SEND GPS`
-    - `SEND IMU BATCH`
-12. Go back to `CAMERA LAB`, tap `NIGHT TEST WIZARD`, then `COPY NIGHT TEST
-    PLAN` if you want a field checklist.
-13. Tap `RUN FULL DIAGNOSTIC` to capture a solve-candidate burst, upload a
+2. Use `Night Vision` if observing conditions require red-light mode.
+3. Open `PiFinder Remote` for normal field control, or go to `Diagnostics`.
+4. Tap `Start IMU`.
+5. Move the phone gently for a few seconds.
+6. Tap `Stop`.
+7. Tap `Run check`.
+8. Use `Copy result` or `Copy tech report` if needed.
+9. Go to `Camera Lab`.
+10. Tap `Save folder`.
+11. Run `Day test` indoors to check framing.
+12. Go to `PiFinder Remote`, set the Raspberry base URL, then run:
+    - `Test connection`
+    - `Send profile`
+    - `Send env`
+    - `Send GPS`
+    - `Send IMU batch`
+13. Go back to `Camera Lab`, tap `Night wizard`, then `Copy night plan` if you
+    want a field checklist.
+14. Tap `Run full diagnostic` to capture a solve-candidate burst, upload a
     dynamic distributed subset, score/diagnostic-solve candidates on Raspberry,
     and summarize the selected frame plus ranking.
-14. Tap `MARK REPEAT` after each completed attempt, even if the frame is
+15. Tap `Mark repeat` after each completed attempt, even if the frame is
     rejected or solve fails.
-15. Tap `VIEW REPORTS` to compare recent diagnostic reports and copy the
+16. Tap `View reports` to compare recent diagnostic reports and copy the
     session summary when needed.
-16. Run the broader sky tests outdoors at night when conditions allow:
-    - `MANUAL BURST`
-    - `ISO SWEEP`
-    - `CAM SWEEP`
-    - `RAW BURST`
+17. Run broader sky tests outdoors at night when conditions allow:
+    - `Manual burst`
+    - `ISO sweep`
+    - `Camera sweep`
+    - `RAW burst`
 
 ## Future Direction
 
