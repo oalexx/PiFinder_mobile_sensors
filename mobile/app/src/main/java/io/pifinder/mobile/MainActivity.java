@@ -131,6 +131,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final String KEY_CHECK_HISTORY = "check_history";
     private static final String KEY_REMOTE_BASE_URL = "remote_base_url";
     private static final String KEY_NIGHT_VISION_ENABLED = "night_vision_enabled";
+    private static final String KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE = "pending_screen_after_theme_toggle";
     private static final int MAX_HISTORY_RECORDS = 20;
 
     private SensorManager sensorManager;
@@ -367,7 +368,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout root = new LinearLayout(this);
         rootLayout = root;
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(34), dp(18), dp(18));
+        root.setPadding(dp(18), dp(64), dp(18), dp(18));
         root.setBackgroundColor(themeBg());
         scrollView.addView(root);
 
@@ -376,7 +377,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         logoView.setAdjustViewBounds(true);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(72), dp(72));
         logoParams.gravity = Gravity.CENTER_HORIZONTAL;
-        logoParams.setMargins(0, dp(18), 0, dp(8));
+        logoParams.setMargins(0, dp(8), 0, dp(8));
         root.addView(logoView, logoParams);
 
         titleView = new TextView(this);
@@ -390,7 +391,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(titleView);
 
         subtitleView = new TextView(this);
-        subtitleView.setText("Field companion and diagnostics");
+        subtitleView.setText("Plate solving connection app");
         subtitleView.setTextSize(13);
         subtitleView.setTextColor(themeAccent());
         subtitleView.setLetterSpacing(0.0f);
@@ -411,7 +412,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(homeScreen);
         homeStatusView = statusCard();
         homeScreen.addView(homeStatusView);
-        Button remoteNav = makeHeroButton("PiFinder Remote", "Use the normal telescope remote from this phone", true);
+        Button remoteNav = makeHeroButton("PiFinder Remote", "Connect with PiFinder Remote on this phone", true);
         remoteNav.setOnClickListener(v -> showScreen("remote"));
         homeScreen.addView(remoteNav);
         Button setupNav = makeHeroButton("Phone setup", "Camera, calibration, diagnostics, and checks", false);
@@ -450,7 +451,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         addBackRow(helpScreen);
         addPlainSectionHeader(helpScreen, "Instructions", "How to use PiFinder Mobile in the field.");
         TextView helpTextView = statusCard();
-        helpTextView.setText(helpText());
+        helpTextView.setText(helpTextStyled());
         helpScreen.addView(helpTextView);
 
         addBackRow(capabilitiesScreen);
@@ -708,7 +709,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraReportView = sectionText();
         cameraScreen.addView(cameraReportView);
 
-        showScreen("home");
+        showScreen(resolveInitialScreen());
         updateCapabilityAction("Run check first. Use live IMU only when you need sensor debugging.");
         updateCameraFolderStatus();
         updateHomeStatus();
@@ -773,9 +774,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (rootLayout != null) {
             if (fullRemote) {
-                rootLayout.setPadding(0, dp(34), 0, 0);
+                rootLayout.setPadding(0, dp(64), 0, 0);
             } else {
-                rootLayout.setPadding(dp(18), dp(34), dp(18), dp(18));
+                rootLayout.setPadding(dp(18), dp(64), dp(18), dp(18));
             }
         }
         resizeRemoteWebView();
@@ -788,7 +789,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void addBackRow(LinearLayout root, String targetScreen) {
         LinearLayout row = buttonRow();
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(4), 0, dp(6));
+        row.setPadding(0, dp(8), 0, dp(8));
         root.addView(row);
         Button back = makeHeaderButton("Back");
         back.setOnClickListener(v -> showScreen(targetScreen));
@@ -802,7 +803,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void addRemoteWebToolbar(LinearLayout root) {
         LinearLayout row = buttonRow();
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(4), dp(12), dp(6));
+        row.setPadding(dp(12), dp(8), dp(12), dp(8));
         root.addView(row);
         Button back = makeHeaderButton("Back");
         back.setOnClickListener(v -> showScreen("remote"));
@@ -854,7 +855,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         button.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
         button.setGravity(Gravity.CENTER);
         button.setLetterSpacing(0.0f);
-        button.setMinHeight(dp(primary ? 124 : 104));
+        button.setMinHeight(dp(112));
         button.setPadding(dp(18), dp(18), dp(18), dp(18));
         button.setBackground(primary
                 ? roundedRect(themePrimary(), themePrimary(), 1, 28)
@@ -3009,6 +3010,28 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "- Copy tech report is for debugging.";
     }
 
+    private SpannableString helpTextStyled() {
+        String text = helpText();
+        SpannableString styledText = new SpannableString(text);
+        boldHelpHeading(styledText, text, "GET STARTED");
+        boldHelpHeading(styledText, text, "NORMAL FIELD USE");
+        boldHelpHeading(styledText, text, "PHONE SETUP");
+        boldHelpHeading(styledText, text, "CAMERA LAB");
+        boldHelpHeading(styledText, text, "CALIBRATION");
+        boldHelpHeading(styledText, text, "DIAGNOSTICS");
+        return styledText;
+    }
+
+    private void boldHelpHeading(SpannableString styledText, String text, String heading) {
+        int start = text.indexOf(heading);
+        if (start < 0) {
+            return;
+        }
+        int end = start + heading.length();
+        styledText.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        styledText.setSpan(new ForegroundColorSpan(themeText()), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
     private TextView readinessBadge() {
         TextView textView = statusCard();
         textView.setTextSize(18);
@@ -3118,8 +3141,37 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 .apply();
     }
 
+    private String resolveInitialScreen() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String pendingScreen = prefs.getString(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE, "home");
+        prefs.edit().remove(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE).apply();
+        if ("remoteWeb".equals(pendingScreen)) {
+            return "remote";
+        }
+        if (isKnownScreen(pendingScreen)) {
+            return pendingScreen;
+        }
+        return "home";
+    }
+
+    private boolean isKnownScreen(String screenName) {
+        return "home".equals(screenName)
+                || "setup".equals(screenName)
+                || "help".equals(screenName)
+                || "capabilities".equals(screenName)
+                || "camera".equals(screenName)
+                || "history".equals(screenName)
+                || "remote".equals(screenName)
+                || "calibration".equals(screenName)
+                || "remoteWeb".equals(screenName);
+    }
+
     private void toggleNightVision() {
-        saveNightVisionEnabled(!nightVisionEnabled);
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_NIGHT_VISION_ENABLED, !nightVisionEnabled)
+                .putString(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE, currentScreenName)
+                .apply();
         recreate();
     }
 

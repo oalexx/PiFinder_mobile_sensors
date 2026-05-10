@@ -123,6 +123,7 @@ def test_android_exposes_persistent_night_vision_theme_toggle():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
     assert "KEY_NIGHT_VISION_ENABLED" in source
+    assert "KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE" in source
     assert '"night_vision_enabled"' in source
     assert "nightVisionEnabled" in source
     assert "makeNightVisionToggleButton()" in source
@@ -130,6 +131,9 @@ def test_android_exposes_persistent_night_vision_theme_toggle():
     assert "toggleNightVision()" in source
     assert "loadNightVisionEnabled()" in source
     assert "saveNightVisionEnabled(boolean enabled)" in source
+    assert "resolveInitialScreen()" in source
+    assert ".putString(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE, currentScreenName)" in source
+    assert "showScreen(resolveInitialScreen())" in source
     assert "getSharedPreferences(PREFS_NAME, MODE_PRIVATE)" in source
     assert "recreate()" in source
     assert "applySystemBars()" in source
@@ -155,6 +159,11 @@ def test_android_home_routes_setup_and_help_without_global_brand_on_submenus():
     assert "GET STARTED" in source
     assert "NORMAL FIELD USE" in source
     assert "PHONE SETUP" in source
+    assert "helpTextStyled()" in source
+    assert "boldHelpHeading" in source
+    assert 'subtitleView.setText("Plate solving connection app")' in source
+    assert 'makeHeroButton("PiFinder Remote", "Connect with PiFinder Remote on this phone", true)' in source
+    assert "button.setMinHeight(dp(112))" in source
     assert "homeActionsRow" in source
     assert 'logoView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'titleView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
