@@ -167,7 +167,6 @@ def test_android_home_routes_setup_and_help_without_global_brand_on_submenus():
     assert "row.setPadding(0, dp(8), 0, dp(8))" in source
     assert "params.setMargins(0, dp(6), dp(8), dp(10))" in source
     assert "homeActionsRow" in source
-    assert 'logoView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'titleView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'subtitleView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'homeActionsRow.setVisibility(home ? View.VISIBLE : View.GONE)' in source
@@ -183,7 +182,8 @@ def test_android_launcher_branding_is_pifinder_mobile():
     assert 'android:icon="@drawable/ic_launcher"' in manifest
     assert 'android:roundIcon="@drawable/ic_launcher"' in manifest
     assert "<string name=\"app_name\">PiFinder Mobile</string>" in strings
-    assert 'logoView.setImageResource(R.drawable.ic_launcher)' in source
-    assert "#E63845" in icon
-    assert "#FF6B65" in icon
-    assert "android:strokeColor=\"#A71D28\"" in icon
+    assert "logoView" not in source
+    assert 'android:pathData="M20,54 H88"' in icon
+    assert 'android:pathData="M54,20 V88"' in icon
+    assert "#FF1F2D" in icon
+    assert "M21,78 L42,57 L59,74 L38,95 Z" in icon

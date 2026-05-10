@@ -60,7 +60,6 @@ import android.view.Surface;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -164,7 +163,6 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private LinearLayout calibrationScreen;
     private LinearLayout remoteWebScreen;
     private LinearLayout rootLayout;
-    private ImageView logoView;
     private TextView titleView;
     private TextView subtitleView;
     private Button nightVisionToggleButton;
@@ -371,14 +369,6 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.setPadding(dp(18), dp(64), dp(18), dp(18));
         root.setBackgroundColor(themeBg());
         scrollView.addView(root);
-
-        logoView = new ImageView(this);
-        logoView.setImageResource(R.drawable.ic_launcher);
-        logoView.setAdjustViewBounds(true);
-        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(72), dp(72));
-        logoParams.gravity = Gravity.CENTER_HORIZONTAL;
-        logoParams.setMargins(0, dp(8), 0, dp(8));
-        root.addView(logoView, logoParams);
 
         titleView = new TextView(this);
         titleView.setText("PiFinder Mobile");
@@ -761,9 +751,6 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteWebScreen.setVisibility("remoteWeb".equals(screenName) ? View.VISIBLE : View.GONE);
         boolean home = "home".equals(screenName);
         boolean fullRemote = "remoteWeb".equals(screenName);
-        if (logoView != null) {
-            logoView.setVisibility(home ? View.VISIBLE : View.GONE);
-        }
         titleView.setVisibility(home ? View.VISIBLE : View.GONE);
         subtitleView.setVisibility(home ? View.VISIBLE : View.GONE);
         if (homeActionsRow != null) {
