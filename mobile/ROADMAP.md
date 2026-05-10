@@ -76,7 +76,8 @@ PiFinder Lite readiness result: `HIGH`, `MEDIUM`, or `LOW`.
 Current product-facing UI status:
 
 - Home uses `PiFinder Remote` as the main field action.
-- Camera, calibration, and diagnostics are grouped as phone setup tools.
+- Camera, calibration, and diagnostics are grouped behind a `Phone setup` menu.
+- Home includes a compact `Help` entry for in-app workflow instructions.
 - UI labels avoid project-internal phase/issue names.
 - Night Vision persists locally and updates Android system bars where supported.
 

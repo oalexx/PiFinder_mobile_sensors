@@ -152,7 +152,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView phase2NightTestWizardView;
     private TextView calibrationChecklistView;
     private Button startImuButton;
+    private LinearLayout homeActionsRow;
     private LinearLayout homeScreen;
+    private LinearLayout setupScreen;
+    private LinearLayout helpScreen;
     private LinearLayout capabilitiesScreen;
     private LinearLayout cameraScreen;
     private LinearLayout historyScreen;
@@ -395,8 +398,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         subtitleView.setPadding(0, 0, 0, dp(14));
         root.addView(subtitleView);
 
+        homeActionsRow = buttonRow();
+        homeActionsRow.setGravity(Gravity.CENTER);
+        root.addView(homeActionsRow);
+        Button helpButton = makeHeaderButton("Help");
+        helpButton.setOnClickListener(v -> showScreen("help"));
+        homeActionsRow.addView(helpButton);
         nightVisionToggleButton = makeNightVisionToggleButton();
-        root.addView(nightVisionToggleButton);
+        homeActionsRow.addView(nightVisionToggleButton);
 
         homeScreen = screenContainer();
         root.addView(homeScreen);
@@ -405,17 +414,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button remoteNav = makeHeroButton("PiFinder Remote", "Use the normal telescope remote from this phone", true);
         remoteNav.setOnClickListener(v -> showScreen("remote"));
         homeScreen.addView(remoteNav);
-        addAreaTitle(homeScreen, "Phone setup");
-        Button cameraNav = makeHeroButton("Camera Lab", "Capture and review phone camera diagnostics", false);
-        cameraNav.setOnClickListener(v -> showScreen("camera"));
-        homeScreen.addView(cameraNav);
-        Button calibrationNav = makeHeroButton("Calibration", "Calibrate and check the phone mount", false);
-        calibrationNav.setOnClickListener(v -> showScreen("calibration"));
-        homeScreen.addView(calibrationNav);
-        Button capabilitiesNav = makeHeroButton("Diagnostics", "Check phone sensors, GPS, camera, and readiness", false);
-        capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
-        homeScreen.addView(capabilitiesNav);
+        Button setupNav = makeHeroButton("Phone setup", "Camera, calibration, diagnostics, and checks", false);
+        setupNav.setOnClickListener(v -> showScreen("setup"));
+        homeScreen.addView(setupNav);
 
+        setupScreen = screenContainer();
+        root.addView(setupScreen);
+        helpScreen = screenContainer();
+        root.addView(helpScreen);
         capabilitiesScreen = screenContainer();
         root.addView(capabilitiesScreen);
         cameraScreen = screenContainer();
@@ -428,6 +434,24 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(calibrationScreen);
         remoteWebScreen = screenContainer();
         root.addView(remoteWebScreen);
+
+        addBackRow(setupScreen);
+        addSectionHeader(setupScreen, "01", "Phone setup", "Tools for preparing and checking the phone.");
+        Button cameraNav = makeHeroButton("Camera Lab", "Capture and review phone camera diagnostics", false);
+        cameraNav.setOnClickListener(v -> showScreen("camera"));
+        setupScreen.addView(cameraNav);
+        Button calibrationNav = makeHeroButton("Calibration", "Calibrate and check the phone mount", false);
+        calibrationNav.setOnClickListener(v -> showScreen("calibration"));
+        setupScreen.addView(calibrationNav);
+        Button capabilitiesNav = makeHeroButton("Diagnostics", "Check phone sensors, GPS, camera, and readiness", false);
+        capabilitiesNav.setOnClickListener(v -> showScreen("capabilities"));
+        setupScreen.addView(capabilitiesNav);
+
+        addBackRow(helpScreen);
+        addSectionHeader(helpScreen, "01", "Instructions", "How to use PiFinder Mobile in the field.");
+        TextView helpTextView = statusCard();
+        helpTextView.setText(helpText());
+        helpScreen.addView(helpTextView);
 
         addBackRow(capabilitiesScreen);
         addSectionHeader(capabilitiesScreen, "01", "Diagnostics", "Sensor, GPS, camera, and readiness checks.");
@@ -718,27 +742,34 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void showScreen(String screenName) {
-        if (homeScreen == null || capabilitiesScreen == null || cameraScreen == null
+        if (homeScreen == null || setupScreen == null || helpScreen == null
+                || capabilitiesScreen == null || cameraScreen == null
                 || historyScreen == null || remoteScreen == null || calibrationScreen == null
                 || remoteWebScreen == null) {
             return;
         }
         currentScreenName = screenName;
         homeScreen.setVisibility("home".equals(screenName) ? View.VISIBLE : View.GONE);
+        setupScreen.setVisibility("setup".equals(screenName) ? View.VISIBLE : View.GONE);
+        helpScreen.setVisibility("help".equals(screenName) ? View.VISIBLE : View.GONE);
         capabilitiesScreen.setVisibility("capabilities".equals(screenName) ? View.VISIBLE : View.GONE);
         cameraScreen.setVisibility("camera".equals(screenName) ? View.VISIBLE : View.GONE);
         historyScreen.setVisibility("history".equals(screenName) ? View.VISIBLE : View.GONE);
         remoteScreen.setVisibility("remote".equals(screenName) ? View.VISIBLE : View.GONE);
         calibrationScreen.setVisibility("calibration".equals(screenName) ? View.VISIBLE : View.GONE);
         remoteWebScreen.setVisibility("remoteWeb".equals(screenName) ? View.VISIBLE : View.GONE);
+        boolean home = "home".equals(screenName);
         boolean fullRemote = "remoteWeb".equals(screenName);
         if (logoView != null) {
-            logoView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+            logoView.setVisibility(home ? View.VISIBLE : View.GONE);
         }
-        titleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
-        subtitleView.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+        titleView.setVisibility(home ? View.VISIBLE : View.GONE);
+        subtitleView.setVisibility(home ? View.VISIBLE : View.GONE);
+        if (homeActionsRow != null) {
+            homeActionsRow.setVisibility(home ? View.VISIBLE : View.GONE);
+        }
         if (nightVisionToggleButton != null) {
-            nightVisionToggleButton.setVisibility(fullRemote ? View.GONE : View.VISIBLE);
+            nightVisionToggleButton.setVisibility(home ? View.VISIBLE : View.GONE);
         }
         if (rootLayout != null) {
             if (fullRemote) {
@@ -756,31 +787,28 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private void addBackRow(LinearLayout root, String targetScreen) {
         LinearLayout row = buttonRow();
+        row.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(row);
-        Button back = makeSmallButton("Back");
+        Button back = makeHeaderButton("Back");
         back.setOnClickListener(v -> showScreen(targetScreen));
         row.addView(back);
         TextView spacer = new TextView(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
         row.addView(spacer, params);
+        row.addView(makeNightVisionToggleButton());
     }
 
     private void addRemoteWebToolbar(LinearLayout root) {
         LinearLayout row = buttonRow();
+        row.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(row);
-        Button back = makeSmallButton("Back");
+        Button back = makeHeaderButton("Back");
         back.setOnClickListener(v -> showScreen("remote"));
         row.addView(back);
-        Button reload = makeSmallButton("Reload");
-        reload.setOnClickListener(v -> {
-            if (remoteWebView != null) {
-                remoteWebView.reload();
-            }
-        });
-        row.addView(reload);
         TextView spacer = new TextView(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
         row.addView(spacer, params);
+        row.addView(makeNightVisionToggleButton());
         row.setPadding(dp(12), 0, dp(12), dp(6));
     }
 
@@ -840,6 +868,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private Button makeSmallButton(String label) {
+        return makeHeaderButton(label);
+    }
+
+    private Button makeHeaderButton(String label) {
         Button button = new Button(this);
         button.setText(label);
         button.setTextSize(12);
@@ -959,24 +991,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private Button makeNightVisionToggleButton() {
-        String label = nightVisionEnabled ? "Night Vision" : "Night Vision";
-        Button button = makeActionButton(
-                label,
+        Button button = makeHeaderButton("Night");
+        button.setTextColor(nightVisionEnabled ? themePrimaryText() : themeMuted());
+        button.setBackground(roundedRect(
                 nightVisionEnabled ? themePrimary() : themeAdvanced(),
                 nightVisionEnabled ? themePrimary() : themeAdvancedStroke(),
-                nightVisionEnabled ? themePrimaryText() : themeMuted(),
-                48,
-                24
-        );
-        button.setTextSize(12);
+                1,
+                18
+        ));
         button.setOnClickListener(v -> toggleNightVision());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.setMargins(0, 0, 0, dp(16));
-        button.setLayoutParams(params);
         return button;
     }
 
@@ -2931,6 +2954,22 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "6. Remount the phone and repeat Mount ref + Repeat check.\n"
                 + "7. Wait 5 minutes, capture one final Repeat check.\n"
                 + "8. Copy evidence for your calibration notes.";
+    }
+
+    private String helpText() {
+        return "How to use PiFinder Mobile\n\n"
+                + "1. Start PiFinder on the Raspberry Pi.\n"
+                + "2. Open PiFinder Mobile and use PiFinder Remote for normal telescope control.\n"
+                + "3. Use Phone setup when you need camera checks, calibration, or diagnostics.\n"
+                + "4. Turn on Night Vision during observing sessions to reduce bright light.\n\n"
+                + "PiFinder Remote\n"
+                + "Open the regular PiFinder remote interface and send phone profile, GPS, environment, and IMU data when needed.\n\n"
+                + "Camera Lab\n"
+                + "Choose a save folder, run a full diagnostic, view reports, and copy a summary for your notes. Advanced captures are available for troubleshooting.\n\n"
+                + "Calibration\n"
+                + "Collect phone mount checks: stationary, mount reference, repeat check, and evidence copy. These checks stay diagnostic and do not change telescope pointing.\n\n"
+                + "Diagnostics\n"
+                + "Check phone sensors, GPS, camera support, readiness, and technical reports.";
     }
 
     private TextView readinessBadge() {

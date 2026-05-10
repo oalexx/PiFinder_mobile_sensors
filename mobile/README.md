@@ -17,7 +17,9 @@ reports into conservative per-phone camera recommendation profiles.
 Current app/product status:
 
 - Home is organized around `PiFinder Remote` as the primary field action.
-- Phone setup tools are grouped under Camera Lab, Calibration, and Diagnostics.
+- `Phone setup` opens a second menu with Camera Lab, Calibration, and
+  Diagnostics.
+- `Help` opens in-app instructions for the main workflow and each tool.
 - A persistent `Night Vision` mode switches the app to a red, astronomy-friendly
   palette and updates Android system bars where the platform allows it.
 - The launcher icon and in-app brand mark use a minimal constellation/phone
@@ -50,10 +52,12 @@ current calibrated IMU path is read-only overlay/status only.
 The Home screen is designed for field use:
 
 - `PiFinder Remote` is the primary action.
-- `Phone setup` groups the secondary tools:
+- `Phone setup` opens a clean tools menu:
   - `Camera Lab`
   - `Calibration`
   - `Diagnostics`
+- `Help` opens in-app instructions explaining the recommended procedure and
+  what each menu does.
 - `Night Vision` is a compact global toggle. It is saved locally and remains
   active when the app is reopened.
 
@@ -264,31 +268,33 @@ cd mobile
 
 1. Open the app.
 2. Use `Night Vision` if observing conditions require red-light mode.
-3. Open `PiFinder Remote` for normal field control, or go to `Diagnostics`.
-4. Tap `Start IMU`.
-5. Move the phone gently for a few seconds.
-6. Tap `Stop`.
-7. Tap `Run check`.
-8. Use `Copy result` or `Copy tech report` if needed.
-9. Go to `Camera Lab`.
-10. Tap `Save folder`.
-11. Run `Day test` indoors to check framing.
-12. Go to `PiFinder Remote`, set the Raspberry base URL, then run:
+3. Open `Help` if you need the in-app procedure overview.
+4. Open `PiFinder Remote` for normal field control, or go to `Phone setup`.
+5. In `Phone setup`, open `Diagnostics`.
+6. Tap `Start IMU`.
+7. Move the phone gently for a few seconds.
+8. Tap `Stop`.
+9. Tap `Run check`.
+10. Use `Copy result` or `Copy tech report` if needed.
+11. Go back to `Phone setup`, then open `Camera Lab`.
+12. Tap `Save folder`.
+13. Run `Day test` indoors to check framing.
+14. Go to `PiFinder Remote`, set the Raspberry base URL, then run:
     - `Test connection`
     - `Send profile`
     - `Send env`
     - `Send GPS`
     - `Send IMU batch`
-13. Go back to `Camera Lab`, tap `Night wizard`, then `Copy night plan` if you
+15. Go back to `Phone setup`, open `Camera Lab`, tap `Night wizard`, then `Copy night plan` if you
     want a field checklist.
-14. Tap `Run full diagnostic` to capture a solve-candidate burst, upload a
+16. Tap `Run full diagnostic` to capture a solve-candidate burst, upload a
     dynamic distributed subset, score/diagnostic-solve candidates on Raspberry,
     and summarize the selected frame plus ranking.
-15. Tap `Mark repeat` after each completed attempt, even if the frame is
+17. Tap `Mark repeat` after each completed attempt, even if the frame is
     rejected or solve fails.
-16. Tap `View reports` to compare recent diagnostic reports and copy the
+18. Tap `View reports` to compare recent diagnostic reports and copy the
     session summary when needed.
-17. Run broader sky tests outdoors at night when conditions allow:
+19. Run broader sky tests outdoors at night when conditions allow:
     - `Manual burst`
     - `ISO sweep`
     - `Camera sweep`

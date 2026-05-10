@@ -8,7 +8,9 @@ Companion fork.
 - Android compatibility tester and profile export.
 - Android product-facing UI polish:
   - PiFinder Remote is the primary Home action.
-  - Camera Lab, Calibration, and Diagnostics are grouped as phone setup tools.
+  - Camera Lab, Calibration, and Diagnostics are grouped behind a Phone setup
+    menu.
+  - Help provides in-app workflow instructions from the Home screen.
   - Night Vision provides a persistent red-light app palette for field use.
   - Launcher and in-app branding use a minimal constellation/phone vector mark.
 - PiFinder Lite headless startup with `--keyboard none`.

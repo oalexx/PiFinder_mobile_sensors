@@ -29,10 +29,10 @@ Current status:
   wizard, dynamic burst candidate ranking, and per-phone recommendation profile
   generation.
 - Android product-facing UI polish is implemented: PiFinder Remote is the
-  primary Home action, phone setup tools are grouped separately, user-facing
-  labels avoid internal phase/issue names, a persistent Night Vision mode
-  provides a red field palette, and the launcher uses a minimal
-  constellation/phone vector mark.
+  primary Home action, Phone setup opens Camera Lab/Calibration/Diagnostics,
+  Help provides in-app workflow instructions, user-facing labels avoid internal
+  phase/issue names, a persistent Night Vision mode provides a red field
+  palette, and the launcher uses a minimal constellation/phone vector mark.
 - Phase 6 threshold tuning (#57), RAW decision (#58), and runtime-path decision
   (#59) remain blocked by clear-sky Phase 2 evidence.
 
