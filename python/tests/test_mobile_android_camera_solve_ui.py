@@ -164,6 +164,8 @@ def test_android_home_routes_setup_and_help_without_global_brand_on_submenus():
     assert 'subtitleView.setText("Plate solving connection app")' in source
     assert 'makeHeroButton("PiFinder Remote", "Connect with PiFinder Remote on this phone", true)' in source
     assert "button.setMinHeight(dp(112))" in source
+    assert "row.setPadding(0, dp(8), 0, dp(8))" in source
+    assert "params.setMargins(0, dp(6), dp(8), dp(10))" in source
     assert "homeActionsRow" in source
     assert 'logoView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'titleView.setVisibility(home ? View.VISIBLE : View.GONE)' in source

@@ -889,7 +889,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 dp(48)
         );
-        params.setMargins(0, 0, dp(8), dp(10));
+        params.setMargins(0, dp(6), dp(8), dp(10));
         button.setLayoutParams(params);
         return button;
     }
@@ -990,7 +990,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.START);
-        row.setPadding(0, 0, 0, dp(4));
+        row.setClipToPadding(false);
+        row.setPadding(0, dp(8), 0, dp(8));
         return row;
     }
 
