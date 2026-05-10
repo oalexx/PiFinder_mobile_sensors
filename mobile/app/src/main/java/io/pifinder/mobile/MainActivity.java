@@ -367,7 +367,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout root = new LinearLayout(this);
         rootLayout = root;
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setPadding(dp(18), dp(34), dp(18), dp(18));
         root.setBackgroundColor(themeBg());
         scrollView.addView(root);
 
@@ -376,7 +376,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         logoView.setAdjustViewBounds(true);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(72), dp(72));
         logoParams.gravity = Gravity.CENTER_HORIZONTAL;
-        logoParams.setMargins(0, dp(24), 0, dp(8));
+        logoParams.setMargins(0, dp(18), 0, dp(8));
         root.addView(logoView, logoParams);
 
         titleView = new TextView(this);
@@ -436,7 +436,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         root.addView(remoteWebScreen);
 
         addBackRow(setupScreen);
-        addSectionHeader(setupScreen, "01", "Phone setup", "Tools for preparing and checking the phone.");
+        addPlainSectionHeader(setupScreen, "Phone setup", "Tools for preparing and checking the phone.");
         Button cameraNav = makeHeroButton("Camera Lab", "Capture and review phone camera diagnostics", false);
         cameraNav.setOnClickListener(v -> showScreen("camera"));
         setupScreen.addView(cameraNav);
@@ -448,7 +448,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         setupScreen.addView(capabilitiesNav);
 
         addBackRow(helpScreen);
-        addSectionHeader(helpScreen, "01", "Instructions", "How to use PiFinder Mobile in the field.");
+        addPlainSectionHeader(helpScreen, "Instructions", "How to use PiFinder Mobile in the field.");
         TextView helpTextView = statusCard();
         helpTextView.setText(helpText());
         helpScreen.addView(helpTextView);
@@ -524,12 +524,12 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         capabilitiesScreen.addView(sensorReportView);
 
         addBackRow(historyScreen, "capabilities");
-        addSectionHeader(historyScreen, "01", "Recent check history", "Saved locally on this device.");
+        addPlainSectionHeader(historyScreen, "Recent check history", "Saved locally on this device.");
         historyView = sectionText();
         historyScreen.addView(historyView);
 
         addBackRow(remoteScreen);
-        addSectionHeader(remoteScreen, "01", "PiFinder Remote", "Loads the existing /remote page from your PiFinder.");
+        addPlainSectionHeader(remoteScreen, "PiFinder Remote", "Loads the existing /remote page from your PiFinder.");
         remoteStatusView = statusCard();
         remoteScreen.addView(remoteStatusView);
         remoteUrlInput = makeUrlInput();
@@ -563,7 +563,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteImuRow.addView(sendMountReferenceImu);
 
         addBackRow(calibrationScreen);
-        addSectionHeader(calibrationScreen, "01", "Calibration", "Step through phone mount checks.");
+        addPlainSectionHeader(calibrationScreen, "Calibration", "Step through phone mount checks.");
         calibrationStatusView = statusCard();
         calibrationScreen.addView(calibrationStatusView);
         calibrationChecklistView = statusCard();
@@ -609,7 +609,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteWebScreen.addView(remoteWebView);
 
         addBackRow(cameraScreen);
-        addSectionHeader(cameraScreen, "01", "Camera Lab", "Capture, upload, and review camera diagnostics.");
+        addPlainSectionHeader(cameraScreen, "Camera Lab", "Capture, upload, and review camera diagnostics.");
         cameraFolderStatusView = statusCard();
         cameraScreen.addView(cameraFolderStatusView);
 
@@ -773,9 +773,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         if (rootLayout != null) {
             if (fullRemote) {
-                rootLayout.setPadding(0, dp(18), 0, 0);
+                rootLayout.setPadding(0, dp(34), 0, 0);
             } else {
-                rootLayout.setPadding(dp(18), dp(18), dp(18), dp(18));
+                rootLayout.setPadding(dp(18), dp(34), dp(18), dp(18));
             }
         }
         resizeRemoteWebView();
@@ -788,6 +788,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void addBackRow(LinearLayout root, String targetScreen) {
         LinearLayout row = buttonRow();
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(4), 0, dp(6));
         root.addView(row);
         Button back = makeHeaderButton("Back");
         back.setOnClickListener(v -> showScreen(targetScreen));
@@ -801,6 +802,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void addRemoteWebToolbar(LinearLayout root) {
         LinearLayout row = buttonRow();
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(4), dp(12), dp(6));
         root.addView(row);
         Button back = makeHeaderButton("Back");
         back.setOnClickListener(v -> showScreen("remote"));
@@ -809,7 +811,6 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
         row.addView(spacer, params);
         row.addView(makeNightVisionToggleButton());
-        row.setPadding(dp(12), 0, dp(12), dp(6));
     }
 
     private Button makeHeroButton(String title, String subtitle, boolean primary) {
@@ -893,6 +894,20 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void addSectionHeader(LinearLayout root, String number, String title, String subtitle) {
+        addSectionHeader(root, number, title, subtitle, true);
+    }
+
+    private void addPlainSectionHeader(LinearLayout root, String title, String subtitle) {
+        addSectionHeader(root, "", title, subtitle, false);
+    }
+
+    private void addSectionHeader(
+            LinearLayout root,
+            String number,
+            String title,
+            String subtitle,
+            boolean numbered
+    ) {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.VERTICAL);
         block.setPadding(0, dp(18), 0, dp(8));
@@ -903,17 +918,21 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         block.addView(titleRow);
 
-        TextView index = new TextView(this);
-        index.setText(number + ".");
-        index.setTextSize(13);
-        index.setTextColor(themeAccent());
-        index.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-        index.setLetterSpacing(0.0f);
-        LinearLayout.LayoutParams indexParams = new LinearLayout.LayoutParams(
-                dp(34),
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        titleRow.addView(index, indexParams);
+        int textOffset = 0;
+        if (numbered) {
+            TextView index = new TextView(this);
+            index.setText(number + ".");
+            index.setTextSize(13);
+            index.setTextColor(themeAccent());
+            index.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+            index.setLetterSpacing(0.0f);
+            LinearLayout.LayoutParams indexParams = new LinearLayout.LayoutParams(
+                    dp(34),
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            titleRow.addView(index, indexParams);
+            textOffset = dp(34);
+        }
 
         TextView heading = new TextView(this);
         heading.setText(title);
@@ -928,7 +947,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         caption.setTextSize(12);
         caption.setTextColor(themeMuted());
         caption.setLineSpacing(dp(2), 1.0f);
-        caption.setPadding(dp(34), dp(4), 0, dp(8));
+        caption.setPadding(textOffset, dp(4), 0, dp(8));
         block.addView(caption);
 
         View accent = new View(this);
@@ -937,7 +956,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 dp(56),
                 dp(1)
         );
-        accentParams.setMargins(dp(34), 0, 0, 0);
+        accentParams.setMargins(textOffset, 0, 0, 0);
         block.addView(accent, accentParams);
     }
 
@@ -991,7 +1010,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private Button makeNightVisionToggleButton() {
-        Button button = makeHeaderButton("Night");
+        Button button = makeHeaderButton("Night Vision");
         button.setTextColor(nightVisionEnabled ? themePrimaryText() : themeMuted());
         button.setBackground(roundedRect(
                 nightVisionEnabled ? themePrimary() : themeAdvanced(),
@@ -2957,19 +2976,37 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private String helpText() {
-        return "How to use PiFinder Mobile\n\n"
+        return "GET STARTED\n"
                 + "1. Start PiFinder on the Raspberry Pi.\n"
-                + "2. Open PiFinder Mobile and use PiFinder Remote for normal telescope control.\n"
-                + "3. Use Phone setup when you need camera checks, calibration, or diagnostics.\n"
-                + "4. Turn on Night Vision during observing sessions to reduce bright light.\n\n"
-                + "PiFinder Remote\n"
-                + "Open the regular PiFinder remote interface and send phone profile, GPS, environment, and IMU data when needed.\n\n"
-                + "Camera Lab\n"
-                + "Choose a save folder, run a full diagnostic, view reports, and copy a summary for your notes. Advanced captures are available for troubleshooting.\n\n"
-                + "Calibration\n"
-                + "Collect phone mount checks: stationary, mount reference, repeat check, and evidence copy. These checks stay diagnostic and do not change telescope pointing.\n\n"
-                + "Diagnostics\n"
-                + "Check phone sensors, GPS, camera support, readiness, and technical reports.";
+                + "2. Connect this phone to the same network.\n"
+                + "3. Open PiFinder Remote and set the Raspberry URL.\n"
+                + "4. Run Test connection before sending data.\n"
+                + "5. Use Night Vision when observing in the dark.\n\n"
+                + "NORMAL FIELD USE\n"
+                + "- PiFinder Remote is the main screen for telescope control.\n"
+                + "- Open remote loads the regular PiFinder remote interface.\n"
+                + "- Send profile, env, GPS, and IMU only when you want phone data available on the Raspberry.\n\n"
+                + "PHONE SETUP\n"
+                + "- Camera Lab checks whether this phone can capture useful night images.\n"
+                + "- Calibration collects phone mount evidence when the phone is attached to the telescope.\n"
+                + "- Diagnostics checks sensors, GPS, camera support, and readiness.\n\n"
+                + "CAMERA LAB\n"
+                + "1. Choose Save folder.\n"
+                + "2. Use Night wizard for the checklist.\n"
+                + "3. Run full diagnostic.\n"
+                + "4. View reports and copy summary for your notes.\n"
+                + "5. Use Advanced captures only for troubleshooting.\n\n"
+                + "CALIBRATION\n"
+                + "1. Mount the phone firmly.\n"
+                + "2. Test connection and send profile/GPS.\n"
+                + "3. Capture Stationary, Mount ref, and Repeat check.\n"
+                + "4. Copy evidence for your notes.\n"
+                + "These checks are diagnostic and do not change telescope pointing.\n\n"
+                + "DIAGNOSTICS\n"
+                + "- Run check grades the phone readiness.\n"
+                + "- Start IMU shows live sensor updates.\n"
+                + "- Copy result is the short shareable summary.\n"
+                + "- Copy tech report is for debugging.";
     }
 
     private TextView readinessBadge() {

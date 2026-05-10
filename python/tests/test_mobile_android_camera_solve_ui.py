@@ -126,7 +126,7 @@ def test_android_exposes_persistent_night_vision_theme_toggle():
     assert '"night_vision_enabled"' in source
     assert "nightVisionEnabled" in source
     assert "makeNightVisionToggleButton()" in source
-    assert 'makeHeaderButton("Night")' in source
+    assert 'makeHeaderButton("Night Vision")' in source
     assert "toggleNightVision()" in source
     assert "loadNightVisionEnabled()" in source
     assert "saveNightVisionEnabled(boolean enabled)" in source
@@ -150,8 +150,11 @@ def test_android_home_routes_setup_and_help_without_global_brand_on_submenus():
     assert 'makeHeroButton("Camera Lab"' in source
     assert 'makeHeroButton("Calibration"' in source
     assert 'makeHeroButton("Diagnostics"' in source
-    assert 'addSectionHeader(helpScreen, "01", "Instructions"' in source
+    assert 'addPlainSectionHeader(helpScreen, "Instructions"' in source
     assert "How to use PiFinder Mobile" in source
+    assert "GET STARTED" in source
+    assert "NORMAL FIELD USE" in source
+    assert "PHONE SETUP" in source
     assert "homeActionsRow" in source
     assert 'logoView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'titleView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
