@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
 
 import score_mobile_frame
 
@@ -168,6 +168,57 @@ def background_subtract(gray: Image.Image) -> Image.Image:
     return ImageChops.subtract(gray, background, scale=1.0, offset=18)
 
 
+def percentile_stretch(gray: Image.Image, low_pct: float = 1.0, high_pct: float = 99.8) -> Image.Image:
+    histogram = gray.histogram()
+    total = sum(histogram)
+    if total <= 0:
+        return gray.copy()
+
+    def percentile_value(percentile: float) -> int:
+        target = total * percentile / 100.0
+        cumulative = 0
+        for value, count in enumerate(histogram):
+            cumulative += count
+            if cumulative >= target:
+                return value
+        return 255
+
+    lo = percentile_value(low_pct)
+    hi = percentile_value(high_pct)
+    if hi <= lo:
+        return gray.copy()
+    scale = 255.0 / float(hi - lo)
+    lut = [max(0, min(255, int((value - lo) * scale))) for value in range(256)]
+    return gray.point(lut)
+
+
+def denoise_stretch(gray: Image.Image) -> Image.Image:
+    denoised = gray.filter(ImageFilter.MedianFilter(size=3))
+    stretched = percentile_stretch(denoised, low_pct=1.0, high_pct=99.7)
+    return ImageEnhance.Contrast(stretched).enhance(1.25)
+
+
+def hot_pixel_suppression(gray: Image.Image) -> Image.Image:
+    median = gray.filter(ImageFilter.MedianFilter(size=3))
+    softened = ImageChops.darker(gray, median)
+    return percentile_stretch(softened, low_pct=1.0, high_pct=99.8)
+
+
+def local_contrast(gray: Image.Image) -> Image.Image:
+    stretched = percentile_stretch(gray, low_pct=1.0, high_pct=99.8)
+    enhanced = ImageOps.autocontrast(stretched)
+    return enhanced.filter(ImageFilter.UnsharpMask(radius=1.0, percent=70, threshold=4))
+
+
+def center_crop(gray: Image.Image, fraction: float = 0.78) -> Image.Image:
+    width, height = gray.size
+    crop_width = max(1, int(width * fraction))
+    crop_height = max(1, int(height * fraction))
+    left = (width - crop_width) // 2
+    top = (height - crop_height) // 2
+    return gray.crop((left, top, left + crop_width, top + crop_height))
+
+
 def preprocess_variants(gray: Image.Image, modes: list[str]) -> list[tuple[str, Image.Image]]:
     variants: list[tuple[str, Image.Image]] = []
     for mode in modes:
@@ -175,6 +226,16 @@ def preprocess_variants(gray: Image.Image, modes: list[str]) -> list[tuple[str, 
             variants.append((mode, gray.copy()))
         elif mode == "background_subtract":
             variants.append((mode, background_subtract(gray)))
+        elif mode == "percentile_stretch":
+            variants.append((mode, percentile_stretch(gray)))
+        elif mode == "denoise_stretch":
+            variants.append((mode, denoise_stretch(gray)))
+        elif mode == "hot_pixel_suppression":
+            variants.append((mode, hot_pixel_suppression(gray)))
+        elif mode == "local_contrast":
+            variants.append((mode, local_contrast(gray)))
+        elif mode == "center_crop":
+            variants.append((mode, center_crop(gray)))
         else:
             raise ValueError(f"Unknown preprocess mode: {mode}")
     return variants

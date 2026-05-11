@@ -138,6 +138,14 @@ recommendation, and next action. `Copy
 Report Summary` copies that human-readable summary. The separate
 burst/upload/solve buttons remain available for debugging.
 
+`AI Image Preprocessing` is an experimental Camera Lab test mode for Raspberry
+Pi 5 validation. When enabled, `/mobile/camera_solve` compares the classic
+`baseline,background_subtract` path with a lightweight adaptive preprocessing
+path and stores timing, selected variants, solve consistency, and a verdict
+(`helped`, `not_needed`, `not_useful`, `too_slow`, or `inconclusive`) in the
+diagnostic report. It remains diagnostic-only and never updates live pointing
+or the integrator.
+
 `Send Env` is optional. Phones without a light or pressure sensor still send
 battery/network/device-state metadata and mark missing sensors unavailable.
 Environment data is diagnostic-only and never changes pointing state.
@@ -149,7 +157,7 @@ Optional Raspberry-side batch checks:
 
 ```bash
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
-python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract
+python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract,percentile_stretch,hot_pixel_suppression
 python PiFinder_lite/generate_mobile_camera_profile.py --reports-dir "$HOME/PiFinder_data/mobile/camera_solve_reports" --device-model SM-S948B
 ```
 

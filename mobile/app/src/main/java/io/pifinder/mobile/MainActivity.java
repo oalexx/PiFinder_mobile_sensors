@@ -131,6 +131,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final String KEY_REMOTE_BASE_URL = "remote_base_url";
     private static final String KEY_NIGHT_VISION_ENABLED = "night_vision_enabled";
     private static final String KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE = "pending_screen_after_theme_toggle";
+    private static final String KEY_AI_IMAGE_PREPROCESSING_ENABLED = "ai_image_preprocessing_enabled";
     private static final int MAX_HISTORY_RECORDS = 20;
 
     private SensorManager sensorManager;
@@ -149,8 +150,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView liveView;
     private TextView captureView;
     private TextView cameraDiagnosticGuideView;
+    private TextView aiImagePreprocessingStatusView;
     private TextView phase2NightTestWizardView;
     private TextView calibrationChecklistView;
+    private Button aiImagePreprocessingToggleButton;
     private Button startImuButton;
     private LinearLayout homeActionsRow;
     private LinearLayout homeScreen;
@@ -181,6 +184,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private int latestReadinessPercent = -1;
     private boolean compatibilityCheckRun = false;
     private boolean nightVisionEnabled = false;
+    private boolean aiImagePreprocessingEnabled = false;
     private boolean liveImuStarted = false;
     private boolean liveImuSampleReceived = false;
     private Uri outputTreeUri;
@@ -302,6 +306,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
 
         nightVisionEnabled = loadNightVisionEnabled();
+        aiImagePreprocessingEnabled = loadAiImagePreprocessingEnabled();
         applySystemBars();
         setContentView(buildUi());
         requestRuntimePermissions();
@@ -608,6 +613,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraDiagnosticGuideView = statusCard();
         updateMobileCameraDiagnosticGuide("ready");
         cameraScreen.addView(cameraDiagnosticGuideView);
+
+        LinearLayout aiPreprocessingRow = buttonRow();
+        cameraScreen.addView(aiPreprocessingRow);
+        aiImagePreprocessingToggleButton = makeAiImagePreprocessingToggleButton();
+        aiPreprocessingRow.addView(aiImagePreprocessingToggleButton);
+        aiImagePreprocessingStatusView = sectionText();
+        cameraScreen.addView(aiImagePreprocessingStatusView);
+        updateAiImagePreprocessingStatus();
 
         LinearLayout row3 = buttonRow();
         cameraScreen.addView(row3);
@@ -1009,6 +1022,33 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         ));
         button.setOnClickListener(v -> toggleNightVision());
         return button;
+    }
+
+    private Button makeAiImagePreprocessingToggleButton() {
+        Button button = makeHeaderButton("AI Image Preprocessing: Off");
+        button.setOnClickListener(v -> toggleAiImagePreprocessing());
+        return button;
+    }
+
+    private void updateAiImagePreprocessingStatus() {
+        if (aiImagePreprocessingToggleButton != null) {
+            aiImagePreprocessingToggleButton.setText("AI Image Preprocessing: "
+                    + (aiImagePreprocessingEnabled ? "On" : "Off"));
+            aiImagePreprocessingToggleButton.setTextColor(
+                    aiImagePreprocessingEnabled ? themePrimaryText() : themeMuted()
+            );
+            aiImagePreprocessingToggleButton.setBackground(roundedRect(
+                    aiImagePreprocessingEnabled ? themePrimary() : themeAdvanced(),
+                    aiImagePreprocessingEnabled ? themePrimary() : themeAdvancedStroke(),
+                    1,
+                    18
+            ));
+        }
+        if (aiImagePreprocessingStatusView != null) {
+            aiImagePreprocessingStatusView.setText(
+                    "Adaptive preprocessing before diagnostic solve. Diagnostic-only."
+            );
+        }
     }
 
     private Button makeActionButton(
@@ -2371,7 +2411,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             JSONObject payload = new JSONObject();
             payload.put("frame_id", frameId);
             payload.put("solve_timeout_ms", 1000);
-            payload.put("preprocess_modes", "baseline,background_subtract");
+            payload.put("ai_image_preprocessing_enabled", aiImagePreprocessingEnabled);
+            payload.put("preprocess_strategy", aiImagePreprocessingEnabled ? "adaptive" : "classic");
+            payload.put("preprocess_modes", aiImagePreprocessingEnabled ? "auto" : "baseline,background_subtract");
             byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
             URL url = new URL(baseUrl + "/mobile/camera_solve");
             connection = (HttpURLConnection) url.openConnection();
@@ -2418,6 +2460,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         boolean attempted = solve != null && solve.optBoolean("attempted", false);
         boolean solveOk = solve != null && solve.optBoolean("solve_ok", false);
         String skippedReason = solve == null ? "" : solve.optString("skipped_reason", "");
+        JSONObject aiPreprocessing = solve == null ? null : solve.optJSONObject("ai_image_preprocessing");
+        boolean aiEnabled = aiPreprocessing != null && aiPreprocessing.optBoolean("enabled", false);
+        String aiVerdict = aiPreprocessing == null ? "" : aiPreprocessing.optString("verdict", "");
+        double aiExtraTimeMs = aiPreprocessing == null ? -1.0 : aiPreprocessing.optDouble("extra_time_ms", -1.0);
+        String aiWinningVariant = aiPreprocessing == null ? "" : aiPreprocessing.optString("winning_variant", "");
         String reportPath = report == null ? "not stored" : report.optString("json_report", "not stored");
         String summaryLabel = summary == null ? "" : summary.optString("label", "");
         String adviceLabel = advice == null ? "" : advice.optString("label", "");
@@ -2432,6 +2479,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "\nAttempted: " + attempted
                 + "\nSolve OK: " + solveOk
                 + (skippedReason.length() > 0 ? "\nSkipped: " + skippedReason : "")
+                + (aiPreprocessing != null ? "\nAI Image Preprocessing: " + (aiEnabled ? "enabled" : "disabled") : "")
+                + (aiVerdict.length() > 0 ? "\nAI verdict: " + aiVerdict : "")
+                + (aiExtraTimeMs >= 0 ? "\nAI extra time ms: " + aiExtraTimeMs : "")
+                + (aiWinningVariant.length() > 0 ? "\nAI winning variant: " + aiWinningVariant : "")
                 + (adviceLabel.length() > 0 ? "\nAdvice: " + adviceLabel : "")
                 + (adviceMessage.length() > 0 ? "\nWhy: " + adviceMessage : "")
                 + (adviceNext.length() > 0 ? "\nTry: " + adviceNext : "")
@@ -3127,6 +3178,24 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 .edit()
                 .putBoolean(KEY_NIGHT_VISION_ENABLED, enabled)
                 .apply();
+    }
+
+    private boolean loadAiImagePreprocessingEnabled() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(KEY_AI_IMAGE_PREPROCESSING_ENABLED, false);
+    }
+
+    private void saveAiImagePreprocessingEnabled(boolean enabled) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_AI_IMAGE_PREPROCESSING_ENABLED, enabled)
+                .apply();
+    }
+
+    private void toggleAiImagePreprocessing() {
+        aiImagePreprocessingEnabled = !aiImagePreprocessingEnabled;
+        saveAiImagePreprocessingEnabled(aiImagePreprocessingEnabled);
+        updateAiImagePreprocessingStatus();
     }
 
     private String resolveInitialScreen() {

@@ -410,12 +410,18 @@ class Server:
                 ]
             elif not isinstance(preprocess_modes, list):
                 preprocess_modes = None
+            ai_image_preprocessing_enabled = bool(
+                payload.get("ai_image_preprocessing_enabled", False)
+            )
+            preprocess_strategy = str(payload.get("preprocess_strategy", "classic"))
 
             result = mobile_bridge.diagnostic_camera_solve(
                 frame_id=frame_id,
                 solve_timeout_ms=solve_timeout_ms,
                 preprocess_modes=preprocess_modes,
                 force_attempt=bool(payload.get("force_attempt", False)),
+                ai_image_preprocessing_enabled=ai_image_preprocessing_enabled,
+                preprocess_strategy=preprocess_strategy,
             )
             if result.get("ok") is False:
                 response.status = 400

@@ -28,11 +28,15 @@ Current status:
   history/session summary, exposure advisor, environment metadata, night-test
   wizard, dynamic burst candidate ranking, and per-phone recommendation profile
   generation.
+- Experimental AI Image Preprocessing (#73) is implemented as a Camera Lab test
+  mode for Raspberry Pi 5: it compares the classic diagnostic solve path with
+  lightweight adaptive preprocessing, records timing/verdict evidence, and
+  remains diagnostic-only.
 - Android product-facing UI polish is implemented: PiFinder Remote is the
   primary Home action, Phone setup opens Camera Lab/Calibration/Diagnostics,
   Help provides in-app workflow instructions, user-facing labels avoid internal
   phase/issue names, a persistent Night Vision mode provides a red field
-  palette, and the launcher uses a minimal constellation/phone vector mark.
+  palette, and the launcher uses a minimal telescope/reticle vector mark.
 - Phase 6 threshold tuning (#57), RAW decision (#58), and runtime-path decision
   (#59) remain blocked by clear-sky Phase 2 evidence.
 
@@ -49,6 +53,10 @@ Validated Phase 4 capabilities:
 - Android `Run Full Diagnostic` ranks a dynamic subset of burst frames using
   Raspberry diagnostic solve results instead of blindly uploading only the last
   JPEG.
+- Android Camera Lab can toggle experimental AI Image Preprocessing. Reports
+  compare baseline/background subtraction against adaptive preprocessing and
+  record whether the adaptive path helped, was unnecessary, was not useful, was
+  too slow, or was inconclusive.
 
 Validated Phase 5 capabilities:
 

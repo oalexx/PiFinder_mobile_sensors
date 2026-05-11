@@ -508,6 +508,115 @@ def test_diagnostic_camera_solve_persists_sanitized_report(tmp_path):
     assert "42.40404584" not in report_path.read_text(encoding="utf-8")
 
 
+def test_diagnostic_camera_solve_ai_preprocessing_reports_comparison(tmp_path, monkeypatch):
+    frame_id = "20260508T000000Z_ai"
+    frame_path = tmp_path / f"{frame_id}.jpg"
+    Image.new("RGB", (128, 128), color=(4, 4, 4)).save(frame_path)
+    (tmp_path / f"{frame_id}.json").write_text(
+        json.dumps({"frame_id": frame_id}),
+        encoding="utf-8",
+    )
+
+    def fake_select(frame_path, score):
+        return {
+            "strategy": "adaptive",
+            "selected_modes": ["percentile_stretch", "hot_pixel_suppression"],
+            "selection_reason": "dark_low_contrast_frame",
+            "image_metrics": {
+                "mean": 4.0,
+                "noise_proxy": 2.0,
+                "saturation_pct": 0.0,
+                "bright_points": 20,
+            },
+            "image_analysis_ms": 7,
+        }
+
+    def fake_attempt(frame_path, score, solve_timeout_ms, preprocess_modes):
+        rows = [
+            {
+                "preprocess_mode": preprocess_modes[-1],
+                "solve_ok": "hot_pixel_suppression" in preprocess_modes,
+                "solve_matches": 18 if "hot_pixel_suppression" in preprocess_modes else 0,
+                "solve_time_ms": 120.0 if "hot_pixel_suppression" in preprocess_modes else 80.0,
+            }
+        ]
+        solved = rows[0]["solve_ok"]
+        return {
+            "attempted": True,
+            "solve_ok": solved,
+            "rows": rows,
+            "best": rows[0],
+        }
+
+    monkeypatch.setattr(mobile_bridge, "_select_ai_preprocessing_modes", fake_select)
+    monkeypatch.setattr(mobile_bridge, "_attempt_diagnostic_solve", fake_attempt)
+
+    result = mobile_bridge.diagnostic_camera_solve(
+        frame_id,
+        frames_dir=tmp_path,
+        reports_dir=tmp_path / "reports",
+        force_attempt=True,
+        ai_image_preprocessing_enabled=True,
+        preprocess_strategy="adaptive",
+    )
+
+    assert result["ok"] is True
+    assert result["diagnostic_only"] is True
+    assert result["integrator_updated"] is False
+    assert result["runtime_pointing_updated"] is False
+    assert result["solve"]["solve_ok"] is True
+    ai = result["solve"]["ai_image_preprocessing"]
+    assert ai["enabled"] is True
+    assert ai["strategy"] == "adaptive"
+    assert ai["selected_modes"] == ["percentile_stretch", "hot_pixel_suppression"]
+    assert ai["selection_reason"] == "dark_low_contrast_frame"
+    assert ai["baseline_result"]["solve_ok"] is False
+    assert ai["adaptive_result"]["solve_ok"] is True
+    assert ai["winning_variant"] == "hot_pixel_suppression"
+    assert ai["matches"] == 18
+    assert ai["verdict"] == "helped"
+    assert "image_analysis_ms" in ai
+    assert "preprocessing_ms" in ai
+    assert "baseline_solve_ms" in ai
+    assert "adaptive_solve_ms" in ai
+    assert "total_ai_path_ms" in ai
+    assert "extra_time_ms" in ai
+    report_payload = json.loads(Path(result["report"]["json_report"]).read_text(encoding="utf-8"))
+    assert report_payload["solve"]["ai_image_preprocessing"]["verdict"] == "helped"
+
+
+def test_diagnostic_camera_solve_ai_preprocessing_disabled_keeps_classic_modes(tmp_path, monkeypatch):
+    frame_id = "20260508T000000Z_classic"
+    frame_path = tmp_path / f"{frame_id}.jpg"
+    Image.new("RGB", (128, 128), color=(4, 4, 4)).save(frame_path)
+
+    calls = []
+
+    def fake_attempt(frame_path, score, solve_timeout_ms, preprocess_modes):
+        calls.append(preprocess_modes)
+        return {
+            "attempted": True,
+            "solve_ok": False,
+            "rows": [],
+            "best": None,
+        }
+
+    monkeypatch.setattr(mobile_bridge, "_attempt_diagnostic_solve", fake_attempt)
+
+    result = mobile_bridge.diagnostic_camera_solve(
+        frame_id,
+        frames_dir=tmp_path,
+        force_attempt=True,
+        ai_image_preprocessing_enabled=False,
+    )
+
+    assert result["ok"] is True
+    assert calls == [["baseline", "background_subtract"]]
+    assert result["solve"]["ai_image_preprocessing"]["enabled"] is False
+    assert result["solve"]["ai_image_preprocessing"]["strategy"] == "classic"
+    assert result["solve"]["ai_image_preprocessing"]["verdict"] == "disabled"
+
+
 def test_camera_report_history_returns_empty_session_summary(tmp_path):
     result = mobile_bridge.camera_report_history(reports_dir=tmp_path)
 
@@ -652,6 +761,8 @@ def test_server_exposes_diagnostic_camera_solve_endpoint():
 
     assert '@app.route("/mobile/camera_solve", method="POST")' in source
     assert "mobile_bridge.diagnostic_camera_solve(" in source
+    assert '"ai_image_preprocessing_enabled"' in source
+    assert '"preprocess_strategy", "classic"' in source
 
 
 def test_server_exposes_camera_report_history_endpoint():

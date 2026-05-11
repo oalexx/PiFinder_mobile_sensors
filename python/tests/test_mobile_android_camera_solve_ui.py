@@ -34,6 +34,28 @@ def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
     assert 'updateMobileCameraDiagnosticGuide("solve_complete")' in source
 
 
+def test_android_camera_lab_exposes_ai_image_preprocessing_test_mode():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "KEY_AI_IMAGE_PREPROCESSING_ENABLED" in source
+    assert '"ai_image_preprocessing_enabled"' in source
+    assert "aiImagePreprocessingEnabled" in source
+    assert "loadAiImagePreprocessingEnabled()" in source
+    assert "saveAiImagePreprocessingEnabled(boolean enabled)" in source
+    assert "makeAiImagePreprocessingToggleButton()" in source
+    assert 'makeHeaderButton("AI Image Preprocessing: Off")' in source
+    assert "toggleAiImagePreprocessing()" in source
+    assert 'addAreaTitle(cameraScreen, "Field test")' in source
+    assert 'payload.put("ai_image_preprocessing_enabled", aiImagePreprocessingEnabled)' in source
+    assert 'payload.put("preprocess_strategy", aiImagePreprocessingEnabled ? "adaptive" : "classic")' in source
+    assert 'payload.put("preprocess_modes", aiImagePreprocessingEnabled ? "auto" : "baseline,background_subtract")' in source
+    assert "AI Image Preprocessing" in source
+    assert "Adaptive preprocessing before diagnostic solve. Diagnostic-only." in source
+    assert '"ai_image_preprocessing"' in source
+    assert '"verdict"' in source
+    assert '"extra_time_ms"' in source
+
+
 def test_android_camera_lab_exposes_diagnostic_report_history():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 

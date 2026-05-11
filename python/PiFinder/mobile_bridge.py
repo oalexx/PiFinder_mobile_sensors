@@ -298,6 +298,8 @@ def diagnostic_camera_solve(
     solve_timeout_ms: int = 1000,
     preprocess_modes: Optional[List[str]] = None,
     force_attempt: bool = False,
+    ai_image_preprocessing_enabled: bool = False,
+    preprocess_strategy: str = "classic",
 ) -> Dict[str, Any]:
     """Score and optionally diagnostic-solve one stored mobile frame.
 
@@ -369,12 +371,21 @@ def diagnostic_camera_solve(
         }
         return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
 
-    solve_payload = _attempt_diagnostic_solve(
-        frame_path=frame_path,
-        score=score,
-        solve_timeout_ms=solve_timeout_ms,
-        preprocess_modes=preprocess_modes or ["baseline", "background_subtract"],
-    )
+    if ai_image_preprocessing_enabled:
+        solve_payload = _attempt_ai_image_preprocessing_solve(
+            frame_path=frame_path,
+            score=score,
+            solve_timeout_ms=solve_timeout_ms,
+            preprocess_strategy=preprocess_strategy,
+        )
+    else:
+        solve_payload = _attempt_diagnostic_solve(
+            frame_path=frame_path,
+            score=score,
+            solve_timeout_ms=solve_timeout_ms,
+            preprocess_modes=preprocess_modes or ["baseline", "background_subtract"],
+        )
+        solve_payload["ai_image_preprocessing"] = _disabled_ai_image_preprocessing_payload()
     payload = {
         "ok": True,
         "api": API_VERSION,
@@ -867,6 +878,220 @@ def _attempt_diagnostic_solve(
         "solve_ok": bool(solved_rows),
         "rows": rows,
         "best": solved_rows[0] if solved_rows else (rows[0] if rows else None),
+    }
+
+
+def _disabled_ai_image_preprocessing_payload() -> Dict[str, Any]:
+    return {
+        "enabled": False,
+        "strategy": "classic",
+        "verdict": "disabled",
+    }
+
+
+def _score_attr(score: Any, name: str, default: float = 0.0) -> float:
+    value = getattr(score, name, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _select_ai_preprocessing_modes(frame_path: Path, score: Any) -> Dict[str, Any]:
+    start_time = time.perf_counter()
+    mean = _score_attr(score, "mean")
+    dark_pct = _score_attr(score, "dark_pct")
+    saturation_pct = _score_attr(score, "saturation_pct")
+    sharpness = _score_attr(score, "sharpness")
+    noise_proxy = _score_attr(score, "noise_proxy")
+    bright_points = int(_score_attr(score, "bright_points"))
+    centroids = int(_score_attr(score, "centroids"))
+
+    modes: List[str] = []
+    reasons: List[str] = []
+    if mean > 6.0 or dark_pct < 75.0:
+        modes.extend(["background_subtract", "percentile_stretch"])
+        reasons.append("bright_or_lifted_background")
+    if noise_proxy > 10.0 or bright_points > 350:
+        modes.extend(["hot_pixel_suppression", "denoise_stretch"])
+        reasons.append("noise_or_hot_pixels")
+    if centroids < 18 or bright_points < 12:
+        modes.extend(["percentile_stretch", "local_contrast"])
+        reasons.append("few_candidate_stars")
+    if sharpness < 3.0:
+        modes.append("center_crop")
+        reasons.append("soft_or_edge_degraded_frame")
+    if not modes:
+        modes.extend(["percentile_stretch", "background_subtract"])
+        reasons.append("balanced_frame_probe")
+
+    selected_modes: List[str] = []
+    for mode in modes:
+        if mode not in selected_modes:
+            selected_modes.append(mode)
+        if len(selected_modes) >= 2:
+            break
+
+    return {
+        "strategy": "adaptive",
+        "selected_modes": selected_modes,
+        "selection_reason": ",".join(reasons),
+        "image_metrics": {
+            "mean": mean,
+            "dark_pct": dark_pct,
+            "saturation_pct": saturation_pct,
+            "sharpness": sharpness,
+            "noise_proxy": noise_proxy,
+            "bright_points": bright_points,
+            "centroids": centroids,
+        },
+        "image_analysis_ms": _elapsed_ms(start_time),
+    }
+
+
+def _solve_time_ms(solve_payload: Dict[str, Any]) -> float:
+    total = 0.0
+    for row in solve_payload.get("rows") or []:
+        value = row.get("solve_time_ms") if isinstance(row, dict) else None
+        if isinstance(value, (int, float)):
+            total += float(value)
+    return round(total, 1)
+
+
+def _solve_matches(solve_payload: Dict[str, Any]) -> int:
+    best = solve_payload.get("best")
+    if not isinstance(best, dict):
+        return 0
+    value = best.get("solve_matches")
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
+def _solve_result_summary(solve_payload: Dict[str, Any]) -> Dict[str, Any]:
+    best = solve_payload.get("best")
+    return {
+        "attempted": bool(solve_payload.get("attempted")),
+        "solve_ok": bool(solve_payload.get("solve_ok")),
+        "matches": _solve_matches(solve_payload),
+        "best_preprocess_mode": (
+            best.get("preprocess_mode") if isinstance(best, dict) else ""
+        ),
+    }
+
+
+def _ai_preprocessing_verdict(
+    baseline: Dict[str, Any],
+    adaptive: Dict[str, Any],
+    extra_time_ms: float,
+) -> str:
+    baseline_ok = bool(baseline.get("solve_ok"))
+    adaptive_ok = bool(adaptive.get("solve_ok"))
+    baseline_matches = _solve_matches(baseline)
+    adaptive_matches = _solve_matches(adaptive)
+    if adaptive_ok and not baseline_ok:
+        return "helped"
+    if adaptive_ok and baseline_ok and adaptive_matches > baseline_matches:
+        return "helped"
+    if extra_time_ms > 1000 and not adaptive_ok:
+        return "too_slow"
+    if baseline_ok and not adaptive_ok:
+        return "not_needed"
+    if baseline_ok and adaptive_ok:
+        return "not_needed"
+    if not baseline_ok and not adaptive_ok:
+        return "not_useful"
+    return "inconclusive"
+
+
+def _solve_consistency(baseline: Dict[str, Any], adaptive: Dict[str, Any]) -> str:
+    baseline_ok = bool(baseline.get("solve_ok"))
+    adaptive_ok = bool(adaptive.get("solve_ok"))
+    if baseline_ok and adaptive_ok:
+        return "both_solved"
+    if adaptive_ok:
+        return "adaptive_only"
+    if baseline_ok:
+        return "baseline_only"
+    return "none_solved"
+
+
+def _attempt_ai_image_preprocessing_solve(
+    frame_path: Path,
+    score: Any,
+    solve_timeout_ms: int,
+    preprocess_strategy: str,
+) -> Dict[str, Any]:
+    start_time = time.perf_counter()
+    selector = _select_ai_preprocessing_modes(frame_path, score)
+    selected_modes = selector.get("selected_modes") or ["percentile_stretch"]
+    baseline_modes = ["baseline", "background_subtract"]
+
+    baseline_solve = _attempt_diagnostic_solve(
+        frame_path=frame_path,
+        score=score,
+        solve_timeout_ms=solve_timeout_ms,
+        preprocess_modes=baseline_modes,
+    )
+    adaptive_solve = _attempt_diagnostic_solve(
+        frame_path=frame_path,
+        score=score,
+        solve_timeout_ms=solve_timeout_ms,
+        preprocess_modes=list(selected_modes),
+    )
+
+    baseline_solve_ms = _solve_time_ms(baseline_solve)
+    adaptive_solve_ms = _solve_time_ms(adaptive_solve)
+    image_analysis_ms = int(selector.get("image_analysis_ms") or 0)
+    total_ai_path_ms = _elapsed_ms(start_time)
+    preprocessing_ms = max(
+        0.0,
+        round(total_ai_path_ms - baseline_solve_ms - adaptive_solve_ms - image_analysis_ms, 1),
+    )
+    extra_time_ms = round(image_analysis_ms + preprocessing_ms + adaptive_solve_ms, 1)
+    verdict = _ai_preprocessing_verdict(baseline_solve, adaptive_solve, extra_time_ms)
+    adaptive_helped = verdict == "helped"
+    winning_solve = adaptive_solve if adaptive_helped else baseline_solve
+    if not winning_solve.get("solve_ok") and adaptive_solve.get("solve_ok"):
+        winning_solve = adaptive_solve
+
+    rows: List[Dict[str, Any]] = []
+    for source_name, solve_payload in (
+        ("baseline", baseline_solve),
+        ("adaptive", adaptive_solve),
+    ):
+        for row in solve_payload.get("rows") or []:
+            if isinstance(row, dict):
+                annotated = dict(row)
+                annotated["ai_path"] = source_name
+                rows.append(annotated)
+
+    best = winning_solve.get("best")
+    winning_variant = best.get("preprocess_mode") if isinstance(best, dict) else ""
+    solve_ok = bool(baseline_solve.get("solve_ok") or adaptive_solve.get("solve_ok"))
+    return {
+        "attempted": True,
+        "solve_ok": solve_ok,
+        "rows": rows,
+        "best": best if isinstance(best, dict) else (rows[0] if rows else None),
+        "ai_image_preprocessing": {
+            "enabled": True,
+            "strategy": preprocess_strategy or "adaptive",
+            "image_analysis_ms": image_analysis_ms,
+            "preprocessing_ms": preprocessing_ms,
+            "baseline_solve_ms": baseline_solve_ms,
+            "adaptive_solve_ms": adaptive_solve_ms,
+            "total_ai_path_ms": total_ai_path_ms,
+            "extra_time_ms": extra_time_ms,
+            "selected_modes": list(selected_modes),
+            "variants_tried": baseline_modes + list(selected_modes),
+            "selection_reason": selector.get("selection_reason", ""),
+            "image_metrics": selector.get("image_metrics", {}),
+            "winning_variant": winning_variant,
+            "baseline_result": _solve_result_summary(baseline_solve),
+            "adaptive_result": _solve_result_summary(adaptive_solve),
+            "matches": _solve_matches(winning_solve),
+            "solve_consistency": _solve_consistency(baseline_solve, adaptive_solve),
+            "verdict": verdict,
+        },
     }
 
 
