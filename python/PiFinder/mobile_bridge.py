@@ -716,6 +716,33 @@ def imu_payload(imu_batch: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def ai_imu_drift_analysis(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze solve-to-solve mobile IMU residual cycles.
+
+    This is diagnostic-only. It never updates PiFinder live pointing or the
+    integrator.
+    """
+    if not isinstance(payload, dict):
+        return error_payload(
+            "invalid_json",
+            "Request body must be a JSON object.",
+        )
+    try:
+        analyzer = _import_lite_module("analyze_mobile_imu_drift")
+        report = analyzer.analyze_payload(payload)
+    except Exception as exc:
+        return error_payload(
+            "invalid_imu_drift_analysis",
+            f"{exc.__class__.__name__}: {exc}",
+        )
+    report["ok"] = True
+    report["api"] = API_VERSION
+    report["diagnostic_only"] = True
+    report["integrator_updated"] = False
+    report["runtime_pointing_updated"] = False
+    return report
+
+
 def mount_profile_status(
     profiles_dir: Optional[Path] = None,
     mobile_profile_path: Optional[Path] = None,

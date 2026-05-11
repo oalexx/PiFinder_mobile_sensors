@@ -146,6 +146,13 @@ path and stores timing, selected variants, solve consistency, and a verdict
 diagnostic report. It remains diagnostic-only and never updates live pointing
 or the integrator.
 
+`AI IMU Drift Analysis` is a diagnostic Calibration aid. It accepts
+solve-to-solve residual cycles through `/mobile/imu_drift_analysis` or
+`PiFinder_lite/analyze_mobile_imu_drift.py`, compares the IMU-predicted final
+Alt/Az with the next solved Alt/Az, and reports whether a repeatable correction
+pattern exists. It is evidence for future correction-profile work only; it does
+not update pointing or feed the integrator.
+
 `Send Env` is optional. Phones without a light or pressure sensor still send
 battery/network/device-state metadata and mark missing sensors unavailable.
 Environment data is diagnostic-only and never changes pointing state.
@@ -159,6 +166,7 @@ Optional Raspberry-side batch checks:
 python PiFinder_lite/score_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames"
 python PiFinder_lite/diagnostic_solve_mobile_frame.py --input "$HOME/PiFinder_data/mobile/frames" --max-frames 12 --solve-timeout-ms 1000 --preprocess-modes baseline,background_subtract,percentile_stretch,hot_pixel_suppression
 python PiFinder_lite/generate_mobile_camera_profile.py --reports-dir "$HOME/PiFinder_data/mobile/camera_solve_reports" --device-model SM-S948B
+python PiFinder_lite/analyze_mobile_imu_drift.py --input "$HOME/PiFinder_data/mobile/imu_drift_cycles.json"
 ```
 
 The Android diagnostic actions remain diagnostic-only and do not update live
@@ -219,6 +227,7 @@ live under `documentation/`.
 | `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
 | `generate_mobile_camera_profile.py` | Generate conservative per-phone camera recommendation profiles from diagnostic reports. |
 | `analyze_mobile_imu.py` | Analyze stored `/mobile/imu` batches. |
+| `analyze_mobile_imu_drift.py` | Analyze solve-to-solve IMU residual cycles for diagnostic-only correction evidence. |
 | `compute_mobile_mount_offset.py` | Compute a diagnostic candidate phone-to-tube offset profile. |
 | `validate_mobile_mount_repeatability.py` | Compare candidate offsets and recommend proceed/recalibrate/reject. |
 | `validate_remote_endpoints.py` | Local validation of web/mobile endpoints. |

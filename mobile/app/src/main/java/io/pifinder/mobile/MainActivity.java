@@ -599,6 +599,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button copyCalibrationEvidence = makeSecondaryButton("Copy evidence");
         copyCalibrationEvidence.setOnClickListener(v -> copyCalibrationEvidence());
         calibrationEvidenceRow.addView(copyCalibrationEvidence);
+        Button aiImuDrift = makeSecondaryButton("AI IMU drift");
+        aiImuDrift.setOnClickListener(v -> showAiImuDriftAnalysisGuide());
+        calibrationEvidenceRow.addView(aiImuDrift);
 
         addRemoteWebToolbar(remoteWebScreen);
         remoteWebView = makeRemoteWebView();
@@ -3015,6 +3018,27 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "8. Copy evidence for your calibration notes.";
     }
 
+    private String aiImuDriftAnalysisGuideText() {
+        return "AI IMU Drift Analysis\n"
+                + "Collect solve-to-solve residual cycles before any correction profile.\n\n"
+                + "Cycle\n"
+                + "1. Start from a confirmed solve.\n"
+                + "2. Record phone IMU orientation at the solve.\n"
+                + "3. Move the telescope while the IMU predicts the path.\n"
+                + "4. Stop and solve again.\n"
+                + "5. Compare predicted final Alt/Az with solved final Alt/Az.\n\n"
+                + "Raspberry endpoint\n"
+                + "/mobile/imu_drift_analysis\n\n"
+                + "Boundary\n"
+                + "diagnostic_only=true; no integrator update; no runtime pointing update.";
+    }
+
+    private void showAiImuDriftAnalysisGuide() {
+        updateCalibrationStatus(aiImuDriftAnalysisGuideText()
+                + "\n\nCopy evidence to capture the JSON template.");
+        copyAiImuDriftAnalysisEvidence();
+    }
+
     private String helpText() {
         return "GET STARTED\n"
                 + "1. Start PiFinder on the Raspberry Pi.\n"
@@ -3422,6 +3446,44 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return "{\"error\":\"calibration_evidence_failed\",\"message\":\""
                     + e.getMessage() + "\"}";
         }
+    }
+
+    private String aiImuDriftAnalysisEvidenceJson() {
+        try {
+            JSONObject evidence = new JSONObject();
+            evidence.put("schema", "pifinder-mobile-ai-imu-drift-evidence-v0");
+            evidence.put("created_utc", utcIso(System.currentTimeMillis()));
+            evidence.put("analysis_name", "AI IMU Drift Analysis");
+            evidence.put("description", "solve-to-solve residual evidence template");
+            evidence.put("expected_endpoint", "/mobile/imu_drift_analysis");
+            evidence.put("diagnostic_only", true);
+            evidence.put("integrator_updated", false);
+            evidence.put("runtime_pointing_updated", false);
+            evidence.put("remote_base_url", normalizeRemoteBaseUrl(loadRemoteBaseUrl()));
+            evidence.put("reference_target", calibrationReferenceText());
+            evidence.put("app", appJson());
+            evidence.put("device", deviceJson());
+            JSONArray cycles = new JSONArray();
+            JSONObject cycle = new JSONObject();
+            cycle.put("cycle_id", "cycle_1");
+            cycle.put("remount_id", "mount_a");
+            cycle.put("duration_s", JSONObject.NULL);
+            cycle.put("predicted_final", altAzTemplateJson());
+            cycle.put("solve_final", altAzTemplateJson());
+            cycles.put(cycle);
+            evidence.put("cycles", cycles);
+            return evidence.toString(2);
+        } catch (JSONException e) {
+            return "{\"error\":\"ai_imu_drift_evidence_failed\",\"message\":\""
+                    + e.getMessage() + "\"}";
+        }
+    }
+
+    private JSONObject altAzTemplateJson() throws JSONException {
+        JSONObject value = new JSONObject();
+        value.put("alt_deg", JSONObject.NULL);
+        value.put("az_deg", JSONObject.NULL);
+        return value;
     }
 
     private String calibrationReferenceText() {
@@ -4375,6 +4437,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         ));
         updateCalibrationStatus("Evidence copied\nReference: " + calibrationReferenceText());
         Toast.makeText(this, "Calibration evidence copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void copyAiImuDriftAnalysisEvidence() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText(
+                "PiFinder AI IMU Drift Analysis evidence JSON",
+                aiImuDriftAnalysisEvidenceJson()
+        ));
+        Toast.makeText(this, "AI IMU drift evidence copied", Toast.LENGTH_SHORT).show();
     }
 
     private void pickOutputFolder() {

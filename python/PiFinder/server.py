@@ -329,6 +329,14 @@ class Server:
                 "batch_label": imu_batch["batch_label"],
             }
 
+        @app.route("/mobile/imu_drift_analysis", method="POST")
+        def mobile_imu_drift_analysis():
+            payload = request.json
+            result = mobile_bridge.ai_imu_drift_analysis(payload)
+            if result.get("ok") is False:
+                response.status = 400
+            return result
+
         @app.route("/mobile/camera_frame", method="POST")
         def mobile_camera_frame():
             start_time = time.time()

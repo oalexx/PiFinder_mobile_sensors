@@ -770,3 +770,44 @@ def test_server_exposes_camera_report_history_endpoint():
 
     assert '@app.route("/mobile/camera_reports")' in source
     assert "mobile_bridge.camera_report_history(" in source
+
+
+def test_mobile_bridge_exposes_ai_imu_drift_analysis():
+    payload = {
+        "cycles": [
+            {
+                "cycle_id": "cycle_1",
+                "duration_s": 60,
+                "predicted_final": {"alt_deg": 30.0, "az_deg": 120.0},
+                "solve_final": {"alt_deg": 30.8, "az_deg": 119.6},
+            },
+            {
+                "cycle_id": "cycle_2",
+                "duration_s": 60,
+                "predicted_final": {"alt_deg": 35.0, "az_deg": 125.0},
+                "solve_final": {"alt_deg": 35.9, "az_deg": 124.5},
+            },
+            {
+                "cycle_id": "cycle_3",
+                "duration_s": 60,
+                "predicted_final": {"alt_deg": 40.0, "az_deg": 130.0},
+                "solve_final": {"alt_deg": 40.8, "az_deg": 129.4},
+            },
+        ]
+    }
+
+    result = mobile_bridge.ai_imu_drift_analysis(payload)
+
+    assert result["ok"] is True
+    assert result["diagnostic_only"] is True
+    assert result["integrator_updated"] is False
+    assert result["runtime_pointing_updated"] is False
+    assert result["verdict"] == "pattern_found"
+    assert result["suggested_correction"]["status"] == "diagnostic_only"
+
+
+def test_server_exposes_ai_imu_drift_analysis_endpoint():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert '@app.route("/mobile/imu_drift_analysis", method="POST")' in source
+    assert "mobile_bridge.ai_imu_drift_analysis(" in source

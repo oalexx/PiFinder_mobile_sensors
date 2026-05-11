@@ -32,6 +32,9 @@ Current status:
   mode for Raspberry Pi 5: it compares the classic diagnostic solve path with
   lightweight adaptive preprocessing, records timing/verdict evidence, and
   remains diagnostic-only.
+- AI IMU Drift Analysis (#74) is implemented as a diagnostic solve-to-solve
+  residual analyzer. It can detect repeatable IMU prediction error patterns and
+  suggest diagnostic-only correction evidence, but it must not drive pointing.
 - Android product-facing UI polish is implemented: PiFinder Remote is the
   primary Home action, Phone setup opens Camera Lab/Calibration/Diagnostics,
   Help provides in-app workflow instructions, user-facing labels avoid internal
@@ -57,6 +60,9 @@ Validated Phase 4 capabilities:
   compare baseline/background subtraction against adaptive preprocessing and
   record whether the adaptive path helped, was unnecessary, was not useful, was
   too slow, or was inconclusive.
+- `/mobile/imu_drift_analysis` and `PiFinder_lite/analyze_mobile_imu_drift.py`
+  can analyze solve-to-solve IMU residual cycles for future correction-profile
+  evidence while keeping integrator/runtime pointing unchanged.
 
 Validated Phase 5 capabilities:
 
