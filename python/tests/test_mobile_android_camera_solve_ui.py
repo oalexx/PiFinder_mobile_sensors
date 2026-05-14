@@ -32,6 +32,28 @@ def test_android_camera_lab_exposes_guided_diagnostic_solve_flow():
     assert 'updateMobileCameraDiagnosticGuide("full_running")' in source
     assert 'updateMobileCameraDiagnosticGuide("solving")' in source
     assert 'updateMobileCameraDiagnosticGuide("solve_complete")' in source
+    assert "cameraFieldTestStatusView" in source
+    assert "updateCameraFieldTestStatus(\"idle\"" in source
+    assert "updateCameraFieldTestStatus(\"running\"" in source
+    assert '"complete"' in source
+    assert "updateCameraFieldTestStatus(\"failed\"" in source
+
+
+def test_android_camera_lab_guided_field_test_is_collapsible():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "private boolean cameraDiagnosticGuideExpanded = false;" in source
+    assert "addCameraDiagnosticGuideToggle(cameraScreen)" in source
+    assert "cameraDiagnosticGuideView.setVisibility(View.GONE)" in source
+    assert "toggleCameraDiagnosticGuide()" in source
+    assert "updateCameraDiagnosticGuideToggleLabel()" in source
+    assert '"▾ Show Guided Field Test"' in source
+    assert '"▴ Hide Guided Field Test"' in source
+    assert "cameraDiagnosticGuideToggleButton.setTypeface(Typeface.DEFAULT_BOLD)" in source
+    assert "This guide explains what the field test does." in source
+    assert '"Field test steps\\n"' in source
+    assert '"Last action: " + detail' in source
+    assert 'cameraFieldTestStatusView.setText(' in source
 
 
 def test_android_camera_lab_exposes_ai_image_preprocessing_test_mode():
@@ -61,9 +83,14 @@ def test_android_camera_lab_exposes_diagnostic_report_history():
 
     assert 'makeSecondaryButton("View reports")' in source
     assert "requestCameraDiagnosticReports()" in source
+    assert 'updateCameraFieldTestStatus("running", "Loading reports", "Requesting saved camera reports from PiFinder.")' in source
     assert '"/mobile/camera_reports?limit=20"' in source
     assert "formatCameraReports" in source
+    assert "No reports available yet. Run full diagnostic first." in source
+    assert "Camera reports endpoint not available" in source
     assert "latestCameraReportSummary" in source
+    assert 'latestCameraReportSummary = "Latest full diagnostic\\n" + finalMessage' in source
+    assert "latestCameraReportSummary.length() == 0" in source
     assert 'makeSecondaryButton("Copy summary")' in source
     assert "copyCameraReportSummary()" in source
     assert '"session_summary"' in source
@@ -99,8 +126,9 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "showPhase2NightTestWizard()" in source
     assert 'makeSecondaryButton("Copy night plan")' in source
     assert "copyPhase2NightTestPlan()" in source
-    assert 'makeSecondaryButton("Mark repeat")' in source
+    assert 'makeSecondaryButton("Mark repeat run")' in source
     assert "markPhase2NightTestRepeat()" in source
+    assert 'updateCameraFieldTestStatus("idle", "Repeat run marked", "Run full diagnostic again under the same setup.")' in source
     assert "phase2NightTestRepeatCount" in source
     assert "updatePhase2NightTestWizard" in source
     assert "phase2NightTestPlanText" in source
@@ -109,8 +137,6 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "reliable camera use" in source
     assert "clear-sky results" in source
     assert "diagnostic-only" in source
-    assert "SEND PROFILE" in source
-    assert "SEND ENV" in source
     assert "SEND GPS" in source
     assert "Run full diagnostic" in source
     assert "View reports" in source
@@ -134,6 +160,7 @@ def test_android_full_diagnostic_ranks_dynamic_burst_candidates():
     assert "postMobileCameraFrame(" in source
     assert "candidate.filename" in source
     assert "postDiagnosticCameraSolve(baseUrl, frameId)" in source
+    assert "Diagnostic solve endpoint not available" in source
     assert '"solve_candidate_selector"' in source
     assert '"ranking_summary"' in source
     assert '"selected_candidate"' in source
@@ -146,6 +173,7 @@ def test_android_exposes_persistent_night_vision_theme_toggle():
 
     assert "KEY_NIGHT_VISION_ENABLED" in source
     assert "KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE" in source
+    assert "KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE" in source
     assert '"night_vision_enabled"' in source
     assert "nightVisionEnabled" in source
     assert "makeNightVisionToggleButton()" in source
@@ -155,7 +183,14 @@ def test_android_exposes_persistent_night_vision_theme_toggle():
     assert "saveNightVisionEnabled(boolean enabled)" in source
     assert "resolveInitialScreen()" in source
     assert ".putString(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE, currentScreenName)" in source
-    assert "showScreen(resolveInitialScreen())" in source
+    assert ".putString(KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE, currentRemoteWebUrl())" in source
+    assert "restoreRemoteWebUrlAfterThemeToggle()" in source
+    assert "applyRemoteWebNightVision()" in source
+    assert "pifinder-mobile-night-vision-style" in source
+    assert "remoteWebView.evaluateJavascript(script, null)" in source
+    assert "String initialScreen = resolveInitialScreen()" in source
+    assert "showScreen(initialScreen)" in source
+    assert 'return "remoteWeb";' in source
     assert "getSharedPreferences(PREFS_NAME, MODE_PRIVATE)" in source
     assert "recreate()" in source
     assert "applySystemBars()" in source
@@ -193,6 +228,24 @@ def test_android_home_routes_setup_and_help_without_global_brand_on_submenus():
     assert 'subtitleView.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'homeActionsRow.setVisibility(home ? View.VISIBLE : View.GONE)' in source
     assert 'row.addView(makeNightVisionToggleButton())' in source
+
+
+def test_android_submenu_navigation_keeps_expected_parent_screens():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert 'addBackRow(cameraScreen, "setup")' in source
+    assert 'addBackRow(calibrationScreen, "setup")' in source
+    assert 'addBackRow(capabilitiesScreen, "setup")' in source
+    assert 'addBackRow(historyScreen, "capabilities")' in source
+    assert 'showScreen(parentScreenFor(currentScreenName))' in source
+    assert 'case "camera":' in source
+    assert 'case "calibration":' in source
+    assert 'case "capabilities":' in source
+    assert 'return "setup";' in source
+    assert 'case "history":' in source
+    assert 'return "capabilities";' in source
+    assert 'case "remote":' in source
+    assert 'return "home";' in source
 
 
 def test_android_launcher_branding_is_pifinder_mobile():

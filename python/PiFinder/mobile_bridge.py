@@ -295,6 +295,7 @@ def diagnostic_camera_solve(
     frames_dir: Optional[Path] = None,
     reports_dir: Optional[Path] = None,
     environment_path: Optional[Path] = None,
+    gps_path: Optional[Path] = None,
     solve_timeout_ms: int = 1000,
     preprocess_modes: Optional[List[str]] = None,
     force_attempt: bool = False,
@@ -345,6 +346,7 @@ def diagnostic_camera_solve(
                 "skipped_reason": "quality_score_error",
                 "error": f"{exc.__class__.__name__}: {exc}",
             },
+            "solve_altaz": {"available": False, "reason": "solve_not_ok"},
             "elapsed_ms": _elapsed_ms(start_time),
         }
         return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
@@ -367,6 +369,7 @@ def diagnostic_camera_solve(
                 "skipped_reason": "quality_score_rejected",
                 "rejection_reasons": score.rejection_reasons,
             },
+            "solve_altaz": {"available": False, "reason": "solve_not_ok"},
             "elapsed_ms": _elapsed_ms(start_time),
         }
         return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
@@ -397,6 +400,7 @@ def diagnostic_camera_solve(
         "environment": environment,
         "score": score_payload,
         "solve": solve_payload,
+        "solve_altaz": _solve_altaz_payload(solve_payload, gps_path),
         "elapsed_ms": _elapsed_ms(start_time),
     }
     return _with_diagnostic_report(_with_diagnostic_summary(payload), reports_dir)
@@ -871,6 +875,71 @@ def _load_optional_json(path: Path) -> Dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _parse_utc_datetime(value: Any) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        return datetime.now(timezone.utc)
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _radec_to_altaz_for_gps(
+    ra_deg: float,
+    dec_deg: float,
+    gps_fix: Dict[str, Any],
+) -> Tuple[float, float]:
+    from PiFinder import calc_utils
+
+    observer = calc_utils.sf_utils(
+        lat=float(gps_fix["lat"]),
+        lon=float(gps_fix["lon"]),
+        altitude=float(gps_fix.get("altitude_m") or 0.0),
+    )
+    return observer.radec_to_altaz(
+        float(ra_deg),
+        float(dec_deg),
+        _parse_utc_datetime(gps_fix.get("time_utc")),
+    )
+
+
+def _solve_altaz_payload(
+    solve_payload: Dict[str, Any],
+    gps_path: Optional[Path],
+) -> Dict[str, Any]:
+    if not bool(solve_payload.get("solve_ok")):
+        return {"available": False, "reason": "solve_not_ok"}
+    best = solve_payload.get("best")
+    if not isinstance(best, dict):
+        return {"available": False, "reason": "missing_best_solve"}
+    ra = best.get("solve_ra")
+    dec = best.get("solve_dec")
+    if ra is None or dec is None:
+        return {"available": False, "reason": "missing_ra_dec"}
+    path = gps_path or (ensure_mobile_data_dir() / GPS_LATEST_FILENAME)
+    gps_payload = _load_optional_json(path)
+    gps_fix = gps_payload.get("gps") if isinstance(gps_payload, dict) else None
+    if not isinstance(gps_fix, dict):
+        return {"available": False, "reason": "mobile_gps_missing"}
+    try:
+        alt_deg, az_deg = _radec_to_altaz_for_gps(float(ra), float(dec), gps_fix)
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": "altaz_conversion_failed",
+            "error": f"{exc.__class__.__name__}: {exc}",
+        }
+    return {
+        "available": True,
+        "alt_deg": round(float(alt_deg), 6),
+        "az_deg": round(float(az_deg), 6),
+        "source": "mobile_gps_latest",
+    }
 
 
 def _attempt_diagnostic_solve(

@@ -131,6 +131,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final String KEY_REMOTE_BASE_URL = "remote_base_url";
     private static final String KEY_NIGHT_VISION_ENABLED = "night_vision_enabled";
     private static final String KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE = "pending_screen_after_theme_toggle";
+    private static final String KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE = "pending_remote_web_url_after_theme_toggle";
     private static final String KEY_AI_IMAGE_PREPROCESSING_ENABLED = "ai_image_preprocessing_enabled";
     private static final int MAX_HISTORY_RECORDS = 20;
 
@@ -150,9 +151,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView liveView;
     private TextView captureView;
     private TextView cameraDiagnosticGuideView;
+    private TextView cameraFieldTestStatusView;
     private TextView aiImagePreprocessingStatusView;
     private TextView phase2NightTestWizardView;
     private TextView calibrationChecklistView;
+    private TextView aiImuDriftSessionView;
+    private Button calibrationChecklistToggleButton;
+    private Button cameraDiagnosticGuideToggleButton;
     private Button aiImagePreprocessingToggleButton;
     private Button startImuButton;
     private LinearLayout homeActionsRow;
@@ -178,6 +183,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private String latestProfileJson = "";
     private String latestHistoryJson = "";
     private String latestCalibrationEvidenceJson = "";
+    private String latestAiImuDriftAnalysisJson = "";
     private String latestCameraReportSummary = "";
     private String latestReport = "";
     private String latestReadinessGrade = "NOT RUN";
@@ -185,8 +191,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private boolean compatibilityCheckRun = false;
     private boolean nightVisionEnabled = false;
     private boolean aiImagePreprocessingEnabled = false;
+    private boolean calibrationChecklistExpanded = false;
+    private boolean cameraDiagnosticGuideExpanded = false;
     private boolean liveImuStarted = false;
     private boolean liveImuSampleReceived = false;
+    private boolean liveImuEverSampleReceived = false;
     private Uri outputTreeUri;
     private String currentScreenName = "home";
     private String pendingGpsBaseUrl = "";
@@ -201,6 +210,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private long latestPressureAtMs = 0L;
     private String lastUploadedFrameId = "";
     private boolean fullDiagnosticRunning = false;
+    private boolean aiImuDriftSolveRunning = false;
+    private String aiImuDriftSolveRole = "";
+    private JSONObject aiImuDriftInitialSolveAltAz;
+    private float[] aiImuDriftMoveStartOrientation;
+    private float[] aiImuDriftMoveEndOrientation;
+    private long aiImuDriftMoveStartMs = 0L;
+    private int aiImuDriftCycleCounter = 0;
+    private final JSONArray aiImuDriftCycles = new JSONArray();
+    private float[] latestDeviceOrientationDeg;
     private int phase2NightTestRepeatCount = 0;
     private SolveCandidateFrame selectedSolveCandidateFrame;
     private String latestSolveCandidateRankingSummary = "";
@@ -345,20 +363,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     @Override
     public void onBackPressed() {
-        if (calibrationScreen != null && calibrationScreen.getVisibility() == View.VISIBLE) {
-            showScreen("home");
-            return;
-        }
-        if (remoteScreen != null && remoteScreen.getVisibility() == View.VISIBLE) {
-            showScreen("home");
-            return;
-        }
         if (remoteWebScreen != null && remoteWebScreen.getVisibility() == View.VISIBLE) {
             if (remoteWebView != null && remoteWebView.canGoBack()) {
                 remoteWebView.goBack();
             } else {
                 showScreen("remote");
             }
+            return;
+        }
+        if (!"home".equals(currentScreenName)) {
+            showScreen(parentScreenFor(currentScreenName));
             return;
         }
         super.onBackPressed();
@@ -449,7 +463,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         helpTextView.setText(helpTextStyled());
         helpScreen.addView(helpTextView);
 
-        addBackRow(capabilitiesScreen);
+        addBackRow(capabilitiesScreen, "setup");
         addSectionHeader(capabilitiesScreen, "01", "Diagnostics", "Sensor, GPS, camera, and readiness checks.");
         capabilityActionView = statusCard();
         capabilitiesScreen.addView(capabilityActionView);
@@ -558,13 +572,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         sendMountReferenceImu.setOnClickListener(v -> sendImuBatchToPiFinder("mounted_reference"));
         remoteImuRow.addView(sendMountReferenceImu);
 
-        addBackRow(calibrationScreen);
+        addBackRow(calibrationScreen, "setup");
         addPlainSectionHeader(calibrationScreen, "Calibration", "Step through phone mount checks.");
+        addCalibrationChecklistToggle(calibrationScreen);
         calibrationStatusView = statusCard();
         calibrationScreen.addView(calibrationStatusView);
-        calibrationChecklistView = statusCard();
-        calibrationChecklistView.setText(calibrationChecklistText());
-        calibrationScreen.addView(calibrationChecklistView);
         calibrationTargetInput = makeTextInput("Reference target or note");
         calibrationScreen.addView(calibrationTargetInput);
         LinearLayout calibrationConnectionRow = buttonRow();
@@ -602,20 +614,45 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button aiImuDrift = makeSecondaryButton("AI IMU drift");
         aiImuDrift.setOnClickListener(v -> showAiImuDriftAnalysisGuide());
         calibrationEvidenceRow.addView(aiImuDrift);
+        LinearLayout aiImuDriftRow1 = buttonRow();
+        calibrationScreen.addView(aiImuDriftRow1);
+        Button startAiSession = makeSecondaryButton("Start AI session");
+        startAiSession.setOnClickListener(v -> startAiImuDriftSession());
+        aiImuDriftRow1.addView(startAiSession);
+        Button initialSolve = makeSecondaryButton("Initial solve");
+        initialSolve.setOnClickListener(v -> captureAiImuDriftInitialSolve());
+        aiImuDriftRow1.addView(initialSolve);
+        LinearLayout aiImuDriftRow2 = buttonRow();
+        calibrationScreen.addView(aiImuDriftRow2);
+        Button startMove = makeSecondaryButton("Start move");
+        startMove.setOnClickListener(v -> startAiImuDriftMove());
+        aiImuDriftRow2.addView(startMove);
+        Button finishCycle = makeSecondaryButton("Finish cycle");
+        finishCycle.setOnClickListener(v -> finishAiImuDriftCycle());
+        aiImuDriftRow2.addView(finishCycle);
+        LinearLayout aiImuDriftRow3 = buttonRow();
+        calibrationScreen.addView(aiImuDriftRow3);
+        Button analyzeDrift = makeSecondaryButton("Analyze drift");
+        analyzeDrift.setOnClickListener(v -> analyzeAiImuDriftSession());
+        aiImuDriftRow3.addView(analyzeDrift);
+        aiImuDriftSessionView = sectionText();
+        aiImuDriftSessionView.setText("AI IMU Drift Session\nStart session, capture an initial solve, move, finish cycle, then analyze.");
+        calibrationScreen.addView(aiImuDriftSessionView);
 
         addRemoteWebToolbar(remoteWebScreen);
         remoteWebView = makeRemoteWebView();
         remoteWebScreen.addView(remoteWebView);
 
-        addBackRow(cameraScreen);
+        addBackRow(cameraScreen, "setup");
         addPlainSectionHeader(cameraScreen, "Camera Lab", "Capture, upload, and review camera diagnostics.");
         cameraFolderStatusView = statusCard();
         cameraScreen.addView(cameraFolderStatusView);
 
         addAreaTitle(cameraScreen, "Field test");
-        cameraDiagnosticGuideView = statusCard();
-        updateMobileCameraDiagnosticGuide("ready");
-        cameraScreen.addView(cameraDiagnosticGuideView);
+        addCameraDiagnosticGuideToggle(cameraScreen);
+        cameraFieldTestStatusView = statusCard();
+        cameraScreen.addView(cameraFieldTestStatusView);
+        updateCameraFieldTestStatus("idle", "Ready", "Run full diagnostic when PiFinder is reachable.");
 
         LinearLayout aiPreprocessingRow = buttonRow();
         cameraScreen.addView(aiPreprocessingRow);
@@ -648,7 +685,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button copyReportSummary = makeSecondaryButton("Copy summary");
         copyReportSummary.setOnClickListener(v -> copyCameraReportSummary());
         reportRow.addView(copyReportSummary);
-        Button markPhase2Repeat = makeSecondaryButton("Mark repeat");
+        Button markPhase2Repeat = makeSecondaryButton("Mark repeat run");
         markPhase2Repeat.setOnClickListener(v -> markPhase2NightTestRepeat());
         reportRow.addView(markPhase2Repeat);
 
@@ -715,7 +752,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraReportView = sectionText();
         cameraScreen.addView(cameraReportView);
 
-        showScreen(resolveInitialScreen());
+        String initialScreen = resolveInitialScreen();
+        showScreen(initialScreen);
+        if ("remoteWeb".equals(initialScreen)) {
+            restoreRemoteWebUrlAfterThemeToggle();
+        }
         updateCapabilityAction("Run check first. Use live IMU only when you need sensor debugging.");
         updateCameraFolderStatus();
         updateHomeStatus();
@@ -785,6 +826,23 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         resizeRemoteWebView();
     }
 
+    private String parentScreenFor(String screenName) {
+        switch (screenName) {
+            case "camera":
+            case "calibration":
+            case "capabilities":
+                return "setup";
+            case "history":
+                return "capabilities";
+            case "remote":
+            case "setup":
+            case "help":
+                return "home";
+            default:
+                return "home";
+        }
+    }
+
     private void addBackRow(LinearLayout root) {
         addBackRow(root, "home");
     }
@@ -801,6 +859,64 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, 1, 1);
         row.addView(spacer, params);
         row.addView(makeNightVisionToggleButton());
+    }
+
+    private void addCalibrationChecklistToggle(LinearLayout root) {
+        calibrationChecklistToggleButton = makeHeaderButton("Phone mount checklist");
+        calibrationChecklistToggleButton.setTypeface(Typeface.DEFAULT_BOLD);
+        calibrationChecklistToggleButton.setOnClickListener(v -> toggleCalibrationChecklist());
+        root.addView(calibrationChecklistToggleButton);
+
+        calibrationChecklistView = statusCard();
+        calibrationChecklistView.setText(calibrationChecklistText());
+        calibrationChecklistView.setVisibility(View.GONE);
+        root.addView(calibrationChecklistView);
+        updateCalibrationChecklistToggleLabel();
+    }
+
+    private void toggleCalibrationChecklist() {
+        calibrationChecklistExpanded = !calibrationChecklistExpanded;
+        if (calibrationChecklistView != null) {
+            calibrationChecklistView.setVisibility(calibrationChecklistExpanded ? View.VISIBLE : View.GONE);
+        }
+        updateCalibrationChecklistToggleLabel();
+    }
+
+    private void updateCalibrationChecklistToggleLabel() {
+        if (calibrationChecklistToggleButton != null) {
+            calibrationChecklistToggleButton.setText(
+                    calibrationChecklistExpanded ? "▴ Hide Phone Mount Checklist" : "▾ Show Phone Mount Checklist"
+            );
+        }
+    }
+
+    private void addCameraDiagnosticGuideToggle(LinearLayout root) {
+        cameraDiagnosticGuideToggleButton = makeHeaderButton("Guided field test");
+        cameraDiagnosticGuideToggleButton.setTypeface(Typeface.DEFAULT_BOLD);
+        cameraDiagnosticGuideToggleButton.setOnClickListener(v -> toggleCameraDiagnosticGuide());
+        root.addView(cameraDiagnosticGuideToggleButton);
+
+        cameraDiagnosticGuideView = statusCard();
+        updateMobileCameraDiagnosticGuide("ready");
+        cameraDiagnosticGuideView.setVisibility(View.GONE);
+        root.addView(cameraDiagnosticGuideView);
+        updateCameraDiagnosticGuideToggleLabel();
+    }
+
+    private void toggleCameraDiagnosticGuide() {
+        cameraDiagnosticGuideExpanded = !cameraDiagnosticGuideExpanded;
+        if (cameraDiagnosticGuideView != null) {
+            cameraDiagnosticGuideView.setVisibility(cameraDiagnosticGuideExpanded ? View.VISIBLE : View.GONE);
+        }
+        updateCameraDiagnosticGuideToggleLabel();
+    }
+
+    private void updateCameraDiagnosticGuideToggleLabel() {
+        if (cameraDiagnosticGuideToggleButton != null) {
+            cameraDiagnosticGuideToggleButton.setText(
+                    cameraDiagnosticGuideExpanded ? "▴ Hide Guided Field Test" : "▾ Show Guided Field Test"
+            );
+        }
     }
 
     private void addRemoteWebToolbar(LinearLayout root) {
@@ -1174,6 +1290,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             @Override
             public void onPageFinished(WebView view, String url) {
                 updateRemoteStatus("Loaded\n" + url);
+                applyRemoteWebNightVision();
             }
 
             @Override
@@ -1509,6 +1626,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             int status = connection.getResponseCode();
             String body = readHttpBody(connection, status);
             if (status < 200 || status >= 300) {
+                if (status == 404) {
+                    return "Mount profile endpoint not available"
+                            + "\nUpdate the PiFinder Lite backend or continue without profile overlay.";
+                }
                 return "Mount profile check failed\nHTTP " + status + "\n" + responseErrorSummary(body);
             }
             JSONObject json = new JSONObject(body);
@@ -1996,12 +2117,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void runFullMobileCameraDiagnostic() {
         if (fullDiagnosticRunning) {
             captureView.setText("Full diagnostic already running.\nWait for the current report.");
+            updateCameraFieldTestStatus("running", "Already running", "Wait for the current diagnostic report.");
             return;
         }
         if (outputTreeUri == null) {
             updateCameraFolderStatus();
             captureView.setText("Full diagnostic needs a save folder.\nChoose Save Folder first.");
             updateMobileCameraDiagnosticGuide("capture_needed");
+            updateCameraFieldTestStatus("failed", "Save folder needed", "Choose Save folder before running the diagnostic.");
             pickOutputFolder();
             return;
         }
@@ -2013,11 +2136,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         if (baseUrl.length() == 0) {
             captureView.setText("PiFinder URL missing.\nSet it in PiFinder Remote first.");
             updateMobileCameraDiagnosticGuide("remote_needed");
+            updateCameraFieldTestStatus("failed", "PiFinder URL missing", "Set the base URL in PiFinder Remote.");
             return;
         }
         fullDiagnosticRunning = true;
         lastUploadedFrameId = "";
         updateMobileCameraDiagnosticGuide("full_running");
+        updateCameraFieldTestStatus("running", "Capturing frames", "Run full diagnostic started.");
         captureView.setText("Full diagnostic running...\n1. Capturing solve-candidate JPEG burst.");
         startCaptureTest("solve_candidate_burst", 256);
     }
@@ -2031,6 +2156,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             fullDiagnosticRunning = false;
             captureView.setText("Full diagnostic failed.\nNo JPEG was captured.");
             updateMobileCameraDiagnosticGuide("capture_needed");
+            updateCameraFieldTestStatus("failed", "No frames captured", "Run full diagnostic again after checking camera permission and save folder.");
             return;
         }
         String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
@@ -2038,6 +2164,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             fullDiagnosticRunning = false;
             captureView.setText("Full diagnostic failed.\nPiFinder URL missing.");
             updateMobileCameraDiagnosticGuide("remote_needed");
+            updateCameraFieldTestStatus("failed", "PiFinder URL missing", "Set the base URL in PiFinder Remote.");
             return;
         }
         if (candidates.isEmpty()) {
@@ -2053,6 +2180,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         captureView.setText("Full diagnostic running...\n2. Uploading "
                 + candidates.size() + " distributed candidate(s).");
         updateMobileCameraDiagnosticGuide("uploading");
+        updateCameraFieldTestStatus("running", "Uploading candidates", "Sending selected frames to PiFinder.");
         new Thread(() -> {
             List<SolveCandidateResult> results = new ArrayList<>();
             int total = candidates.size();
@@ -2064,6 +2192,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                             + "Candidate " + displayIndex + "/" + total
                             + "\n" + candidate.filename);
                     updateMobileCameraDiagnosticGuide("solving");
+                    updateCameraFieldTestStatus("running", "Solving candidate " + displayIndex + "/" + total, candidate.filename);
                 });
                 String metadataJson = buildCameraFrameMetadataJson(
                         candidate.filename,
@@ -2112,8 +2241,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     && selected.solveMessage.startsWith("Diagnostic solve complete");
             runOnUiThread(() -> {
                 fullDiagnosticRunning = false;
+                latestCameraReportSummary = "Latest full diagnostic\n" + finalMessage;
                 captureView.setText(finalMessage);
                 updateMobileCameraDiagnosticGuide(success ? "solve_complete" : "solve_failed");
+                updateCameraFieldTestStatus(
+                        success ? "complete" : "failed",
+                        success ? "Diagnostic complete" : "Diagnostic finished with issues",
+                        success ? "Review reports and mark repeat if this run should count." : "Review the result, then retry when ready."
+                );
                 updatePhase2NightTestWizard(success ? "review" : "ready");
             });
         }).start();
@@ -2124,19 +2259,26 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         if (baseUrl.length() == 0) {
             cameraReportView.setText("Camera reports unavailable\nSet the PiFinder URL in PiFinder Remote first.");
             updateMobileCameraDiagnosticGuide("remote_needed");
+            updateCameraFieldTestStatus("failed", "Reports unavailable", "Set the PiFinder URL in PiFinder Remote.");
             return;
         }
         cameraReportView.setText("Loading camera diagnostic reports...\n" + baseUrl + "/mobile/camera_reports?limit=20");
+        updateCameraFieldTestStatus("running", "Loading reports", "Requesting saved camera reports from PiFinder.");
         new Thread(() -> {
             String message = getCameraDiagnosticReports(baseUrl);
             runOnUiThread(() -> {
                 cameraReportView.setText(message);
-                updateMobileCameraDiagnosticGuide(
-                        message.startsWith("Camera diagnostic history") ? "reports_loaded" : "solve_failed"
+                boolean loaded = message.startsWith("Camera diagnostic history");
+                if (!loaded && latestCameraReportSummary.length() == 0) {
+                    latestCameraReportSummary = message;
+                }
+                updateMobileCameraDiagnosticGuide(loaded ? "reports_loaded" : "solve_failed");
+                updateCameraFieldTestStatus(
+                        loaded ? "complete" : "failed",
+                        loaded ? "Reports loaded" : "Reports failed",
+                        loaded ? "Use Copy summary for your notes." : "Check PiFinder connection and try again."
                 );
-                updatePhase2NightTestWizard(
-                        message.startsWith("Camera diagnostic history") ? "reports_loaded" : "ready"
-                );
+                updatePhase2NightTestWizard(loaded ? "reports_loaded" : "ready");
             });
         }).start();
     }
@@ -2154,6 +2296,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             int status = connection.getResponseCode();
             String responseBody = readHttpBody(connection, status);
             if (status < 200 || status >= 300) {
+                if (status == 404) {
+                    return "Camera reports endpoint not available"
+                            + "\nUpdate the PiFinder Lite backend or continue with the latest local diagnostic summary.";
+                }
                 return "Camera reports failed\nHTTP " + status + "\n" + responseErrorSummary(responseBody);
             }
             JSONObject json = new JSONObject(responseBody);
@@ -2176,11 +2322,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             return;
         }
         String text = "Guided field test\n"
-                + "1. Save folder.\n"
-                + "2. Night wizard if you need the checklist.\n"
-                + "3. Run full diagnostic.\n"
-                + "4. View reports, copy summary, then mark repeat.\n"
-                + "Advanced captures below are for debugging individual steps.\n\n";
+                + "This guide explains what the field test does.\n"
+                + "Use the Current field test card for live progress.\n\n"
+                + "Field test steps\n"
+                + "1. Send GPS from Calibration.\n"
+                + "2. Run full diagnostic.\n"
+                + "3. View reports.\n"
+                + "4. Mark repeat run when repeating the same setup.\n\n"
+                + "Advanced captures below are for troubleshooting individual camera steps.\n\n";
         if ("capturing".equals(stage)) {
             text += "Status: capturing a solve-targeted JPEG burst.";
         } else if ("full_running".equals(stage)) {
@@ -2211,14 +2360,27 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         cameraDiagnosticGuideView.setText(text);
     }
 
+    private void updateCameraFieldTestStatus(String status, String step, String detail) {
+        if (cameraFieldTestStatusView == null) {
+            return;
+        }
+        cameraFieldTestStatusView.setText(
+                "Current field test\n"
+                        + "Status: " + status + "\n"
+                        + "Step: " + step + "\n"
+                        + "Last action: " + detail
+        );
+    }
+
     private String mobileCameraDiagnosticPlanText() {
         return "PiFinder Lite mobile camera diagnostic\n"
                 + "1. Start PiFinder Lite on Raspberry.\n"
                 + "2. Set the PiFinder base URL in the Android app.\n"
                 + "3. Camera Lab -> Save Folder.\n"
-                + "4. Tap Run full diagnostic.\n"
-                + "5. Review uploaded frame ID, quality score, solve/skipped state, and stored report.\n"
-                + "6. Use Advanced captures only when debugging individual steps.\n";
+                + "4. Calibration -> Send GPS.\n"
+                + "5. Tap Run full diagnostic.\n"
+                + "6. Review uploaded frame ID, quality score, solve/skipped state, and stored report.\n"
+                + "7. Use Advanced captures only when debugging individual steps.\n";
     }
 
     private void showPhase2NightTestWizard() {
@@ -2231,6 +2393,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private void markPhase2NightTestRepeat() {
         phase2NightTestRepeatCount += 1;
         updatePhase2NightTestWizard("repeat_marked");
+        updateCameraFieldTestStatus("idle", "Repeat run marked", "Run full diagnostic again under the same setup.");
+        if (cameraReportView != null) {
+            cameraReportView.setText("Repeat run marked\nCount: " + phase2NightTestRepeatCount
+                    + "\nRun full diagnostic again under the same setup.");
+        }
         Toast.makeText(this, "Night test repeat marked", Toast.LENGTH_SHORT).show();
     }
 
@@ -2249,7 +2416,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "Status: " + phase2NightTestWizardStatus(stage) + "\n\n"
                 + "Checklist\n"
                 + "1. PiFinder URL: " + (baseUrl.length() == 0 ? "missing" : baseUrl) + "\n"
-                + "2. In PiFinder Remote: TEST CONNECTION, SEND PROFILE, SEND ENV, SEND GPS.\n"
+                + "2. In Calibration: SEND GPS.\n"
                 + "3. Save folder: " + folderStatus + "\n"
                 + "4. In Camera Lab: Run full diagnostic.\n"
                 + "5. Use View reports, then Copy summary for sanitized notes.\n"
@@ -2281,7 +2448,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "Field steps\n"
                 + "1. Start PiFinder Lite on Raspberry.\n"
                 + "2. Set Android PiFinder base URL and run TEST CONNECTION.\n"
-                + "3. SEND PROFILE, SEND ENV, and SEND GPS.\n"
+                + "3. In Calibration, SEND GPS.\n"
                 + "4. Camera Lab -> SAVE FOLDER.\n"
                 + "5. Run Full Diagnostic.\n"
                 + "6. View Reports and copy the sanitized report summary.\n"
@@ -2409,6 +2576,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private String postDiagnosticCameraSolve(String baseUrl, String frameId) {
+        try {
+            return formatDiagnosticSolveResult(postDiagnosticCameraSolveJson(baseUrl, frameId));
+        } catch (Exception e) {
+            return "Diagnostic solve failed\n" + shortError(e)
+                    + "\nFrame ID: " + frameId
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        }
+    }
+
+    private JSONObject postDiagnosticCameraSolveJson(String baseUrl, String frameId) throws Exception {
         HttpURLConnection connection = null;
         try {
             JSONObject payload = new JSONObject();
@@ -2434,17 +2611,16 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             int status = connection.getResponseCode();
             String responseBody = readHttpBody(connection, status);
             if (status < 200 || status >= 300) {
-                return "Diagnostic solve failed\nHTTP " + status + "\n" + responseErrorSummary(responseBody);
+                if (status == 404) {
+                    throw new IOException("Diagnostic solve endpoint not available. Update the PiFinder Lite backend before camera solve tests.");
+                }
+                throw new IOException("HTTP " + status + ": " + responseErrorSummary(responseBody));
             }
             JSONObject json = new JSONObject(responseBody);
             if (!json.optBoolean("ok", false)) {
-                return "Diagnostic solve failed\nServer returned ok=false.";
+                throw new JSONException("Server returned ok=false.");
             }
-            return formatDiagnosticSolveResult(json);
-        } catch (Exception e) {
-            return "Diagnostic solve failed\n" + shortError(e)
-                    + "\nFrame ID: " + frameId
-                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            return json;
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -2735,7 +2911,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         result.append("\n\nRecent reports");
         if (reports == null || reports.length() == 0) {
-            result.append("\nNo reports yet. Run Full Diagnostic first.");
+            result.append("\nNo reports available yet. Run full diagnostic first.");
             latestCameraReportSummary = result.toString();
             return latestCameraReportSummary;
         }
@@ -3039,6 +3215,225 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         copyAiImuDriftAnalysisEvidence();
     }
 
+    private void startAiImuDriftSession() {
+        while (aiImuDriftCycles.length() > 0) {
+            aiImuDriftCycles.remove(0);
+        }
+        aiImuDriftInitialSolveAltAz = null;
+        aiImuDriftMoveStartOrientation = null;
+        aiImuDriftMoveEndOrientation = null;
+        aiImuDriftMoveStartMs = 0L;
+        aiImuDriftCycleCounter = 0;
+        latestAiImuDriftAnalysisJson = "";
+        updateAiImuDriftSessionView("AI IMU Drift Session\nReady.\n1. Send GPS.\n2. Initial solve.\n3. Start move.\n4. Finish cycle.\n5. Repeat 3+ cycles, then Analyze drift.");
+    }
+
+    private void captureAiImuDriftInitialSolve() {
+        runAiImuDriftSolve("initial");
+    }
+
+    private void startAiImuDriftMove() {
+        if (aiImuDriftInitialSolveAltAz == null
+                || !aiImuDriftInitialSolveAltAz.optBoolean("available", false)) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nInitial solve required before Start move.");
+            return;
+        }
+        if (!liveImuStarted) {
+            startLiveSensors();
+        }
+        if (latestDeviceOrientationDeg == null) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nWaiting for rotation vector sample. Keep the app open, move the phone gently, then tap Start move again.");
+            return;
+        }
+        aiImuDriftMoveStartOrientation = Arrays.copyOf(latestDeviceOrientationDeg, latestDeviceOrientationDeg.length);
+        aiImuDriftMoveEndOrientation = null;
+        aiImuDriftMoveStartMs = System.currentTimeMillis();
+        updateAiImuDriftSessionView("AI IMU Drift Session\nMove started.\nMove the telescope, stop, then tap Finish cycle.");
+    }
+
+    private void finishAiImuDriftCycle() {
+        if (aiImuDriftMoveStartOrientation == null || aiImuDriftMoveStartMs <= 0L) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nStart move before Finish cycle.");
+            return;
+        }
+        if (latestDeviceOrientationDeg == null) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nNo final IMU orientation sample yet.");
+            return;
+        }
+        aiImuDriftMoveEndOrientation = Arrays.copyOf(latestDeviceOrientationDeg, latestDeviceOrientationDeg.length);
+        runAiImuDriftSolve("final");
+    }
+
+    private void analyzeAiImuDriftSession() {
+        if (aiImuDriftCycles.length() == 0) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nNo cycles yet. Finish at least one cycle before analysis.");
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nPiFinder URL missing.");
+            return;
+        }
+        updateAiImuDriftSessionView("AI IMU Drift Session\nAnalyzing " + aiImuDriftCycles.length() + " cycle(s)...");
+        String payload = aiImuDriftSessionPayloadJson();
+        new Thread(() -> {
+            String message = postAiImuDriftAnalysis(baseUrl, payload);
+            runOnUiThread(() -> updateAiImuDriftSessionView(message));
+        }).start();
+    }
+
+    private void updateAiImuDriftSessionView(String message) {
+        if (aiImuDriftSessionView != null) {
+            aiImuDriftSessionView.setText(message);
+        }
+        updateCalibrationStatus(message);
+    }
+
+    private void runAiImuDriftSolve(String role) {
+        if (aiImuDriftSolveRunning || fullDiagnosticRunning) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nA solve is already running.");
+            return;
+        }
+        if (outputTreeUri == null) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nChoose Camera Lab Save folder before automated solves.");
+            pickOutputFolder();
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestRuntimePermissions();
+            return;
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.length() == 0) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nPiFinder URL missing.");
+            return;
+        }
+        aiImuDriftSolveRunning = true;
+        aiImuDriftSolveRole = role;
+        updateAiImuDriftSessionView("AI IMU Drift Session\nCapturing " + role + " solve...");
+        startCaptureTest("solve_candidate_burst", 256);
+    }
+
+    private void continueAiImuDriftSolve() {
+        if (!aiImuDriftSolveRunning) {
+            return;
+        }
+        List<SolveCandidateFrame> candidates = selectSolveCandidateFramesForUpload();
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (candidates.isEmpty() || baseUrl.length() == 0) {
+            aiImuDriftSolveRunning = false;
+            updateAiImuDriftSessionView("AI IMU Drift Session\nSolve failed before upload. Capture candidates or PiFinder URL missing.");
+            return;
+        }
+        String role = aiImuDriftSolveRole;
+        updateAiImuDriftSessionView("AI IMU Drift Session\nUploading " + candidates.size() + " candidate(s) for " + role + " solve.");
+        new Thread(() -> {
+            JSONObject selectedSolve = null;
+            String lastError = "";
+            for (SolveCandidateFrame candidate : candidates) {
+                String metadataJson = buildCameraFrameMetadataJson(candidate.filename, candidate.bytes.length, candidate, latestSolveCandidateRankingSummary);
+                String uploadMessage = postMobileCameraFrame(baseUrl, candidate.filename, Arrays.copyOf(candidate.bytes, candidate.bytes.length), metadataJson);
+                String frameId = lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim();
+                if (!uploadMessage.startsWith("Camera frame uploaded") || frameId.length() == 0) {
+                    lastError = uploadMessage;
+                    continue;
+                }
+                try {
+                    JSONObject solveJson = postDiagnosticCameraSolveJson(baseUrl, frameId);
+                    JSONObject altAz = solveJson.optJSONObject("solve_altaz");
+                    if (altAz != null && altAz.optBoolean("available", false)) {
+                        selectedSolve = solveJson;
+                        break;
+                    }
+                    lastError = formatDiagnosticSolveResult(solveJson);
+                } catch (Exception e) {
+                    lastError = shortError(e);
+                }
+            }
+            JSONObject finalSelectedSolve = selectedSolve;
+            String finalLastError = lastError;
+            runOnUiThread(() -> completeAiImuDriftSolve(role, finalSelectedSolve, finalLastError));
+        }).start();
+    }
+
+    private void completeAiImuDriftSolve(String role, JSONObject solveJson, String lastError) {
+        aiImuDriftSolveRunning = false;
+        aiImuDriftSolveRole = "";
+        if (solveJson == null) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nNo solved Alt/Az available.\n" + lastError);
+            return;
+        }
+        JSONObject altAz = solveJson.optJSONObject("solve_altaz");
+        if ("initial".equals(role)) {
+            aiImuDriftInitialSolveAltAz = altAz;
+            updateAiImuDriftSessionView("AI IMU Drift Session\nInitial solve captured.\nAlt: "
+                    + format(altAz.optDouble("alt_deg")) + "\nAz: " + format(altAz.optDouble("az_deg"))
+                    + "\nNow tap Start move.");
+            return;
+        }
+        addAiImuDriftCycle(altAz);
+    }
+
+    private void addAiImuDriftCycle(JSONObject finalSolveAltAz) {
+        try {
+            aiImuDriftCycleCounter++;
+            JSONObject cycle = new JSONObject();
+            cycle.put("cycle_id", "cycle_" + aiImuDriftCycleCounter);
+            cycle.put("remount_id", "mount_a");
+            cycle.put("duration_s", Math.max(0, Math.round((System.currentTimeMillis() - aiImuDriftMoveStartMs) / 1000.0)));
+            cycle.put("predicted_final", predictedAiImuFinalAltAz());
+            cycle.put("solve_final", altAzPointJson(finalSolveAltAz));
+            aiImuDriftCycles.put(cycle);
+            aiImuDriftInitialSolveAltAz = finalSolveAltAz;
+            aiImuDriftMoveStartOrientation = null;
+            aiImuDriftMoveEndOrientation = null;
+            aiImuDriftMoveStartMs = 0L;
+            updateAiImuDriftSessionView("AI IMU Drift Session\nCycle added: " + cycle.optString("cycle_id")
+                    + "\nCycles ready: " + aiImuDriftCycles.length()
+                    + "\nRepeat Start move / Finish cycle, or Analyze drift.");
+        } catch (JSONException e) {
+            updateAiImuDriftSessionView("AI IMU Drift Session\nCould not build cycle JSON: " + e.getMessage());
+        }
+    }
+
+    private JSONObject predictedAiImuFinalAltAz() throws JSONException {
+        double initialAlt = aiImuDriftInitialSolveAltAz.optDouble("alt_deg");
+        double initialAz = aiImuDriftInitialSolveAltAz.optDouble("az_deg");
+        double deltaAz = angleDeltaDeg(aiImuDriftMoveEndOrientation[0], aiImuDriftMoveStartOrientation[0]);
+        double deltaAlt = aiImuDriftMoveEndOrientation[1] - aiImuDriftMoveStartOrientation[1];
+        JSONObject predicted = new JSONObject();
+        predicted.put("alt_deg", clamp(initialAlt + deltaAlt, -90.0, 90.0));
+        predicted.put("az_deg", wrap360(initialAz + deltaAz));
+        return predicted;
+    }
+
+    private JSONObject altAzPointJson(JSONObject source) throws JSONException {
+        JSONObject point = new JSONObject();
+        point.put("alt_deg", source.optDouble("alt_deg"));
+        point.put("az_deg", source.optDouble("az_deg"));
+        return point;
+    }
+
+    private double angleDeltaDeg(double end, double start) {
+        double delta = end - start;
+        while (delta > 180.0) {
+            delta -= 360.0;
+        }
+        while (delta < -180.0) {
+            delta += 360.0;
+        }
+        return delta;
+    }
+
+    private double wrap360(double value) {
+        double wrapped = value % 360.0;
+        return wrapped < 0 ? wrapped + 360.0 : wrapped;
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     private String helpText() {
         return "GET STARTED\n"
                 + "1. Start PiFinder on the Raspberry Pi.\n"
@@ -3227,7 +3622,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         String pendingScreen = prefs.getString(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE, "home");
         prefs.edit().remove(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE).apply();
         if ("remoteWeb".equals(pendingScreen)) {
-            return "remote";
+            return "remoteWeb";
         }
         if (isKnownScreen(pendingScreen)) {
             return pendingScreen;
@@ -3252,8 +3647,50 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 .edit()
                 .putBoolean(KEY_NIGHT_VISION_ENABLED, !nightVisionEnabled)
                 .putString(KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE, currentScreenName)
+                .putString(KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE, currentRemoteWebUrl())
                 .apply();
         recreate();
+    }
+
+    private String currentRemoteWebUrl() {
+        if (remoteWebView != null && remoteWebView.getUrl() != null && !remoteWebView.getUrl().isEmpty()) {
+            return remoteWebView.getUrl();
+        }
+        String baseUrl = normalizeRemoteBaseUrl(loadRemoteBaseUrl());
+        if (baseUrl.isEmpty()) {
+            return "";
+        }
+        return baseUrl + "/remote";
+    }
+
+    private void restoreRemoteWebUrlAfterThemeToggle() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String remoteWebUrl = prefs.getString(KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE, "");
+        prefs.edit().remove(KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE).apply();
+        if (remoteWebView != null && remoteWebUrl != null && !remoteWebUrl.isEmpty()) {
+            remoteWebView.loadUrl(remoteWebUrl);
+        }
+    }
+
+    private void applyRemoteWebNightVision() {
+        if (remoteWebView == null) {
+            return;
+        }
+        String script = "(function(){"
+                + "var id='pifinder-mobile-night-vision-style';"
+                + "var existing=document.getElementById(id);"
+                + (nightVisionEnabled
+                ? "if(!existing){"
+                + "var style=document.createElement('style');"
+                + "style.id=id;"
+                + "style.textContent='html{background:#000!important;"
+                + "filter:grayscale(1) sepia(1) saturate(7) hue-rotate(315deg) "
+                + "brightness(.72) contrast(1.08)!important;}body{background:#000!important;}';"
+                + "document.head.appendChild(style);"
+                + "}"
+                : "if(existing){existing.remove();}")
+                + "})();";
+        remoteWebView.evaluateJavascript(script, null);
     }
 
     private void applySystemBars() {
@@ -3476,6 +3913,63 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         } catch (JSONException e) {
             return "{\"error\":\"ai_imu_drift_evidence_failed\",\"message\":\""
                     + e.getMessage() + "\"}";
+        }
+    }
+
+    private String aiImuDriftSessionPayloadJson() {
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("schema", "pifinder-mobile-ai-imu-drift-session-v0");
+            payload.put("created_utc", utcIso(System.currentTimeMillis()));
+            payload.put("diagnostic_only", true);
+            payload.put("integrator_updated", false);
+            payload.put("runtime_pointing_updated", false);
+            payload.put("remote_base_url", normalizeRemoteBaseUrl(loadRemoteBaseUrl()));
+            payload.put("reference_target", calibrationReferenceText());
+            payload.put("app", appJson());
+            payload.put("device", deviceJson());
+            payload.put("cycles", aiImuDriftCycles);
+            return payload.toString(2);
+        } catch (JSONException e) {
+            return "{\"error\":\"ai_imu_drift_session_failed\",\"message\":\""
+                    + e.getMessage() + "\"}";
+        }
+    }
+
+    private String postAiImuDriftAnalysis(String baseUrl, String payloadJson) {
+        HttpURLConnection connection = null;
+        try {
+            byte[] body = payloadJson.getBytes(StandardCharsets.UTF_8);
+            URL url = new URL(baseUrl + "/mobile/imu_drift_analysis");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(30000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+            int status = connection.getResponseCode();
+            String responseBody = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                return "AI IMU Drift Analysis failed\nHTTP " + status + "\n" + responseErrorSummary(responseBody);
+            }
+            latestAiImuDriftAnalysisJson = responseBody;
+            JSONObject json = new JSONObject(responseBody);
+            return "AI IMU Drift Analysis\nVerdict: " + json.optString("verdict", "unknown")
+                    + "\nConfidence: " + json.optString("confidence", "unknown")
+                    + "\nCycles: " + json.optInt("cycle_count", 0)
+                    + "\nMean error deg: " + json.optDouble("mean_error_deg", -1)
+                    + "\nRecommendation: " + json.optString("recommendation", "");
+        } catch (Exception e) {
+            return "AI IMU Drift Analysis failed\n" + shortError(e);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
     }
 
@@ -3942,9 +4436,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             lines.add("WARN  Location: Android location service unavailable");
         }
 
-        if (!liveImuStarted) {
+        if (!liveImuStarted && !liveImuEverSampleReceived) {
             lines.add("NOT TESTED  Live IMU stream: press START IMU before checking dynamic sensor behavior");
-        } else if (liveImuSampleReceived) {
+        } else if (liveImuSampleReceived || liveImuEverSampleReceived) {
             score++;
             lines.add("PASS  Live IMU stream: sensor samples received");
         } else {
@@ -4352,6 +4846,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     public void onSensorChanged(SensorEvent event) {
         rememberEnvironmentSensorSample(event);
         liveImuSampleReceived = true;
+        liveImuEverSampleReceived = true;
         maybeCaptureImuSample(event);
         liveSensorText.setLength(0);
         liveSensorText.append("LIVE SENSOR SAMPLE\n");
@@ -4363,6 +4858,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             float[] quat = new float[4];
             SensorManager.getQuaternionFromVector(quat, event.values);
             liveSensorText.append("Quaternion [w,x,y,z]: ").append(formatValues(quat)).append("\n");
+            rememberDeviceOrientation(event.values);
         }
         if (latestLocation != null) {
             liveSensorText.append("GPS: ")
@@ -4372,6 +4868,21 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         liveSensorText.append("\nActive sensors: ").append(activeSensors.size());
         liveView.setText(liveSensorText.toString());
+    }
+
+    private void rememberDeviceOrientation(float[] rotationVector) {
+        try {
+            float[] rotationMatrix = new float[9];
+            float[] orientation = new float[3];
+            SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector);
+            SensorManager.getOrientation(rotationMatrix, orientation);
+            latestDeviceOrientationDeg = new float[]{
+                    (float) Math.toDegrees(orientation[0]),
+                    (float) Math.toDegrees(orientation[1]),
+                    (float) Math.toDegrees(orientation[2])
+            };
+        } catch (RuntimeException ignored) {
+        }
     }
 
     private void rememberEnvironmentSensorSample(SensorEvent event) {
@@ -4440,10 +4951,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void copyAiImuDriftAnalysisEvidence() {
+        String text = aiImuDriftCycles.length() > 0 ? aiImuDriftSessionPayloadJson() : aiImuDriftAnalysisEvidenceJson();
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText(
                 "PiFinder AI IMU Drift Analysis evidence JSON",
-                aiImuDriftAnalysisEvidenceJson()
+                text
         ));
         Toast.makeText(this, "AI IMU drift evidence copied", Toast.LENGTH_SHORT).show();
     }
@@ -5093,6 +5605,9 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         closeCaptureCamera();
         if ("solve_candidate_burst".equals(captureTestName) && fullDiagnosticRunning) {
             runOnUiThread(() -> continueFullMobileCameraDiagnostic());
+        }
+        if ("solve_candidate_burst".equals(captureTestName) && aiImuDriftSolveRunning) {
+            runOnUiThread(() -> continueAiImuDriftSolve());
         }
         if ("camera_sweep".equals(captureTestName)) {
             cameraSweepIndex++;

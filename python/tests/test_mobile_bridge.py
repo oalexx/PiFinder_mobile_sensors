@@ -617,6 +617,66 @@ def test_diagnostic_camera_solve_ai_preprocessing_disabled_keeps_classic_modes(t
     assert result["solve"]["ai_image_preprocessing"]["verdict"] == "disabled"
 
 
+def test_diagnostic_camera_solve_adds_solve_altaz_from_latest_mobile_gps(tmp_path, monkeypatch):
+    frame_id = "20260514T000000Z_solved_altaz"
+    frame_path = tmp_path / f"{frame_id}.jpg"
+    Image.new("RGB", (128, 128), color=(4, 4, 4)).save(frame_path)
+    gps_path = tmp_path / "gps_latest.json"
+    gps_path.write_text(
+        json.dumps(
+            {
+                "gps": {
+                    "lat": 42.38,
+                    "lon": -7.13,
+                    "altitude_m": 600,
+                    "time_utc": "2026-05-14T22:00:00Z",
+                    "source": "android-gps",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_attempt(frame_path, score, solve_timeout_ms, preprocess_modes):
+        return {
+            "attempted": True,
+            "solve_ok": True,
+            "rows": [],
+            "best": {
+                "solve_ok": True,
+                "solve_ra": 120.0,
+                "solve_dec": 22.5,
+                "solve_matches": 16,
+            },
+        }
+
+    monkeypatch.setattr(mobile_bridge, "_attempt_diagnostic_solve", fake_attempt)
+    monkeypatch.setattr(
+        mobile_bridge,
+        "_radec_to_altaz_for_gps",
+        lambda ra, dec, gps: (37.25, 181.75),
+    )
+
+    result = mobile_bridge.diagnostic_camera_solve(
+        frame_id,
+        frames_dir=tmp_path,
+        reports_dir=tmp_path / "reports",
+        gps_path=gps_path,
+        force_attempt=True,
+    )
+
+    assert result["ok"] is True
+    assert result["solve"]["solve_ok"] is True
+    assert result["solve_altaz"] == {
+        "available": True,
+        "alt_deg": 37.25,
+        "az_deg": 181.75,
+        "source": "mobile_gps_latest",
+    }
+    report_payload = json.loads(Path(result["report"]["json_report"]).read_text(encoding="utf-8"))
+    assert report_payload["solve_altaz"]["available"] is True
+
+
 def test_camera_report_history_returns_empty_session_summary(tmp_path):
     result = mobile_bridge.camera_report_history(reports_dir=tmp_path)
 
