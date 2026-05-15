@@ -12,18 +12,18 @@ class KeyboardNone(KeyboardInterface):
         try:
             self.q = q
         except Exception as e:
-            logger.error("KeyboardLocal.__init__: {}".format(e))
+            logger.error("KeyboardNone.__init__: {}".format(e))
         # manager.logger = True
-        logger.debug("KeyboardLocal.__init__")
+        logger.debug("KeyboardNone.__init__")
 
     def callback(self, key):
         self.q.put(key)
 
 
-def run_keyboard(q, shared_state, log_queue):
+def run_keyboard(q, shared_state, log_queue, bloom_remap=False):
     MultiprocLogging.configurer(log_queue)
     KeyboardNone(q)
 
     while True:
-        # We just need to not terminate here
+        # Keep the keyboard process alive while remote key callbacks feed q.
         time.sleep(1)

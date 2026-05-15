@@ -1,0 +1,67 @@
+{
+  "schema": "pifinder-mobile-mount-profile-v0",
+  "profile_id": "example-unvalidated-phone-mount",
+  "status": "uncalibrated",
+  "enabled": false,
+  "created_utc": "2026-05-08T00:00:00Z",
+  "updated_utc": "2026-05-08T00:00:00Z",
+  "device": {
+    "manufacturer": "example",
+    "model": "example-phone",
+    "android_release": "unknown",
+    "app_version": "unknown"
+  },
+  "mount": {
+    "name": "example telescope tube mount",
+    "attachment": "rigid_clamp",
+    "phone_side": "screen_out",
+    "screen_orientation": "portrait",
+    "notes": "Replace with physical mount notes before field use."
+  },
+  "sensor": {
+    "primary": "game_rotation_vector",
+    "comparison": "rotation_vector",
+    "sample_rate_hz": null,
+    "minimum_batch_duration_ms": 1500,
+    "minimum_sample_count": 50
+  },
+  "reference": {
+    "type": "manual_target",
+    "target_name": null,
+    "ra_hours": null,
+    "dec_degrees": null,
+    "alt_degrees": null,
+    "az_degrees": null,
+    "source": "manual_or_pifinder_solve"
+  },
+  "axis_mapping": {
+    "phone_forward": "unknown",
+    "phone_up": "unknown",
+    "tube_axis": "optical_axis",
+    "confidence": "LOW"
+  },
+  "offset": {
+    "representation": "quaternion",
+    "q_phone_to_tube": [1.0, 0.0, 0.0, 0.0],
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0,
+    "source_batch_id": null
+  },
+  "validation": {
+    "state": "not_validated",
+    "repeat_count": 0,
+    "max_repeat_error_deg": null,
+    "median_repeat_error_deg": null,
+    "last_validated_utc": null,
+    "warnings": [
+      "not_validated",
+      "do_not_use_for_runtime_guidance"
+    ]
+  },
+  "runtime": {
+    "allow_integrator_feed": false,
+    "allow_guidance_overlay": false,
+    "requires_manual_enable": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+    "display_brightness": 32,
+    "keypad_brightness": "0",
+    "menu_anim_speed": 0.0,
+    "text_scroll_speed": "Med",
+    "sleep_timeout": "Off",
+    "screen_off_timeout": "Off",
+    "hint_timeout": "4s",
+    "screen_direction": "right",
+    "mount_type": "Alt/Az",
+    "gps_type": "ublox",
+    "gps_baud_rate": 9600,
+    "solver_debug": 0
+}

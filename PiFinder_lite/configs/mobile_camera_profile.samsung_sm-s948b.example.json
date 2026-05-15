@@ -1,0 +1,37 @@
+{
+  "schema": "pifinder-mobile-camera-profile-v1",
+  "status": "diagnostic",
+  "decision": "PROMISING_TUNE_FIRST",
+  "device": {
+    "manufacturer": "samsung",
+    "model": "SM-S948B",
+    "app_build": "example"
+  },
+  "recommendation": {
+    "recommended_camera_id": "2",
+    "preferred_capture_mode": "solve_candidate_burst",
+    "preferred_format": "jpeg",
+    "raw_status": "not_recommended_until_58",
+    "confidence": "UNKNOWN",
+    "runtime_support": "diagnostic_only",
+    "quality_score_required": true,
+    "diagnostic_solve_required": true
+  },
+  "evidence": {
+    "source": "sanitized_example_from_phase2_phase6_diagnostics",
+    "total_reports": 0,
+    "attempted_reports": 0,
+    "solved_reports": 0,
+    "rejected_reports": 0,
+    "failed_reports": 0,
+    "best_quality_score": null,
+    "clear_sky_evidence": false,
+    "status_counts": {}
+  },
+  "caveats": [
+    "clear_sky_phase2_required",
+    "thresholds_not_tuned_until_57",
+    "runtime_decision_blocked_until_59",
+    "diagnostic_only_no_integrator_feed"
+  ]
+}

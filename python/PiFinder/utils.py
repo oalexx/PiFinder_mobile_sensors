@@ -10,12 +10,29 @@ home_dir = Path.home()
 cwd_dir = Path.cwd()
 pifinder_dir = Path("..")
 astro_data_dir = cwd_dir / pifinder_dir / "astro_data"
-tetra3_dir = pifinder_dir / "python/PiFinder/tetra3/tetra3"
 data_dir = Path(Path.home(), "PiFinder_data")
 pifinder_db = astro_data_dir / "pifinder_objects.db"
 observations_db = data_dir / "observations.db"
 debug_dump_dir = data_dir / "solver_debug_dumps"
 comet_file = astro_data_dir / Path("comets.txt")
+
+
+def resolve_tetra3_dir(repo_root: Path) -> Path:
+    """Return a sys.path entry that makes the bundled tetra3 importable."""
+    package_parent = repo_root / "python/PiFinder/tetra3"
+    package_dir = package_parent / "tetra3"
+
+    if (package_dir / "__init__.py").exists():
+        return package_parent
+
+    legacy_dir = package_parent / "tetra3"
+    if (legacy_dir / "tetra3.py").exists():
+        return legacy_dir
+
+    return package_parent
+
+
+tetra3_dir = resolve_tetra3_dir(pifinder_dir)
 
 
 def create_dir(adir: str):

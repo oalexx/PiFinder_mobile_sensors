@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pydeepskylog as pds
 from PIL import Image
-from PiFinder import utils, calc_utils, config
+from PiFinder import utils, calc_utils, config, mobile_bridge
 from PiFinder.db.observations_db import (
     ObservationsDatabase,
 )
@@ -188,6 +188,251 @@ class Server:
             return template(
                 "remote",
             )
+
+        @app.route("/mobile/status")
+        def mobile_status():
+            payload = mobile_bridge.status_payload()
+            mobile_bridge.write_debug_json("status.json", payload)
+            return payload
+
+        @app.route("/mobile/mount_profile")
+        def mobile_mount_profile():
+            return mobile_bridge.mount_profile_status(
+                mobile_profile_path=mobile_bridge.MOBILE_DATA_DIR
+                / mobile_bridge.PROFILE_LATEST_FILENAME,
+            )
+
+        @app.route("/mobile/profile", method="POST")
+        def mobile_profile():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            profile_payload = mobile_bridge.profile_payload(payload)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.PROFILE_LATEST_FILENAME,
+                profile_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "profile accepted",
+                "stored_as": mobile_bridge.PROFILE_LATEST_FILENAME,
+                "received_utc": profile_payload["received_utc"],
+            }
+
+        @app.route("/mobile/environment", method="POST")
+        def mobile_environment():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            environment, error_message = mobile_bridge.validate_environment_payload(
+                payload
+            )
+            if error_message:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_environment",
+                    error_message,
+                )
+
+            environment_payload = mobile_bridge.environment_payload(environment)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.ENVIRONMENT_LATEST_FILENAME,
+                environment_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "environment accepted for diagnostics",
+                "stored_as": mobile_bridge.ENVIRONMENT_LATEST_FILENAME,
+                "received_utc": environment_payload["received_utc"],
+                "summary": environment_payload["summary"],
+                "diagnostic_only": True,
+                "integrator_updated": False,
+                "runtime_pointing_updated": False,
+            }
+
+        @app.route("/mobile/gps", method="POST")
+        def mobile_gps():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            gps_fix, error_message = mobile_bridge.validate_gps_payload(payload)
+            if error_message:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_gps",
+                    error_message,
+                )
+
+            gps_payload = mobile_bridge.gps_payload(gps_fix)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.GPS_LATEST_FILENAME,
+                gps_payload,
+            )
+            self.gps_queue.put(("fix", mobile_bridge.mobile_gps_queue_fix(gps_fix)))
+            self.gps_queue.put(("time", mobile_bridge.mobile_gps_queue_time(gps_fix)))
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "gps accepted",
+                "stored_as": mobile_bridge.GPS_LATEST_FILENAME,
+                "received_utc": gps_payload["received_utc"],
+            }
+
+        @app.route("/mobile/imu", method="POST")
+        def mobile_imu():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            imu_batch, error_message = mobile_bridge.validate_imu_payload(payload)
+            if error_message:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_imu",
+                    error_message,
+                )
+
+            imu_payload = mobile_bridge.imu_payload(imu_batch)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.IMU_LATEST_FILENAME,
+                imu_payload,
+            )
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "imu batch accepted for debug",
+                "stored_as": mobile_bridge.IMU_LATEST_FILENAME,
+                "received_utc": imu_payload["received_utc"],
+                "sample_count": imu_batch["sample_count"],
+                "batch_label": imu_batch["batch_label"],
+            }
+
+        @app.route("/mobile/imu_drift_analysis", method="POST")
+        def mobile_imu_drift_analysis():
+            payload = request.json
+            result = mobile_bridge.ai_imu_drift_analysis(payload)
+            if result.get("ok") is False:
+                response.status = 400
+            return result
+
+        @app.route("/mobile/camera_frame", method="POST")
+        def mobile_camera_frame():
+            start_time = time.time()
+            upload = request.files.get("frame")
+            if upload is None:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "missing_frame",
+                    "Request must include a multipart JPEG file field named frame.",
+                )
+
+            metadata, metadata_error = mobile_bridge.validate_camera_frame_metadata(
+                request.forms.get("metadata", ""),
+            )
+            if metadata_error:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_metadata",
+                    metadata_error,
+                )
+
+            frame_bytes = upload.file.read(mobile_bridge.MAX_CAMERA_FRAME_BYTES + 1)
+            frame_error = mobile_bridge.validate_camera_frame_bytes(frame_bytes)
+            if frame_error:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_frame",
+                    frame_error,
+                )
+
+            stored_frame = mobile_bridge.store_camera_frame(
+                frame_bytes=frame_bytes,
+                metadata=metadata,
+                original_filename=getattr(upload, "raw_filename", None)
+                or getattr(upload, "filename", None)
+                or "frame.jpg",
+                content_type=getattr(upload, "content_type", None) or "image/jpeg",
+            )
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return {
+                "ok": True,
+                "api": mobile_bridge.API_VERSION,
+                "message": "camera frame stored for debug",
+                "frame_id": stored_frame["frame_id"],
+                "stored_frame": stored_frame["frame_file"],
+                "stored_metadata": stored_frame["metadata_file"],
+                "bytes": stored_frame["bytes"],
+                "received_utc": stored_frame["received_utc"],
+                "elapsed_ms": elapsed_ms,
+                "solver_invoked": False,
+            }
+
+        @app.route("/mobile/camera_reports")
+        def mobile_camera_reports():
+            try:
+                limit = int(request.query.get("limit", 20))
+            except (TypeError, ValueError):
+                limit = 20
+            return mobile_bridge.camera_report_history(limit=limit)
+
+        @app.route("/mobile/camera_solve", method="POST")
+        def mobile_camera_solve():
+            payload = request.json
+            if not isinstance(payload, dict):
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_json",
+                    "Request body must be a JSON object.",
+                )
+
+            frame_id = payload.get("frame_id")
+            solve_timeout_ms = int(payload.get("solve_timeout_ms", 1000))
+            preprocess_modes = payload.get("preprocess_modes")
+            if isinstance(preprocess_modes, str):
+                preprocess_modes = [
+                    mode.strip()
+                    for mode in preprocess_modes.split(",")
+                    if mode.strip()
+                ]
+            elif not isinstance(preprocess_modes, list):
+                preprocess_modes = None
+            ai_image_preprocessing_enabled = bool(
+                payload.get("ai_image_preprocessing_enabled", False)
+            )
+            preprocess_strategy = str(payload.get("preprocess_strategy", "classic"))
+
+            result = mobile_bridge.diagnostic_camera_solve(
+                frame_id=frame_id,
+                solve_timeout_ms=solve_timeout_ms,
+                preprocess_modes=preprocess_modes,
+                force_attempt=bool(payload.get("force_attempt", False)),
+                ai_image_preprocessing_enabled=ai_image_preprocessing_enabled,
+                preprocess_strategy=preprocess_strategy,
+            )
+            if result.get("ok") is False:
+                response.status = 400
+            return result
 
         @app.route("/advanced")
         @auth_required

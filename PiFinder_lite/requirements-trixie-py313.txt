@@ -1,0 +1,38 @@
+# PiFinder Lite pip requirements validated on Raspberry Pi OS Trixie / Python 3.13.
+#
+# Use a venv with system packages:
+#   cd python
+#   python3 -m venv --system-site-packages .venv
+#   source .venv/bin/activate
+#   pip install -r ../PiFinder_lite/requirements-trixie-py313.txt
+#
+# Keep python/requirements.txt unchanged for the classic PiFinder Python 3.9 path.
+# Tetra3/Cedar Solve is installed separately with:
+#   git submodule update --init --recursive --depth 1 python/PiFinder/tetra3
+#   cd python
+#   pip install -e PiFinder/tetra3 --no-deps
+#
+dataclasses_json==0.6.7
+gpsdclient==1.3.2
+json5==0.9.25
+pydeepskylog==1.3.2
+pyjwt==2.8.0
+pytz==2022.7.1
+sh==1.14.3
+aiofiles==24.1.0
+
+protobuf>=5.27
+skyfield>=1.53
+grpcio>=1.71.0
+
+luma.core
+luma.oled
+luma.lcd
+luma.emulator
+
+# Python 3.13 compatible timezone lookup. Older timezonefinder 6.1.9 pulled an
+# old h3 build path; 8.2.4 supports h3 4.x and was verified on the PC venv.
+# Pin flatbuffers because piwheels can otherwise provide an old date-versioned
+# build (`20181003210633`) that imports the removed Python `imp` module.
+flatbuffers==25.12.19
+timezonefinder==8.2.4
