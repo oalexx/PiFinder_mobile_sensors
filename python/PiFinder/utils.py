@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import json
+import math
 from pathlib import Path
 import importlib
 
@@ -44,6 +45,12 @@ def tetra3_sys_paths(repo_root: Path = pifinder_dir) -> tuple[Path, ...]:
         return (primary_dir, package_dir)
 
     return (primary_dir,)
+
+
+def ensure_numpy_math_compat(np_module):
+    """Restore np.math for bundled tetra3 versions on newer NumPy releases."""
+    if not hasattr(np_module, "math"):
+        np_module.math = math
 
 
 def create_dir(adir: str):

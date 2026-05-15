@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
 
 import score_mobile_frame
@@ -26,9 +27,13 @@ import score_mobile_frame
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_DIR = REPO_ROOT / "python"
 TETRA3_PACKAGE_PARENT = PYTHON_DIR / "PiFinder" / "tetra3"
+TETRA3_PACKAGE_DIR = TETRA3_PACKAGE_PARENT / "tetra3"
 TETRA3_DB = TETRA3_PACKAGE_PARENT / "tetra3" / "data" / "default_database.npz"
 
+if not hasattr(np, "math"):
+    np.math = math
 sys.path.insert(0, str(TETRA3_PACKAGE_PARENT))
+sys.path.insert(0, str(TETRA3_PACKAGE_DIR))
 import tetra3  # noqa: E402
 
 
