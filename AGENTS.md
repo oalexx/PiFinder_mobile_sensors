@@ -23,6 +23,15 @@ Current status:
   cloudy/day rehearsal for Phase 2 camera diagnostics plus #52 IMU overlay
   workflow checks. It can remove workflow blockers but cannot satisfy the
   clear-sky evidence gates.
+- 2026-05-14 rehearsal status: Raspberry/Android mobile bridge, Calibration
+  profile/GPS flow, Camera Lab upload/diagnostic solve/report history, and AI
+  preprocessing toggle were exercised end-to-end on PiFinder Lite. All camera
+  reports were rejected by quality scoring because the background was too
+  bright; this validates the workflow but leaves clear-sky evidence gates open.
+- Field connectivity validation (#75) is open to decide the simplest reliable
+  field network mode. Preferred candidate: phone hotspot/tethering with the Pi
+  as Wi-Fi client. Fallback candidates: Pi hotspot/access point, USB tethering,
+  or a small travel router.
 - Phase 6 diagnostic mobile camera scaffolding is implemented through #67:
   diagnostic solve endpoint, Android guided flow, persisted reports, report
   history/session summary, exposure advisor, environment metadata, night-test
@@ -85,6 +94,8 @@ Guardrails:
   configuration.
 - Keep mobile IMU overlay/read-only unless #52 field validation explicitly
   supports moving to a later optional guidance issue.
+- Keep field-network work transport-only: it may improve reliability and setup,
+  but must not change camera/IMU runtime safety boundaries.
 - Do not commit phone captures, generated analysis output, local paths, or
   precise private GPS coordinates.
 

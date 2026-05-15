@@ -39,6 +39,10 @@ Current validated bridge status:
 - `UPLOAD LAST JPEG` stores a diagnostic JPEG on the Raspberry.
 - `Run full diagnostic` ranks a dynamic subset of burst frames with Raspberry
   diagnostic solve results.
+- `View reports` loads `/mobile/camera_reports` and `Copy summary` copies the
+  saved diagnostic history/session summary.
+- `AI Image Preprocessing` can compare classic/adaptive diagnostic paths and
+  records evidence without changing runtime pointing.
 - `CALIBRATION` starts the phone-to-telescope evidence flow.
 
 Camera and IMU data are still diagnostic paths. Live mobile camera solving and
@@ -109,7 +113,7 @@ Available tests:
   For solve-candidate bursts, Android keeps multiple JPEG candidates, uploads a
   dynamic distributed subset, asks Raspberry to score/solve each one, and
   selects the best result by solve success and quality score.
-- `Night wizard`: shows the field checklist for connection,
+- `Night checklist`: collapsible field checklist for connection,
   profile/environment/GPS, save folder, full diagnostic, repeats, and report
   summary.
 - `View reports`: reads `/mobile/camera_reports` and shows recent diagnostic
@@ -117,7 +121,7 @@ Available tests:
   next action.
 - `Copy night plan`: copies a sanitized field checklist and
   evidence-state summary.
-- `Mark repeat`: increments the local repeat counter after each completed
+- `Mark repeat run`: increments the local repeat counter after each comparable
   diagnostic attempt.
 - `Copy summary`: copies the latest history/session summary from
   `View reports`.
@@ -145,10 +149,11 @@ Camera-frame metadata includes a diagnostic environment snapshot. Missing
 light or pressure sensors are recorded as unavailable rather than treated as an
 error.
 
-The night test wizard is a checklist, not a runtime promotion. A completed test
+The night checklist is a checklist, not a runtime promotion. A completed test
 means the workflow ran and produced notes; reliable camera use still requires
-repeated clear-sky results and the project decision summary. The wizard remains
-diagnostic-only and does not feed mobile solves into pointing or the integrator.
+repeated clear-sky results and the project decision summary. The checklist
+remains diagnostic-only and does not feed mobile solves into pointing or the
+integrator.
 For cloudy, bright, or rehearsal sessions, use
   `../PiFinder_lite/documentation/no_good_night_rehearsal.md` to combine the
   Camera Lab workflow with mounted IMU overlay checks.
@@ -179,6 +184,12 @@ ISO/exposure settings, saved frame count, and failures.
 ### PiFinder Remote
 
 Connects the app to a Raspberry/PiFinder Lite instance.
+
+Field connectivity away from a home router is tracked in issue #75. The
+preferred mode to validate first is phone hotspot/tethering with the Raspberry
+Pi as Wi-Fi client. Fallbacks are Pi hotspot/access point, USB tethering, and a
+small travel router. These tests are about transport reliability only; they do
+not change camera/IMU diagnostic-only boundaries.
 
 Available actions:
 
@@ -285,12 +296,12 @@ cd mobile
     - `Send env`
     - `Send GPS`
     - `Send IMU batch`
-15. Go back to `Phone setup`, open `Camera Lab`, tap `Night wizard`, then `Copy night plan` if you
-    want a field checklist.
+15. Go back to `Phone setup`, open `Camera Lab`, tap `Night checklist`, then
+    `Copy night plan` if you want a field checklist.
 16. Tap `Run full diagnostic` to capture a solve-candidate burst, upload a
     dynamic distributed subset, score/diagnostic-solve candidates on Raspberry,
     and summarize the selected frame plus ranking.
-17. Tap `Mark repeat` after each completed attempt, even if the frame is
+17. Tap `Mark repeat run` after each completed attempt, even if the frame is
     rejected or solve fails.
 18. Tap `View reports` to compare recent diagnostic reports and copy the
     session summary when needed.

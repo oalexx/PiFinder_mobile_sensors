@@ -109,6 +109,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final int DAY_TEST_FRAMES = 8;
     private static final int IMU_BATCH_MAX_SAMPLES = 256;
     private static final int IMU_BATCH_CAPTURE_MS = 2000;
+    private static final int MOBILE_CONNECT_TIMEOUT_MS = 8000;
+    private static final int MOBILE_READ_TIMEOUT_MS = 12000;
+    private static final int MOBILE_RETRY_ATTEMPTS = 2;
+    private static final int MOBILE_RETRY_DELAY_MS = 400;
     private static final int COLOR_BG = Color.rgb(3, 5, 10);
     private static final int COLOR_PANEL = Color.rgb(17, 20, 28);
     private static final int COLOR_PANEL_SOFT = Color.rgb(24, 27, 37);
@@ -158,6 +162,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView aiImuDriftSessionView;
     private Button calibrationChecklistToggleButton;
     private Button cameraDiagnosticGuideToggleButton;
+    private Button phase2NightTestChecklistToggleButton;
     private Button aiImagePreprocessingToggleButton;
     private Button startImuButton;
     private LinearLayout homeActionsRow;
@@ -170,6 +175,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private LinearLayout remoteScreen;
     private LinearLayout calibrationScreen;
     private LinearLayout remoteWebScreen;
+    private LinearLayout phase2NightTestChecklistContainer;
     private LinearLayout rootLayout;
     private TextView titleView;
     private TextView subtitleView;
@@ -193,6 +199,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private boolean aiImagePreprocessingEnabled = false;
     private boolean calibrationChecklistExpanded = false;
     private boolean cameraDiagnosticGuideExpanded = false;
+    private boolean phase2NightTestChecklistExpanded = false;
     private boolean liveImuStarted = false;
     private boolean liveImuSampleReceived = false;
     private boolean liveImuEverSampleReceived = false;
@@ -667,9 +674,11 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button pickFolder = makeSecondaryButton("Save folder");
         pickFolder.setOnClickListener(v -> pickOutputFolder());
         row3.addView(pickFolder);
-        Button phase2Wizard = makeSecondaryButton("Night wizard");
-        phase2Wizard.setOnClickListener(v -> showPhase2NightTestWizard());
-        row3.addView(phase2Wizard);
+        phase2NightTestChecklistToggleButton = makeSecondaryButton("Night checklist");
+        phase2NightTestChecklistToggleButton.setTypeface(Typeface.DEFAULT_BOLD);
+        phase2NightTestChecklistToggleButton.setOnClickListener(v -> togglePhase2NightTestChecklist());
+        row3.addView(phase2NightTestChecklistToggleButton);
+        updatePhase2NightTestChecklistToggleLabel();
 
         LinearLayout fullDiagnosticRow = buttonRow();
         cameraScreen.addView(fullDiagnosticRow);
@@ -689,12 +698,15 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         markPhase2Repeat.setOnClickListener(v -> markPhase2NightTestRepeat());
         reportRow.addView(markPhase2Repeat);
 
-        addAreaTitle(cameraScreen, "Night checklist");
+        phase2NightTestChecklistContainer = new LinearLayout(this);
+        phase2NightTestChecklistContainer.setOrientation(LinearLayout.VERTICAL);
+        phase2NightTestChecklistContainer.setVisibility(View.GONE);
+        cameraScreen.addView(phase2NightTestChecklistContainer);
         phase2NightTestWizardView = statusCard();
         updatePhase2NightTestWizard("ready");
-        cameraScreen.addView(phase2NightTestWizardView);
+        phase2NightTestChecklistContainer.addView(phase2NightTestWizardView);
         LinearLayout phase2WizardRow = buttonRow();
-        cameraScreen.addView(phase2WizardRow);
+        phase2NightTestChecklistContainer.addView(phase2WizardRow);
         Button copyPhase2Plan = makeSecondaryButton("Copy night plan");
         copyPhase2Plan.setOnClickListener(v -> copyPhase2NightTestPlan());
         phase2WizardRow.addView(copyPhase2Plan);
@@ -1576,75 +1588,120 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return baseUrl;
     }
 
-    private String runPiFinderStatusCheck(String baseUrl) {
-        HttpURLConnection connection = null;
+    private boolean shouldRetryMobileRequest(Exception e) {
+        if (e instanceof IOException) {
+            return true;
+        }
+        String message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.US);
+        return lower.contains("unexpected end of stream")
+                || lower.contains("failed to connect")
+                || lower.contains("timed out")
+                || lower.contains("timeout")
+                || lower.contains("connection abort");
+    }
+
+    private void sleepBeforeMobileRetry() {
         try {
-            URL url = new URL(baseUrl + "/mobile/status");
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(4000);
-            connection.setReadTimeout(4000);
-            connection.setRequestProperty("Accept", "application/json");
-            int status = connection.getResponseCode();
-            String body = readHttpBody(connection, status);
-            if (status < 200 || status >= 300) {
-                return "Connection failed\nHTTP " + status + "\nCheck PiFinder IP, port, and Wi-Fi.";
-            }
-            JSONObject json = new JSONObject(body);
-            boolean ok = json.optBoolean("ok", false);
-            String api = json.optString("api", "unknown");
-            String serverTime = json.optString("server_time_utc", "unknown time");
-            JSONObject bridge = json.optJSONObject("mobile_bridge");
-            String profile = bridge != null
-                    ? bridge.optString("profile", "unknown")
-                    : "unknown";
-            if (!ok) {
-                return "Connection failed\n/mobile/status returned ok=false.";
-            }
-            return "Connection OK\nAPI: " + api
-                    + "\nServer: " + serverTime
-                    + "\nProfile bridge: " + profile;
-        } catch (Exception e) {
-            return "Connection failed\n" + shortError(e)
-                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
+            Thread.sleep(MOBILE_RETRY_DELAY_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
-    private String getMobileMountProfile(String baseUrl) {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(baseUrl + "/mobile/mount_profile");
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(4000);
-            connection.setReadTimeout(4000);
-            connection.setRequestProperty("Accept", "application/json");
-            int status = connection.getResponseCode();
-            String body = readHttpBody(connection, status);
-            if (status < 200 || status >= 300) {
-                if (status == 404) {
-                    return "Mount profile endpoint not available"
-                            + "\nUpdate the PiFinder Lite backend or continue without profile overlay.";
+    private String retryNote(int attempt) {
+        return attempt > 1 ? "\nRetried once." : "";
+    }
+
+    private String runPiFinderStatusCheck(String baseUrl) {
+        for (int attempt = 1; attempt <= MOBILE_RETRY_ATTEMPTS; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(baseUrl + "/mobile/status");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+                connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
+                connection.setRequestProperty("Accept", "application/json");
+                int status = connection.getResponseCode();
+                String body = readHttpBody(connection, status);
+                if (status < 200 || status >= 300) {
+                    return "Connection failed\nHTTP " + status + "\nCheck PiFinder IP, port, and Wi-Fi.";
                 }
-                return "Mount profile check failed\nHTTP " + status + "\n" + responseErrorSummary(body);
-            }
-            JSONObject json = new JSONObject(body);
-            if (!json.optBoolean("ok", false)) {
-                return "Mount profile check failed\n/mobile/mount_profile returned ok=false.";
-            }
-            return formatMountProfileOverlay(json);
-        } catch (Exception e) {
-            return "Mount profile check failed\n" + shortError(e)
-                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
+                JSONObject json = new JSONObject(body);
+                boolean ok = json.optBoolean("ok", false);
+                String api = json.optString("api", "unknown");
+                String serverTime = json.optString("server_time_utc", "unknown time");
+                JSONObject bridge = json.optJSONObject("mobile_bridge");
+                String profile = bridge != null
+                        ? bridge.optString("profile", "unknown")
+                        : "unknown";
+                if (!ok) {
+                    return "Connection failed\n/mobile/status returned ok=false.";
+                }
+                return "Connection OK\nAPI: " + api
+                        + "\nServer: " + serverTime
+                        + "\nProfile bridge: " + profile
+                        + retryNote(attempt);
+            } catch (Exception e) {
+                if (attempt < MOBILE_RETRY_ATTEMPTS && shouldRetryMobileRequest(e)) {
+                    sleepBeforeMobileRetry();
+                    continue;
+                }
+                return "Connection failed\n" + shortError(e)
+                        + retryNote(attempt)
+                        + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
             }
         }
+        return "Connection failed\nCheck PiFinder IP, port, and Wi-Fi.";
+    }
+
+    private String getMobileMountProfile(String baseUrl) {
+        for (int attempt = 1; attempt <= MOBILE_RETRY_ATTEMPTS; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(baseUrl + "/mobile/mount_profile");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+                connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
+                connection.setRequestProperty("Accept", "application/json");
+                int status = connection.getResponseCode();
+                String body = readHttpBody(connection, status);
+                if (status < 200 || status >= 300) {
+                    if (status == 404) {
+                        return "Mount profile endpoint not available"
+                                + "\nUpdate the PiFinder Lite backend or continue without profile overlay.";
+                    }
+                    return "Mount profile check failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+                }
+                JSONObject json = new JSONObject(body);
+                if (!json.optBoolean("ok", false)) {
+                    return "Mount profile check failed\n/mobile/mount_profile returned ok=false.";
+                }
+                return formatMountProfileOverlay(json) + retryNote(attempt);
+            } catch (Exception e) {
+                if (attempt < MOBILE_RETRY_ATTEMPTS && shouldRetryMobileRequest(e)) {
+                    sleepBeforeMobileRetry();
+                    continue;
+                }
+                return "Mount profile check failed\n" + shortError(e)
+                        + retryNote(attempt)
+                        + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }
+        return "Mount profile check failed\nCheck PiFinder IP, port, and Wi-Fi.";
     }
 
     private String formatMountProfileOverlay(JSONObject json) {
@@ -1698,42 +1755,51 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private String postMobileProfile(String baseUrl, String profileJson) {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(baseUrl + "/mobile/profile");
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(4000);
-            connection.setReadTimeout(6000);
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        for (int attempt = 1; attempt <= MOBILE_RETRY_ATTEMPTS; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(baseUrl + "/mobile/profile");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+                connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
-            byte[] bodyBytes = profileJson.getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(bodyBytes.length);
-            try (OutputStream outputStream = connection.getOutputStream()) {
-                outputStream.write(bodyBytes);
-            }
+                byte[] bodyBytes = profileJson.getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(bodyBytes.length);
+                try (OutputStream outputStream = connection.getOutputStream()) {
+                    outputStream.write(bodyBytes);
+                }
 
-            int status = connection.getResponseCode();
-            String body = readHttpBody(connection, status);
-            if (status < 200 || status >= 300) {
-                return "Profile send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
-            }
-            JSONObject json = new JSONObject(body);
-            if (!json.optBoolean("ok", false)) {
-                return "Profile send failed\nServer returned ok=false.";
-            }
-            return "Profile sent\nStored: " + json.optString("stored_as", "unknown")
-                    + "\nReceived: " + json.optString("received_utc", "unknown time");
-        } catch (Exception e) {
-            return "Profile send failed\n" + shortError(e)
-                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
+                int status = connection.getResponseCode();
+                String body = readHttpBody(connection, status);
+                if (status < 200 || status >= 300) {
+                    return "Profile send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+                }
+                JSONObject json = new JSONObject(body);
+                if (!json.optBoolean("ok", false)) {
+                    return "Profile send failed\nServer returned ok=false.";
+                }
+                return "Profile sent\nStored: " + json.optString("stored_as", "unknown")
+                        + "\nReceived: " + json.optString("received_utc", "unknown time")
+                        + retryNote(attempt);
+            } catch (Exception e) {
+                if (attempt < MOBILE_RETRY_ATTEMPTS && shouldRetryMobileRequest(e)) {
+                    sleepBeforeMobileRetry();
+                    continue;
+                }
+                return "Profile send failed\n" + shortError(e)
+                        + retryNote(attempt)
+                        + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
             }
         }
+        return "Profile send failed\nCheck PiFinder IP, port, and Wi-Fi.";
     }
 
     private void postLocationToPiFinder(String baseUrl, Location location) {
@@ -1753,42 +1819,51 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private String postMobileGps(String baseUrl, String gpsJson) {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(baseUrl + "/mobile/gps");
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(4000);
-            connection.setReadTimeout(6000);
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        for (int attempt = 1; attempt <= MOBILE_RETRY_ATTEMPTS; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(baseUrl + "/mobile/gps");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+                connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
-            byte[] bodyBytes = gpsJson.getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(bodyBytes.length);
-            try (OutputStream outputStream = connection.getOutputStream()) {
-                outputStream.write(bodyBytes);
-            }
+                byte[] bodyBytes = gpsJson.getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(bodyBytes.length);
+                try (OutputStream outputStream = connection.getOutputStream()) {
+                    outputStream.write(bodyBytes);
+                }
 
-            int status = connection.getResponseCode();
-            String body = readHttpBody(connection, status);
-            if (status < 200 || status >= 300) {
-                return "GPS send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
-            }
-            JSONObject json = new JSONObject(body);
-            if (!json.optBoolean("ok", false)) {
-                return "GPS send failed\nServer returned ok=false.";
-            }
-            return "GPS sent\nStored: " + json.optString("stored_as", "unknown")
-                    + "\nReceived: " + json.optString("received_utc", "unknown time");
-        } catch (Exception e) {
-            return "GPS send failed\n" + shortError(e)
-                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
+                int status = connection.getResponseCode();
+                String body = readHttpBody(connection, status);
+                if (status < 200 || status >= 300) {
+                    return "GPS send failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+                }
+                JSONObject json = new JSONObject(body);
+                if (!json.optBoolean("ok", false)) {
+                    return "GPS send failed\nServer returned ok=false.";
+                }
+                return "GPS sent\nStored: " + json.optString("stored_as", "unknown")
+                        + "\nReceived: " + json.optString("received_utc", "unknown time")
+                        + retryNote(attempt);
+            } catch (Exception e) {
+                if (attempt < MOBILE_RETRY_ATTEMPTS && shouldRetryMobileRequest(e)) {
+                    sleepBeforeMobileRetry();
+                    continue;
+                }
+                return "GPS send failed\n" + shortError(e)
+                        + retryNote(attempt)
+                        + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
             }
         }
+        return "GPS send failed\nCheck PiFinder IP, port, and Wi-Fi.";
     }
 
     private String postMobileEnvironment(String baseUrl, String environmentJson) {
@@ -1797,8 +1872,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             URL url = new URL(baseUrl + "/mobile/environment");
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(4000);
-            connection.setReadTimeout(6000);
+            connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -2012,8 +2087,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             URL url = new URL(baseUrl + "/mobile/imu");
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(4000);
-            connection.setReadTimeout(6000);
+            connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -2383,11 +2458,26 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "7. Use Advanced captures only when debugging individual steps.\n";
     }
 
-    private void showPhase2NightTestWizard() {
-        updatePhase2NightTestWizard("review");
-        if (cameraReportView != null) {
-            cameraReportView.setText(phase2NightTestPlanText());
+    private void togglePhase2NightTestChecklist() {
+        phase2NightTestChecklistExpanded = !phase2NightTestChecklistExpanded;
+        if (phase2NightTestChecklistContainer != null) {
+            phase2NightTestChecklistContainer.setVisibility(
+                    phase2NightTestChecklistExpanded ? View.VISIBLE : View.GONE
+            );
         }
+        updatePhase2NightTestChecklistToggleLabel();
+        updatePhase2NightTestWizard("review");
+    }
+
+    private void updatePhase2NightTestChecklistToggleLabel() {
+        if (phase2NightTestChecklistToggleButton == null) {
+            return;
+        }
+        phase2NightTestChecklistToggleButton.setText(
+                phase2NightTestChecklistExpanded
+                        ? "▴ Hide Night Checklist"
+                        : "▾ Show Night Checklist"
+        );
     }
 
     private void markPhase2NightTestRepeat() {
@@ -2442,7 +2532,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private String phase2NightTestPlanText() {
         String summary = latestCameraReportSummary == null ? "" : latestCameraReportSummary.trim();
-        return "Night Test Wizard\n"
+        return "Night Checklist\n"
                 + "Purpose: collect repeatable phone-camera diagnostics.\n"
                 + "This records a completed test session. Camera reliability still needs repeated clear-sky results.\n\n"
                 + "Field steps\n"
@@ -3451,7 +3541,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "- Diagnostics checks sensors, GPS, camera support, and readiness.\n\n"
                 + "CAMERA LAB\n"
                 + "1. Choose Save folder.\n"
-                + "2. Use Night wizard for the checklist.\n"
+                + "2. Use Night checklist for the checklist.\n"
                 + "3. Run full diagnostic.\n"
                 + "4. View reports and copy summary for your notes.\n"
                 + "5. Use Advanced captures only for troubleshooting.\n\n"

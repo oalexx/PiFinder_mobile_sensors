@@ -7,6 +7,25 @@ The PiFinder™ uses the [Ceder Detect](https://github.com/smroid/cedar-detect) 
 [Cedar Solve](https://github.com/smroid/cedar-solve) libraries with express permission.
 Thank you to [smroid] for all your support of the PiFinder project!
 
+## PiFinder Lite / Mobile Companion Fork
+
+This fork is also exploring a lower-cost PiFinder Lite path: keep the Raspberry
+Pi backend, solver, catalogs, web remote, and SkySafari/LX200 support, but move
+UI, GPS, IMU, camera diagnostics, and field workflow helpers to an Android
+phone.
+
+Active Lite/mobile entry points:
+
+- `PiFinder_lite/README.md` for Raspberry Lite setup, diagnostic tooling, and
+  current evidence gates.
+- `mobile/README.md` for the Android companion app.
+- `PiFinder_lite/documentation/no_good_night_rehearsal.md` for cloudy/day
+  rehearsal when clear-sky validation is not available.
+
+Classic PiFinder behavior remains the default. Mobile camera and mobile IMU
+paths are diagnostic-only until documented field evidence supports later
+runtime decisions.
+
 ![Banner](./docs/source/images/PiFinder_v3_banner.png)
 The PiFinder™ is my attempt to improve my time at my telescope.  I don't get nearly enough of it and I want to enjoy it as much as possible.  So after years of observing with paper charts and, later, a Nexus DSC here is what I felt I was missing:
 * **Reliable telescope positioning:**  The Nexus DSC is great, but my scope just isn't built for solid encoder integration.  The slop in the way I have to couple the encoders means poor pointing accuracy.

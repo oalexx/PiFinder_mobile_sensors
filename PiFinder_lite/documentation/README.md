@@ -32,6 +32,7 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | --- | --- |
 | `phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
 | `no_good_night_rehearsal.md` | Combined poor-night/day rehearsal for Phase 2 camera diagnostics and #52 IMU overlay validation. |
+| `mobile_companion_status_2026-05-14.md` | Bright-sky rehearsal status: Android/Pi endpoints, reports, and AI toggle work; clear-sky evidence remains open. |
 | `phase2_day_test_validation.md` | Day Test validation notes. |
 | `phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
 | `solve_candidate_burst.md` | Android burst mode tuned for solving. |
@@ -40,6 +41,7 @@ the current status, Raspberry launch commands, and active diagnostic tools.
 | `mobile_camera_solver_path_decision.md` | Product/technical decision for solver path. |
 | `mobile_camera_profile.md` | Per-device recommendation profile format. |
 | `mobile_companion_status_2026-05-09.md` | Current inflection-point summary: what works, what remains diagnostic, and gates. |
+| GitHub #75 | Field connectivity validation for phone hotspot/tethering, Pi hotspot, USB tethering, and travel-router fallback. |
 
 ## Phase 5 Calibration
 

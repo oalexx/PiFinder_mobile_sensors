@@ -121,9 +121,17 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 
     assert "phase2NightTestWizardView" in source
-    assert 'addAreaTitle(cameraScreen, "Night checklist")' in source
-    assert 'makeSecondaryButton("Night wizard")' in source
-    assert "showPhase2NightTestWizard()" in source
+    assert "phase2NightTestChecklistContainer" in source
+    assert "phase2NightTestChecklistExpanded = false" in source
+    assert 'makeSecondaryButton("Night checklist")' in source
+    assert "togglePhase2NightTestChecklist()" in source
+    assert "updatePhase2NightTestChecklistToggleLabel()" in source
+    assert "phase2NightTestChecklistContainer.setVisibility(View.GONE)" in source
+    assert "phase2NightTestChecklistContainer.setVisibility(" in source
+    assert "phase2NightTestChecklistExpanded ? View.VISIBLE : View.GONE" in source
+    assert "phase2NightTestChecklistToggleButton.setTypeface(Typeface.DEFAULT_BOLD)" in source
+    assert "Show Night Checklist" in source
+    assert "Hide Night Checklist" in source
     assert 'makeSecondaryButton("Copy night plan")' in source
     assert "copyPhase2NightTestPlan()" in source
     assert 'makeSecondaryButton("Mark repeat run")' in source
@@ -132,7 +140,7 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "phase2NightTestRepeatCount" in source
     assert "updatePhase2NightTestWizard" in source
     assert "phase2NightTestPlanText" in source
-    assert "Night Test Wizard" in source
+    assert "Night Checklist" in source
     assert "test completed" in source
     assert "reliable camera use" in source
     assert "clear-sky results" in source
@@ -140,6 +148,20 @@ def test_android_camera_lab_exposes_phase2_night_test_wizard():
     assert "SEND GPS" in source
     assert "Run full diagnostic" in source
     assert "View reports" in source
+
+
+def test_android_mobile_bridge_uses_field_retry_timeouts():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "MOBILE_CONNECT_TIMEOUT_MS = 8000" in source
+    assert "MOBILE_READ_TIMEOUT_MS = 12000" in source
+    assert "MOBILE_RETRY_ATTEMPTS = 2" in source
+    assert "MOBILE_RETRY_DELAY_MS = 400" in source
+    assert "shouldRetryMobileRequest" in source
+    assert "sleepBeforeMobileRetry()" in source
+    assert "Retried once." in source
+    assert "connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS)" in source
+    assert "connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS)" in source
 
 
 def test_android_full_diagnostic_ranks_dynamic_burst_candidates():

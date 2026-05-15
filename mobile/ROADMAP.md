@@ -27,7 +27,8 @@ Android app
   - PiFinder remote WebView
   - Calibration workflow
   - Professional dark UI and Night Vision mode
-  - Future camera frame uploader
+  - Diagnostic camera frame upload/report history
+  - Field connectivity validation notes
 
 Raspberry Pi / PiFinder Lite
   - Original PiFinder backend
@@ -86,8 +87,11 @@ Current product-facing UI status:
 Goal: determine whether phone camera frames are actually useful for plate
 solving.
 
-Status: still active. Day-test and cloudy/partial-sky evidence exists, but the
-remaining decision needs clearer night captures.
+Status: still active. Day-test, cloudy/partial-sky, and 2026-05-14 bright-sky
+rehearsal evidence exists, but the remaining decision needs clearer night
+captures. The 2026-05-14 run validated endpoint/report workflow and rejected
+all camera reports for bright background, which is useful rehearsal evidence
+but not a clear-sky pass.
 
 Tests:
 
@@ -313,6 +317,28 @@ Work blocked by Phase 2 clear-sky evidence:
 - RAW value decision.
 - Any decision to promote mobile camera beyond diagnostic/manual solve.
 
+## Field Connectivity Validation
+
+Goal: make PiFinder Lite usable in the field without a home router.
+
+Status: open in #75.
+
+Preferred mode to validate first:
+
+```text
+phone hotspot/tethering -> Raspberry Pi Wi-Fi client -> Android app
+```
+
+Fallbacks to compare:
+
+- Raspberry Pi hotspot/access point.
+- USB tethering.
+- Small travel router.
+
+This phase measures transport reliability, setup ergonomics, endpoint latency,
+camera-frame upload time, idle recovery, and Android no-internet behavior. It
+does not change camera solving, RAW, mobile IMU, or integrator decisions.
+
 ## Optional AI Layer
 
 AI should be an optional helper layer, not a replacement for the current solver
@@ -364,6 +390,10 @@ Current AI/process status:
 
 - The first image-quality score is classic image processing, not ML.
 - IMU confidence analysis is classic quaternion/statistical analysis.
+- Experimental AI Image Preprocessing (#73) is implemented as a diagnostic-only
+  Camera Lab comparison between classic and adaptive preprocessing.
+- AI IMU Drift Analysis (#74) is implemented as diagnostic-only solve-to-solve
+  residual analysis.
 - Keep ML/ONNX/TFLite experiments behind explicit flags and only after the
   simple metrics fail on real data.
 
@@ -393,6 +423,8 @@ Still open / next:
 
 - Complete Phase 2 night-sky validation.
 - Compare Manual Burst, ISO Sweep, Cam Sweep, and RAW Burst under clearer sky.
+- Validate field connectivity modes (#75), starting with phone hotspot/tethering
+  as the preferred simple field model.
 - Summarize the mobile camera solve decision from real night evidence.
 - Field-validate the calibrated mobile IMU overlay (#52).
 - Use the Phase 6 diagnostic mobile camera solve workflow in the field
@@ -408,6 +440,8 @@ Still open / next:
 - Integrating phone IMU data into the existing integrator is delicate.
 - The existing web remote works but needs a better phone UX.
 - RAW capture may be expensive without adding enough solve value.
+- Field networking must work without a home router; phone hotspot is simplest
+  but may sleep, change IPs, or interact badly with Android no-internet checks.
 
 ## Execution Order
 
@@ -420,4 +454,5 @@ Still open / next:
 7. Add calibration.
 8. Field-validate calibration as read-only overlay.
 9. Add mobile camera diagnostic solve path.
-10. Add optional AI helpers after real sky data exists.
+10. Validate field connectivity without a home router.
+11. Add optional AI helpers only where diagnostic evidence shows value.

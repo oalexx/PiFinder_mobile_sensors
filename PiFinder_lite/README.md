@@ -12,14 +12,16 @@ enabled.
 
 Phase 4 is implemented and validated on Raspberry Pi OS Trixie/Python 3.13.
 Phase 5 is implemented up to calibrated mobile IMU read-only overlay/status.
-The Android app can talk to PiFinder Lite through the mobile bridge, upload a
-JPEG frame, send GPS into the running PiFinder process, send IMU diagnostic
-batches for confidence analysis, collect phone-to-telescope calibration
-evidence, and display the loaded mount profile as diagnostic read-only status.
-It can also send optional environment metadata, such as ambient light,
-barometer availability, battery, network, and coarse device state, so camera
-reports can explain field conditions without storing precise phone GPS
-coordinates.
+Phase 6 diagnostic camera scaffolding is implemented through report history,
+candidate ranking, exposure advice, per-phone profiles, AI Image Preprocessing
+diagnostics, and AI IMU Drift Analysis. The Android app can talk to PiFinder
+Lite through the mobile bridge, upload JPEG frames, send GPS into the running
+PiFinder process, send IMU diagnostic batches for confidence analysis, collect
+phone-to-telescope calibration evidence, display the loaded mount profile as
+diagnostic read-only status, and review persisted camera diagnostic reports. It
+can also send optional environment metadata, such as ambient light, barometer
+availability, battery, network, and coarse device state, so camera reports can
+explain field conditions without storing precise phone GPS coordinates.
 
 Validated chain:
 
@@ -42,9 +44,13 @@ Validated capabilities:
   `~/PiFinder_data/mobile/camera_solve_reports/`.
 - Read-only `/mobile/camera_reports` history/session summary for recent
   diagnostic reports.
+- Diagnostic-only `/mobile/imu_drift_analysis` endpoint and offline drift tool.
 - Environment summaries in camera reports when Android has sent
   `/mobile/environment` or embedded a camera-frame environment snapshot.
-- Phase 2 Android night-test wizard and dynamic burst candidate ranking.
+- Android Night checklist and dynamic burst candidate ranking.
+- Android `View reports` / `Copy summary` flow for saved camera reports.
+- Android `AI Image Preprocessing` toggle for diagnostic baseline/adaptive
+  comparison.
 - Per-phone mobile camera recommendation profile generation from diagnostic
   reports.
 
@@ -120,8 +126,9 @@ PiFinder Remote -> set base URL
 PiFinder Remote -> Test Connection
 PiFinder Remote -> Send Profile / Send Env / Send GPS / Send IMU Batch
 Camera Lab -> Save Folder
-Camera Lab -> Night Test Wizard
+Camera Lab -> Night Checklist
 Camera Lab -> Run Full Diagnostic
+Camera Lab -> View Reports / Copy Summary
 PiFinder_lite -> generate_mobile_camera_profile.py
 ```
 
@@ -159,6 +166,28 @@ Environment data is diagnostic-only and never changes pointing state.
 
 The exposure advisor is rule-based and diagnostic-only. Its thresholds are
 intentionally conservative until more Phase 2 clear-sky evidence tunes them.
+
+## Field Connectivity Decision
+
+Field connectivity is tracked separately in issue #75. The goal is to make
+PiFinder Lite work away from a home router while keeping the hardware list
+minimal.
+
+Preferred candidate to validate first:
+
+```text
+phone hotspot/tethering -> Raspberry Pi Wi-Fi client -> Android app endpoints
+```
+
+Fallback candidates:
+
+- Raspberry Pi hotspot/access point with stable IP or hostname.
+- USB tethering for maximum stability when a cable is acceptable.
+- Small travel router as a robustness baseline, not the preferred simple
+  product path.
+
+This work is transport-only. It does not decide camera thresholds, RAW support,
+mobile IMU guidance, or any runtime promotion.
 
 Optional Raspberry-side batch checks:
 
@@ -209,6 +238,7 @@ live under `documentation/`.
 | --- | --- |
 | `documentation/phase2_night_sky_validation.md` | Phase 2 night-sky evidence summary. |
 | `documentation/no_good_night_rehearsal.md` | Combined poor-night/day rehearsal for camera diagnostics and #52 IMU overlay validation. |
+| `documentation/mobile_companion_status_2026-05-14.md` | 2026-05-14 rehearsal status: endpoints and reports work; camera evidence remains blocked by bright background. |
 | `documentation/phase2_day_test_validation.md` | Day Test validation notes. |
 | `documentation/phase2_camera_id_recommendation.md` | Camera ID recommendation evidence. |
 | `documentation/solve_candidate_burst.md` | Android burst mode tuned for solving. |
@@ -222,7 +252,7 @@ live under `documentation/`.
 
 | Tool | Purpose |
 | --- | --- |
-| `analyze_phase2_camera.py` | Offline Phase 2 frame analysis and Tetra3 attempts. |
+| `analyze_phase2_camera.py` | Historical/offline Phase 2 frame analysis and Tetra3 attempts. Keep for comparison against newer diagnostic reports. |
 | `score_mobile_frame.py` | Score JPEGs before diagnostic solving. |
 | `diagnostic_solve_mobile_frame.py` | Explicit diagnostic solve of scored JPEGs. |
 | `generate_mobile_camera_profile.py` | Generate conservative per-phone camera recommendation profiles from diagnostic reports. |
@@ -282,3 +312,7 @@ solving.
 Phase 6 diagnostic scaffolding through #67 is implemented. Threshold tuning,
 RAW decisions, and any runtime promotion remain blocked by Phase 2 evidence and
 the #57-#59 decision chain.
+
+Field networking is the next ergonomics gate, tracked in #75. It can proceed
+without clear sky because it validates transport reliability rather than camera
+quality.

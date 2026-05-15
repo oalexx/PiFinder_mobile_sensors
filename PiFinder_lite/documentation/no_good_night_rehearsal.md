@@ -85,18 +85,18 @@ Android:
 
 1. Open `Camera Lab`.
 2. Tap `SAVE FOLDER`.
-3. Tap `NIGHT TEST WIZARD`.
-4. Tap `COPY NIGHT TEST PLAN` and keep the copied plan with local notes.
+3. Open `NIGHT CHECKLIST` if you want the in-app step reminder.
+4. Tap `COPY NIGHT PLAN` and keep the copied plan with local notes.
 5. Tap `RUN FULL DIAGNOSTIC`.
 6. Wait for candidate ranking, quality score, solve/skipped state, and report
    summary.
-7. Tap `MARK REPEAT`.
+7. Tap `MARK REPEAT RUN`.
 8. Repeat `RUN FULL DIAGNOSTIC` at least three times:
    - one indoor/day/poor-sky run;
    - one mounted or tripod-fixed run;
    - one repeat after changing nothing.
 9. Tap `VIEW REPORTS`.
-10. Tap `COPY REPORT SUMMARY`.
+10. Tap `COPY SUMMARY`.
 
 Expected poor-night outcomes:
 
@@ -126,6 +126,18 @@ Pass criteria:
 - A profile file can be generated.
 - Profile decision remains conservative unless the reports contain repeated
   clear-sky solves.
+
+2026-05-14 rehearsal note:
+
+- Android and Raspberry completed the Camera Lab upload, diagnostic solve,
+  persisted report, and report-history flow.
+- `VIEW REPORTS` loaded the stored report history and `COPY SUMMARY` produced
+  a usable text summary.
+- AI Image Preprocessing could be toggled and recorded diagnostic evidence, but
+  the result was inconclusive because all frames were rejected for bright
+  background.
+- Best observed scores stayed in the rejected range, so the correct decision is
+  `needs_more_data` / wait for darker, steadier sky.
 
 Fail/blocker criteria:
 
