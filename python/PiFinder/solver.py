@@ -24,7 +24,8 @@ from PiFinder import utils
 from PiFinder.sqm import SQM as SQMCalculator
 from PiFinder.state import SQM as SQMState
 
-sys.path.append(str(utils.tetra3_dir))
+for tetra3_path in utils.tetra3_sys_paths():
+    sys.path.append(str(tetra3_path))
 import tetra3
 from tetra3 import cedar_detect_client
 

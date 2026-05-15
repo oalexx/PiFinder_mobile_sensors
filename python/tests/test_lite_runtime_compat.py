@@ -57,6 +57,18 @@ def test_resolve_tetra3_dir_prefers_package_parent(tmp_path):
 
 
 @pytest.mark.unit
+def test_tetra3_sys_paths_include_generated_proto_import_dir(tmp_path):
+    repo_root = tmp_path
+    package_parent = repo_root / "python" / "PiFinder" / "tetra3"
+    package_dir = package_parent / "tetra3"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "cedar_detect_pb2.py").write_text("", encoding="utf-8")
+
+    assert utils.tetra3_sys_paths(repo_root) == (package_parent, package_dir)
+
+
+@pytest.mark.unit
 def test_resolve_tetra3_dir_keeps_legacy_nested_layout(tmp_path):
     repo_root = tmp_path
     legacy_dir = repo_root / "python" / "PiFinder" / "tetra3" / "tetra3"

@@ -35,6 +35,17 @@ def resolve_tetra3_dir(repo_root: Path) -> Path:
 tetra3_dir = resolve_tetra3_dir(pifinder_dir)
 
 
+def tetra3_sys_paths(repo_root: Path = pifinder_dir) -> tuple[Path, ...]:
+    """Return all sys.path entries needed by bundled tetra3/cedar modules."""
+    primary_dir = resolve_tetra3_dir(repo_root)
+    package_dir = primary_dir / "tetra3"
+
+    if (package_dir / "cedar_detect_pb2.py").exists():
+        return (primary_dir, package_dir)
+
+    return (primary_dir,)
+
+
 def create_dir(adir: str):
     create_path(Path(adir))
 
