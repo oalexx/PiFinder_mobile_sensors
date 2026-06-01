@@ -3,6 +3,7 @@
 """Helpers for the optional PiFinder Mobile Bridge API."""
 
 import json
+import math
 import os
 import re
 import sys
@@ -21,6 +22,8 @@ GPS_LATEST_FILENAME = "gps_latest.json"
 IMU_LATEST_FILENAME = "imu_latest.json"
 ENVIRONMENT_LATEST_FILENAME = "environment_latest.json"
 MOUNT_PROFILES_DIRNAME = "mount_profiles"
+OPTICAL_BORESIGHT_PROFILES_DIRNAME = "optical_boresight_profiles"
+OPTICAL_BORESIGHT_LATEST_FILENAME = "optical_boresight_latest.json"
 MAX_IMU_SAMPLES = 512
 IMU_BATCH_LABELS = {
     "diagnostic",
@@ -34,6 +37,7 @@ CAMERA_SOLVE_REPORTS_DIRNAME = "camera_solve_reports"
 MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 DEFAULT_MOBILE_GPS_ERROR_M = 9999
 MOUNT_PROFILE_SCHEMA = "pifinder-mobile-mount-profile-v0"
+OPTICAL_BORESIGHT_SCHEMA = "pifinder-mobile-optical-boresight-profile-v0"
 CAMERA_SOLVE_FRAME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,96}$")
 PRIVATE_LOCATION_KEYS = {
     "gps",
@@ -75,6 +79,12 @@ def ensure_mobile_frames_dir() -> Path:
 
 def ensure_mobile_mount_profiles_dir() -> Path:
     profiles_dir = ensure_mobile_data_dir() / MOUNT_PROFILES_DIRNAME
+    utils.create_path(profiles_dir)
+    return profiles_dir
+
+
+def ensure_mobile_optical_boresight_profiles_dir() -> Path:
+    profiles_dir = ensure_mobile_data_dir() / OPTICAL_BORESIGHT_PROFILES_DIRNAME
     utils.create_path(profiles_dir)
     return profiles_dir
 
@@ -449,6 +459,137 @@ def camera_report_history(
     }
 
 
+def optical_boresight_status(
+    profiles_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Return the latest phone-camera-to-telescope optical offset profile."""
+    target_dir = profiles_dir or ensure_mobile_optical_boresight_profiles_dir()
+    latest_path = target_dir / OPTICAL_BORESIGHT_LATEST_FILENAME
+    if not latest_path.exists():
+        return {
+            "ok": True,
+            "api": API_VERSION,
+            "profile_available": False,
+            "profile": None,
+            "warnings": ["no_optical_boresight_profile_found"],
+            "profiles_dir": str(target_dir),
+            "diagnostic_only": True,
+            "integrator_updated": False,
+            "runtime_pointing_updated": False,
+        }
+
+    profile, load_error = _load_json_object(latest_path)
+    if load_error:
+        return {
+            "ok": True,
+            "api": API_VERSION,
+            "profile_available": False,
+            "profile": None,
+            "warnings": [load_error],
+            "profiles_dir": str(target_dir),
+            "selected_profile": str(latest_path),
+            "diagnostic_only": True,
+            "integrator_updated": False,
+            "runtime_pointing_updated": False,
+        }
+
+    warnings: List[str] = []
+    if profile.get("schema") != OPTICAL_BORESIGHT_SCHEMA:
+        warnings.append("invalid_optical_boresight_schema")
+    if profile.get("status") != "ok":
+        warnings.append(f"profile_status_{profile.get('status', 'unknown')}")
+
+    return {
+        "ok": True,
+        "api": API_VERSION,
+        "profile_available": profile.get("schema") == OPTICAL_BORESIGHT_SCHEMA,
+        "profile": _optical_boresight_summary(profile),
+        "warnings": warnings,
+        "profiles_dir": str(target_dir),
+        "selected_profile": str(latest_path),
+        "diagnostic_only": True,
+        "integrator_updated": False,
+        "runtime_pointing_updated": False,
+    }
+
+
+def optical_boresight_calibration(
+    payload: Dict[str, Any],
+    profiles_dir: Optional[Path] = None,
+    reports_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Create a repeatable read-only optical boresight calibration profile.
+
+    The profile describes the angular offset between the latest solved mobile
+    camera frame and a target manually centered in the telescope eyepiece. It
+    is evidence only: no live solver, integrator, or pointing state is changed.
+    """
+    if not isinstance(payload, dict):
+        return error_payload(
+            "invalid_json",
+            "Request body must be a JSON object.",
+        )
+
+    frame_id = str(payload.get("frame_id") or "").strip()
+    if not CAMERA_SOLVE_FRAME_ID_RE.match(frame_id):
+        return error_payload(
+            "invalid_frame_id",
+            "Run Full Diagnostic first so an uploaded frame_id is available.",
+        )
+
+    reference_ra_deg, ra_error = _optional_number_field(payload, "reference_ra_deg")
+    reference_dec_deg, dec_error = _optional_number_field(payload, "reference_dec_deg")
+    if ra_error or dec_error:
+        return error_payload(
+            "invalid_reference_coordinates",
+            ra_error or dec_error or "Invalid reference coordinates.",
+        )
+
+    solve_timeout_ms = int(payload.get("solve_timeout_ms", 1500))
+    solve_result = diagnostic_camera_solve(
+        frame_id=frame_id,
+        reports_dir=reports_dir,
+        solve_timeout_ms=solve_timeout_ms,
+        force_attempt=True,
+        ai_image_preprocessing_enabled=bool(
+            payload.get("ai_image_preprocessing_enabled", False)
+        ),
+        preprocess_strategy=str(payload.get("preprocess_strategy", "classic")),
+    )
+    if not bool(solve_result.get("ok", False)):
+        return solve_result
+
+    profile = _build_optical_boresight_profile(
+        payload=payload,
+        frame_id=frame_id,
+        reference_ra_deg=reference_ra_deg,
+        reference_dec_deg=reference_dec_deg,
+        solve_result=solve_result,
+    )
+    stored = _write_optical_boresight_profile(profile, profiles_dir)
+    return {
+        "ok": True,
+        "api": API_VERSION,
+        "message": (
+            "optical boresight calibration saved"
+            if profile["status"] == "ok"
+            else "optical boresight calibration needs more data"
+        ),
+        "calibration_ok": profile["status"] == "ok",
+        "profile": _optical_boresight_summary(profile),
+        "stored_as": stored["latest_profile"],
+        "archived_as": stored["profile"],
+        "diagnostic_solve_report": (
+            solve_result.get("report", {}).get("json_report")
+            if isinstance(solve_result.get("report"), dict)
+            else None
+        ),
+        "diagnostic_only": True,
+        "integrator_updated": False,
+        "runtime_pointing_updated": False,
+    }
+
+
 def camera_exposure_advice(
     score: Optional[Dict[str, Any]],
     solve: Optional[Dict[str, Any]],
@@ -820,6 +961,7 @@ def status_payload() -> Dict[str, Any]:
             "camera_solve": "implemented_diagnostic_only",
             "camera_reports": "implemented_read_only",
             "mount_profile": "implemented_read_only",
+            "optical_boresight": "implemented_read_only",
         },
     }
 
@@ -1527,6 +1669,136 @@ def _sanitize_diagnostic_report(payload: Dict[str, Any]) -> Dict[str, Any]:
             best["path"] = Path(str(best["path"])).name
     sanitized.pop("report", None)
     return sanitized
+
+
+def _build_optical_boresight_profile(
+    payload: Dict[str, Any],
+    frame_id: str,
+    reference_ra_deg: Optional[float],
+    reference_dec_deg: Optional[float],
+    solve_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    timestamp = utc_now_iso()
+    profile_id = f"optical_boresight_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    solve = solve_result.get("solve") if isinstance(solve_result.get("solve"), dict) else {}
+    best = solve.get("best") if isinstance(solve.get("best"), dict) else {}
+    camera_ra = _optional_float(best.get("solve_ra"))
+    camera_dec = _optional_float(best.get("solve_dec"))
+    solve_ok = bool(solve.get("solve_ok")) and camera_ra is not None and camera_dec is not None
+
+    warnings: List[str] = []
+    status = "ok"
+    if reference_ra_deg is None or reference_dec_deg is None:
+        status = "needs_reference_coordinates"
+        warnings.append("reference_ra_dec_required")
+    if not solve_ok:
+        status = "solve_failed"
+        warnings.append("diagnostic_solve_not_available")
+
+    offset: Dict[str, Any] = {"available": False}
+    if status == "ok" and camera_ra is not None and camera_dec is not None:
+        ra_offset = _normalize_degrees_signed(float(reference_ra_deg) - camera_ra)
+        dec_offset = float(reference_dec_deg) - camera_dec
+        mean_dec_rad = math.radians((float(reference_dec_deg) + camera_dec) / 2.0)
+        angular_offset = math.sqrt(
+            (ra_offset * math.cos(mean_dec_rad)) ** 2 + dec_offset**2
+        )
+        offset = {
+            "available": True,
+            "ra_deg": round(ra_offset, 6),
+            "dec_deg": round(dec_offset, 6),
+            "angular_deg": round(angular_offset, 6),
+            "interpretation": (
+                "reference_center_minus_mobile_camera_center; diagnostic-only"
+            ),
+        }
+
+    return {
+        "schema": OPTICAL_BORESIGHT_SCHEMA,
+        "profile_id": profile_id,
+        "created_utc": timestamp,
+        "status": status,
+        "reference": {
+            "target": str(payload.get("reference_target") or "").strip(),
+            "ra_deg": reference_ra_deg,
+            "dec_deg": reference_dec_deg,
+        },
+        "camera_center": {
+            "frame_id": frame_id,
+            "ra_deg": camera_ra,
+            "dec_deg": camera_dec,
+            "solve_ok": solve_ok,
+            "solve_summary": solve_result.get("summary"),
+        },
+        "offset": offset,
+        "app": _object_or_empty(payload.get("app")),
+        "device": _object_or_empty(payload.get("device")),
+        "diagnostic_only": True,
+        "read_only": True,
+        "integrator_updated": False,
+        "runtime_pointing_updated": False,
+        "runtime": {
+            "allow_integrator_feed": False,
+            "allow_runtime_pointing_update": False,
+            "requires_manual_recalibration_after_remount": True,
+        },
+        "warnings": warnings,
+    }
+
+
+def _write_optical_boresight_profile(
+    profile: Dict[str, Any],
+    profiles_dir: Optional[Path],
+) -> Dict[str, str]:
+    target_dir = profiles_dir or ensure_mobile_optical_boresight_profiles_dir()
+    utils.create_path(target_dir)
+    profile_id = str(profile.get("profile_id") or "optical_boresight")
+    archive_path = target_dir / f"{profile_id}.json"
+    latest_path = target_dir / OPTICAL_BORESIGHT_LATEST_FILENAME
+    sanitized = _strip_private_location_fields(json.loads(json.dumps(profile, default=str)))
+    for path in (archive_path, latest_path):
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(temp_path, "w") as output:
+            json.dump(sanitized, output, indent=2, sort_keys=True)
+            output.write("\n")
+        os.replace(temp_path, path)
+    return {
+        "profile": str(archive_path),
+        "latest_profile": str(latest_path),
+    }
+
+
+def _optical_boresight_summary(profile: Dict[str, Any]) -> Dict[str, Any]:
+    reference = profile.get("reference") if isinstance(profile.get("reference"), dict) else {}
+    camera_center = (
+        profile.get("camera_center")
+        if isinstance(profile.get("camera_center"), dict)
+        else {}
+    )
+    offset = profile.get("offset") if isinstance(profile.get("offset"), dict) else {}
+    runtime = profile.get("runtime") if isinstance(profile.get("runtime"), dict) else {}
+    return {
+        "profile_id": profile.get("profile_id"),
+        "created_utc": profile.get("created_utc"),
+        "status": profile.get("status", "unknown"),
+        "reference": reference,
+        "camera_center": camera_center,
+        "offset": offset,
+        "read_only": bool(profile.get("read_only", True)),
+        "diagnostic_only": bool(profile.get("diagnostic_only", True)),
+        "integrator_blocked": not bool(runtime.get("allow_integrator_feed", False)),
+        "runtime_pointing_blocked": not bool(
+            runtime.get("allow_runtime_pointing_update", False)
+        ),
+        "warnings": profile.get("warnings", []),
+    }
+
+
+def _normalize_degrees_signed(value: float) -> float:
+    wrapped = (float(value) + 180.0) % 360.0 - 180.0
+    if wrapped == -180.0:
+        return 180.0
+    return wrapped
 
 
 def _mount_profile_files(profiles_dir: Path) -> List[Path]:

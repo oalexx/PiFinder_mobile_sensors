@@ -15,7 +15,8 @@ def test_android_calibration_workflow_is_reachable_and_actionable():
     assert 'makePrimaryButton("Mount ref")' in source
     assert 'sendCalibrationImuBatch("mounted_reference")' in source
     assert 'copyCalibrationEvidence()' in source
-    assert 'updateCalibrationEvidenceJson("mounted_reference")' in source
+    assert "latestCalibrationBatchLabel" in source
+    assert "updateCalibrationEvidenceJson(latestCalibrationBatchLabel)" in source
     assert '"batch_label", batchLabel' in source
 
 
@@ -45,6 +46,28 @@ def test_android_calibration_screen_exposes_read_only_mount_profile_overlay():
     assert "updateCalibrationStatus(message)" in source
     assert "Mount profile endpoint not available" in source
     assert "Update the PiFinder Lite backend or continue without profile overlay." in source
+
+
+def test_android_calibration_screen_exposes_optical_boresight_recalibration():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert 'makeSecondaryButton("Optical guide")' in source
+    assert 'makePrimaryButton("Optical align")' in source
+    assert 'makeSecondaryButton("Check optical")' in source
+    assert "runOpticalBoresightCalibration()" in source
+    assert "checkOpticalBoresightProfile()" in source
+    assert "buildOpticalBoresightPayloadJson()" in source
+    assert '"/mobile/optical_boresight"' in source
+    assert '"pifinder-mobile-optical-boresight-calibration-v0"' in source
+    assert '"reference_ra_deg"' in source
+    assert '"reference_dec_deg"' in source
+    assert "Optical boresight OK" in source
+    assert "Offset RA" in source
+    assert "Offset Dec" in source
+    assert "Angular offset" in source
+    assert '"diagnostic_only", true' in source
+    assert '"integrator_updated", false' in source
+    assert '"runtime_pointing_updated", false' in source
 
 
 def test_android_calibration_screen_exposes_ai_imu_drift_analysis_evidence():

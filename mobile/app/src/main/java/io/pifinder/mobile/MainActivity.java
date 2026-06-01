@@ -184,11 +184,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView remoteStatusView;
     private TextView calibrationStatusView;
     private EditText calibrationTargetInput;
+    private EditText opticalReferenceRaInput;
+    private EditText opticalReferenceDecInput;
     private WebView remoteWebView;
     private String latestCheckResult = "";
     private String latestProfileJson = "";
     private String latestHistoryJson = "";
     private String latestCalibrationEvidenceJson = "";
+    private String latestCalibrationBatchLabel = "mounted_reference";
     private String latestAiImuDriftAnalysisJson = "";
     private String latestCameraReportSummary = "";
     private String latestReport = "";
@@ -586,6 +589,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         calibrationScreen.addView(calibrationStatusView);
         calibrationTargetInput = makeTextInput("Reference target or note");
         calibrationScreen.addView(calibrationTargetInput);
+        opticalReferenceRaInput = makeTextInput("Reference RA deg for optical align");
+        calibrationScreen.addView(opticalReferenceRaInput);
+        opticalReferenceDecInput = makeTextInput("Reference Dec deg for optical align");
+        calibrationScreen.addView(opticalReferenceDecInput);
         LinearLayout calibrationConnectionRow = buttonRow();
         calibrationScreen.addView(calibrationConnectionRow);
         Button calibrationTestConnection = makePrimaryButton("Test connection");
@@ -621,6 +628,17 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         Button aiImuDrift = makeSecondaryButton("AI IMU drift");
         aiImuDrift.setOnClickListener(v -> showAiImuDriftAnalysisGuide());
         calibrationEvidenceRow.addView(aiImuDrift);
+        LinearLayout opticalBoresightRow = buttonRow();
+        calibrationScreen.addView(opticalBoresightRow);
+        Button opticalGuide = makeSecondaryButton("Optical guide");
+        opticalGuide.setOnClickListener(v -> showOpticalBoresightGuide());
+        opticalBoresightRow.addView(opticalGuide);
+        Button opticalAlign = makePrimaryButton("Optical align");
+        opticalAlign.setOnClickListener(v -> runOpticalBoresightCalibration());
+        opticalBoresightRow.addView(opticalAlign);
+        Button checkOptical = makeSecondaryButton("Check optical");
+        checkOptical.setOnClickListener(v -> checkOpticalBoresightProfile());
+        opticalBoresightRow.addView(checkOptical);
         LinearLayout aiImuDriftRow1 = buttonRow();
         calibrationScreen.addView(aiImuDriftRow1);
         Button startAiSession = makeSecondaryButton("Start AI session");
@@ -1423,6 +1441,57 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }).start();
     }
 
+    private void showOpticalBoresightGuide() {
+        updateCalibrationStatus(opticalBoresightGuideText());
+    }
+
+    private void checkOpticalBoresightProfile() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateCalibrationStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        updateCalibrationStatus("Checking optical boresight\n" + baseUrl + "/mobile/optical_boresight");
+        new Thread(() -> {
+            String message = getOpticalBoresightProfile(baseUrl);
+            runOnUiThread(() -> updateCalibrationStatus(message));
+        }).start();
+    }
+
+    private void runOpticalBoresightCalibration() {
+        if (remoteUrlInput == null) {
+            return;
+        }
+        String baseUrl = saveRemoteBaseUrlFromInput();
+        if (baseUrl.length() == 0) {
+            updateCalibrationStatus("Connection missing\nEnter a PiFinder base URL.");
+            return;
+        }
+        if (lastUploadedFrameId == null || lastUploadedFrameId.trim().length() == 0) {
+            updateCalibrationStatus("Optical align waiting\nCenter a known target in the eyepiece, run Camera Lab -> Run full diagnostic, then return here.");
+            return;
+        }
+        String payloadJson;
+        try {
+            payloadJson = buildOpticalBoresightPayloadJson();
+        } catch (JSONException e) {
+            updateCalibrationStatus("Optical align failed\nCould not build calibration JSON.");
+            return;
+        } catch (IllegalArgumentException e) {
+            updateCalibrationStatus("Optical align needs coordinates\n" + e.getMessage());
+            return;
+        }
+        updateCalibrationStatus("Running optical align\nFrame: " + lastUploadedFrameId
+                + "\n" + baseUrl + "/mobile/optical_boresight");
+        new Thread(() -> {
+            String message = postOpticalBoresightCalibration(baseUrl, payloadJson);
+            runOnUiThread(() -> updateCalibrationStatus(message));
+        }).start();
+    }
+
     private void sendGpsToPiFinder() {
         if (remoteUrlInput == null) {
             return;
@@ -1751,6 +1820,88 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                     .append(runtime.optBoolean("allow_guidance_overlay", false));
         }
         builder.append("\nWarnings: ").append(formatJsonStringArray(warnings));
+        return builder.toString();
+    }
+
+    private String getOpticalBoresightProfile(String baseUrl) {
+        for (int attempt = 1; attempt <= MOBILE_RETRY_ATTEMPTS; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(baseUrl + "/mobile/optical_boresight");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
+                connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
+                connection.setRequestProperty("Accept", "application/json");
+                int status = connection.getResponseCode();
+                String body = readHttpBody(connection, status);
+                if (status < 200 || status >= 300) {
+                    if (status == 404) {
+                        return "Optical boresight endpoint not available\nUpdate the PiFinder Lite backend.";
+                    }
+                    return "Optical boresight check failed\nHTTP " + status + "\n" + responseErrorSummary(body);
+                }
+                JSONObject json = new JSONObject(body);
+                if (!json.optBoolean("ok", false)) {
+                    return "Optical boresight check failed\n/mobile/optical_boresight returned ok=false.";
+                }
+                return formatOpticalBoresightProfile(json) + retryNote(attempt);
+            } catch (Exception e) {
+                if (attempt < MOBILE_RETRY_ATTEMPTS && shouldRetryMobileRequest(e)) {
+                    sleepBeforeMobileRetry();
+                    continue;
+                }
+                return "Optical boresight check failed\n" + shortError(e)
+                        + retryNote(attempt)
+                        + "\nCheck PiFinder IP, port, and Wi-Fi.";
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }
+        return "Optical boresight check failed\nCheck PiFinder IP, port, and Wi-Fi.";
+    }
+
+    private String formatOpticalBoresightProfile(JSONObject json) {
+        JSONArray warnings = json.optJSONArray("warnings");
+        if (!json.optBoolean("profile_available", false)) {
+            return "Optical boresight\nNo calibration profile available"
+                    + "\nWarnings: " + formatJsonStringArray(warnings)
+                    + "\nRun Optical align after a solved centered target frame.";
+        }
+        JSONObject profile = json.optJSONObject("profile");
+        if (profile == null) {
+            return "Optical boresight\nProfile payload missing.";
+        }
+        JSONObject reference = profile.optJSONObject("reference");
+        JSONObject cameraCenter = profile.optJSONObject("camera_center");
+        JSONObject offset = profile.optJSONObject("offset");
+        StringBuilder builder = new StringBuilder();
+        builder.append("Optical boresight\n");
+        builder.append("Status: ").append(profile.optString("status", "unknown")).append("\n");
+        if (reference != null) {
+            builder.append("Reference: ").append(reference.optString("target", "unnamed")).append("\n");
+            builder.append("Reference RA/Dec: ")
+                    .append(format(reference.optDouble("ra_deg", 0.0))).append(", ")
+                    .append(format(reference.optDouble("dec_deg", 0.0))).append(" deg\n");
+        }
+        if (cameraCenter != null) {
+            builder.append("Camera RA/Dec: ")
+                    .append(format(cameraCenter.optDouble("ra_deg", 0.0))).append(", ")
+                    .append(format(cameraCenter.optDouble("dec_deg", 0.0))).append(" deg\n");
+            builder.append("Frame: ").append(cameraCenter.optString("frame_id", "unknown")).append("\n");
+        }
+        if (offset != null && offset.optBoolean("available", false)) {
+            builder.append("Offset RA: ").append(format(offset.optDouble("ra_deg", 0.0))).append(" deg\n");
+            builder.append("Offset Dec: ").append(format(offset.optDouble("dec_deg", 0.0))).append(" deg\n");
+            builder.append("Angular offset: ").append(format(offset.optDouble("angular_deg", 0.0))).append(" deg\n");
+        } else {
+            builder.append("Offset: not available\n");
+        }
+        builder.append("Read-only: ").append(profile.optBoolean("read_only", true)).append("\n");
+        builder.append("Integrator blocked: ").append(profile.optBoolean("integrator_blocked", true)).append("\n");
+        builder.append("Warnings: ").append(formatJsonStringArray(warnings));
         return builder.toString();
     }
 
@@ -2718,6 +2869,76 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
+    private String postOpticalBoresightCalibration(String baseUrl, String payloadJson) {
+        HttpURLConnection connection = null;
+        try {
+            byte[] body = payloadJson.getBytes(StandardCharsets.UTF_8);
+            URL url = new URL(baseUrl + "/mobile/optical_boresight");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(45000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+
+            int status = connection.getResponseCode();
+            String responseBody = readHttpBody(connection, status);
+            if (status < 200 || status >= 300) {
+                if (status == 404) {
+                    return "Optical align failed\nEndpoint not available. Update the PiFinder Lite backend.";
+                }
+                return "Optical align failed\nHTTP " + status + "\n" + responseErrorSummary(responseBody);
+            }
+            JSONObject json = new JSONObject(responseBody);
+            if (!json.optBoolean("ok", false)) {
+                return "Optical align failed\nServer returned ok=false.";
+            }
+            return formatOpticalBoresightCalibrationResult(json);
+        } catch (Exception e) {
+            return "Optical align failed\n" + shortError(e)
+                    + "\nCheck PiFinder IP, port, and Wi-Fi.";
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String formatOpticalBoresightCalibrationResult(JSONObject json) {
+        JSONObject profile = json.optJSONObject("profile");
+        if (profile == null) {
+            return "Optical align failed\nProfile payload missing.";
+        }
+        return (json.optBoolean("calibration_ok", false)
+                ? "Optical boresight OK\n"
+                : "Optical boresight needs more data\n")
+                + formatOpticalBoresightSummary(profile)
+                + "\nStored: " + json.optString("stored_as", "unknown")
+                + "\nDiagnostic only: " + json.optBoolean("diagnostic_only", true);
+    }
+
+    private String formatOpticalBoresightSummary(JSONObject profile) {
+        JSONObject offset = profile.optJSONObject("offset");
+        StringBuilder builder = new StringBuilder();
+        builder.append("Status: ").append(profile.optString("status", "unknown"));
+        if (offset != null && offset.optBoolean("available", false)) {
+            builder.append("\nOffset RA: ").append(format(offset.optDouble("ra_deg", 0.0))).append(" deg");
+            builder.append("\nOffset Dec: ").append(format(offset.optDouble("dec_deg", 0.0))).append(" deg");
+            builder.append("\nAngular offset: ").append(format(offset.optDouble("angular_deg", 0.0))).append(" deg");
+        } else {
+            builder.append("\nOffset: not available");
+        }
+        builder.append("\nRead-only: ").append(profile.optBoolean("read_only", true));
+        builder.append("\nIntegrator blocked: ").append(profile.optBoolean("integrator_blocked", true));
+        builder.append("\nWarnings: ").append(formatJsonStringArray(profile.optJSONArray("warnings")));
+        return builder.toString();
+    }
+
     private String formatDiagnosticSolveResult(JSONObject json) {
         JSONObject score = json.optJSONObject("score");
         JSONObject solve = json.optJSONObject("solve");
@@ -3282,6 +3503,18 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 + "6. Remount the phone and repeat Mount ref + Repeat check.\n"
                 + "7. Wait 5 minutes, capture one final Repeat check.\n"
                 + "8. Copy evidence for your calibration notes.";
+    }
+
+    private String opticalBoresightGuideText() {
+        return "Optical boresight recalibration\n"
+                + "Use this whenever the phone is moved, removed, or mounted again.\n\n"
+                + "1. Mount the phone firmly on the telescope.\n"
+                + "2. Center a known target in the eyepiece.\n"
+                + "3. Enter that target RA/Dec in decimal degrees.\n"
+                + "4. Run Camera Lab -> Run full diagnostic without moving the telescope.\n"
+                + "5. Return here and tap Optical align.\n"
+                + "6. Wait for OK and record the RA/Dec/angular offset.\n\n"
+                + "Boundary: this saves a read-only offset profile; it does not change PiFinder pointing.";
     }
 
     private String aiImuDriftAnalysisGuideText() {
@@ -3975,6 +4208,40 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
     }
 
+    private String buildOpticalBoresightPayloadJson() throws JSONException {
+        JSONObject payload = new JSONObject();
+        payload.put("schema", "pifinder-mobile-optical-boresight-calibration-v0");
+        payload.put("created_utc", utcIso(System.currentTimeMillis()));
+        payload.put("reference_target", calibrationReferenceText());
+        payload.put("reference_ra_deg", requiredDecimalDegrees(opticalReferenceRaInput, "Reference RA deg"));
+        payload.put("reference_dec_deg", requiredDecimalDegrees(opticalReferenceDecInput, "Reference Dec deg"));
+        payload.put("frame_id", lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim());
+        payload.put("solve_timeout_ms", 1500);
+        payload.put("ai_image_preprocessing_enabled", aiImagePreprocessingEnabled);
+        payload.put("preprocess_strategy", aiImagePreprocessingEnabled ? "adaptive" : "classic");
+        payload.put("remote_base_url", normalizeRemoteBaseUrl(loadRemoteBaseUrl()));
+        payload.put("app", appJson());
+        payload.put("device", deviceJson());
+        payload.put("readiness", readinessJson());
+        payload.put("screen_orientation", screenOrientationName());
+        payload.put("diagnostic_only", true);
+        payload.put("integrator_updated", false);
+        payload.put("runtime_pointing_updated", false);
+        return payload.toString(2);
+    }
+
+    private double requiredDecimalDegrees(EditText input, String label) {
+        String text = input == null ? "" : input.getText().toString().trim();
+        if (text.length() == 0) {
+            throw new IllegalArgumentException(label + " is required for optical align.");
+        }
+        try {
+            return Double.parseDouble(text.replace(",", "."));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(label + " must be a decimal number.");
+        }
+    }
+
     private String aiImuDriftAnalysisEvidenceJson() {
         try {
             JSONObject evidence = new JSONObject();
@@ -4078,6 +4345,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void updateCalibrationEvidenceJson(String batchLabel) {
+        latestCalibrationBatchLabel = batchLabel;
         latestCalibrationEvidenceJson = buildCalibrationEvidenceJson(batchLabel);
     }
 
@@ -5030,13 +5298,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     }
 
     private void copyCalibrationEvidence() {
-        updateCalibrationEvidenceJson("mounted_reference");
+        updateCalibrationEvidenceJson(latestCalibrationBatchLabel);
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText(
                 "PiFinder calibration evidence JSON",
                 latestCalibrationEvidenceJson
         ));
-        updateCalibrationStatus("Evidence copied\nReference: " + calibrationReferenceText());
+        updateCalibrationStatus("Evidence copied\nBatch: " + latestCalibrationBatchLabel
+                + "\nReference: " + calibrationReferenceText());
         Toast.makeText(this, "Calibration evidence copied", Toast.LENGTH_SHORT).show();
     }
 

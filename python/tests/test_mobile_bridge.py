@@ -126,6 +126,12 @@ def test_status_payload_advertises_camera_report_history():
     assert status["mobile_bridge"]["camera_reports"] == "implemented_read_only"
 
 
+def test_status_payload_advertises_optical_boresight_calibration():
+    status = mobile_bridge.status_payload()
+
+    assert status["mobile_bridge"]["optical_boresight"] == "implemented_read_only"
+
+
 def test_status_payload_advertises_mobile_environment_bridge():
     status = mobile_bridge.status_payload()
 
@@ -329,6 +335,83 @@ def test_mount_profile_status_handles_missing_profiles(tmp_path):
     assert status["profile_available"] is False
     assert status["profile"] is None
     assert status["warnings"] == ["no_mount_profiles_found"]
+
+
+def test_optical_boresight_calibration_persists_read_only_offset(tmp_path, monkeypatch):
+    def fake_diagnostic_camera_solve(**kwargs):
+        return {
+            "ok": True,
+            "frame_id": kwargs["frame_id"],
+            "diagnostic_only": True,
+            "integrator_updated": False,
+            "runtime_pointing_updated": False,
+            "summary": {"status": "solved", "solve_ok": True},
+            "solve": {
+                "attempted": True,
+                "solve_ok": True,
+                "best": {
+                    "solve_ok": True,
+                    "solve_ra": 120.0,
+                    "solve_dec": 22.5,
+                },
+            },
+            "report": {"json_report": str(tmp_path / "report.json")},
+        }
+
+    monkeypatch.setattr(mobile_bridge, "diagnostic_camera_solve", fake_diagnostic_camera_solve)
+
+    result = mobile_bridge.optical_boresight_calibration(
+        {
+            "frame_id": "20260516T000000Z_frame",
+            "reference_target": "Vega centered in eyepiece",
+            "reference_ra_deg": 121.0,
+            "reference_dec_deg": 22.0,
+            "device": {"model": "SM-S948B"},
+        },
+        profiles_dir=tmp_path / "optical_profiles",
+    )
+
+    assert result["ok"] is True
+    assert result["calibration_ok"] is True
+    assert result["diagnostic_only"] is True
+    assert result["integrator_updated"] is False
+    assert result["runtime_pointing_updated"] is False
+    assert result["profile"]["status"] == "ok"
+    assert result["profile"]["offset"]["available"] is True
+    assert result["profile"]["offset"]["ra_deg"] == 1.0
+    assert result["profile"]["offset"]["dec_deg"] == -0.5
+    assert Path(result["stored_as"]).exists()
+
+    status = mobile_bridge.optical_boresight_status(tmp_path / "optical_profiles")
+    assert status["profile_available"] is True
+    assert status["profile"]["integrator_blocked"] is True
+    assert status["profile"]["runtime_pointing_blocked"] is True
+
+
+def test_optical_boresight_calibration_needs_reference_coordinates(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        mobile_bridge,
+        "diagnostic_camera_solve",
+        lambda **kwargs: {
+            "ok": True,
+            "summary": {"status": "solved"},
+            "solve": {
+                "attempted": True,
+                "solve_ok": True,
+                "best": {"solve_ra": 120.0, "solve_dec": 22.5},
+            },
+        },
+    )
+
+    result = mobile_bridge.optical_boresight_calibration(
+        {"frame_id": "20260516T000000Z_frame"},
+        profiles_dir=tmp_path / "optical_profiles",
+    )
+
+    assert result["ok"] is True
+    assert result["calibration_ok"] is False
+    assert result["profile"]["status"] == "needs_reference_coordinates"
+    assert "reference_ra_dec_required" in result["profile"]["warnings"]
 
 
 def test_diagnostic_camera_solve_rejects_unsafe_frame_id(tmp_path):
@@ -814,6 +897,15 @@ def test_server_exposes_read_only_mount_profile_endpoint():
 
     assert '@app.route("/mobile/mount_profile")' in source
     assert "mobile_bridge.mount_profile_status(" in source
+
+
+def test_server_exposes_optical_boresight_endpoint():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert '@app.route("/mobile/optical_boresight")' in source
+    assert '@app.route("/mobile/optical_boresight", method="POST")' in source
+    assert "mobile_bridge.optical_boresight_status(" in source
+    assert "mobile_bridge.optical_boresight_calibration(" in source
 
 
 def test_server_exposes_diagnostic_camera_solve_endpoint():

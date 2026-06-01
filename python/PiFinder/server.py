@@ -202,6 +202,10 @@ class Server:
                 / mobile_bridge.PROFILE_LATEST_FILENAME,
             )
 
+        @app.route("/mobile/optical_boresight")
+        def mobile_optical_boresight_status():
+            return mobile_bridge.optical_boresight_status()
+
         @app.route("/mobile/profile", method="POST")
         def mobile_profile():
             payload = request.json
@@ -430,6 +434,14 @@ class Server:
                 ai_image_preprocessing_enabled=ai_image_preprocessing_enabled,
                 preprocess_strategy=preprocess_strategy,
             )
+            if result.get("ok") is False:
+                response.status = 400
+            return result
+
+        @app.route("/mobile/optical_boresight", method="POST")
+        def mobile_optical_boresight():
+            payload = request.json
+            result = mobile_bridge.optical_boresight_calibration(payload)
             if result.get("ok") is False:
                 response.status = 400
             return result
