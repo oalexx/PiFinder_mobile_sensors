@@ -1170,3 +1170,38 @@ def test_write_debug_json_is_concurrency_safe(tmp_path, monkeypatch):
         data = json.load(handle)  # must be complete, valid JSON (no interleaving)
     assert data["writer"] in range(8)
     assert list((tmp_path / "mobile").glob("*.tmp")) == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: the diagnostic solver must load the Tetra3 pattern database once
+# and reuse it, not rebuild it (and reload default_database.npz) per request.
+# ---------------------------------------------------------------------------
+def test_attempt_diagnostic_solve_reuses_cached_tetra3(monkeypatch):
+    import types
+
+    monkeypatch.setattr(mobile_bridge, "_TETRA3_INSTANCE", None, raising=False)
+    construct_count = {"n": 0}
+
+    class _CountingTetra3:
+        def __init__(self, db_path):
+            construct_count["n"] += 1
+
+    fake_module = types.SimpleNamespace(
+        tetra3=types.SimpleNamespace(Tetra3=_CountingTetra3),
+        TETRA3_DB="default_database.npz",
+        solve_one=lambda **kwargs: [],
+    )
+    monkeypatch.setattr(mobile_bridge, "_import_lite_module", lambda name: fake_module)
+
+    score = types.SimpleNamespace()
+    for _ in range(3):
+        result = mobile_bridge._attempt_diagnostic_solve(
+            frame_path=Path("frame.jpg"),
+            score=score,
+            solve_timeout_ms=1000,
+            preprocess_modes=["baseline"],
+        )
+        assert result["attempted"] is True
+        assert result["solve_ok"] is False
+
+    assert construct_count["n"] == 1

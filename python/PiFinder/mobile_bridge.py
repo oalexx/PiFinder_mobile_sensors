@@ -1220,6 +1220,25 @@ def _solve_altaz_payload(
     }
 
 
+_TETRA3_INSTANCE: Any = None
+_TETRA3_SOLVE_LOCK = threading.Lock()
+
+
+def _diagnostic_tetra3(diagnostic_solve: Any) -> Any:
+    """Return a process-wide cached Tetra3 instance for diagnostic solves.
+
+    Loading the pattern database (default_database.npz) is expensive; building a
+    fresh Tetra3 per request would spike memory (a full DB copy per in-flight
+    solve under the waitress thread pool) and block a worker on every call.
+    Callers must hold ``_TETRA3_SOLVE_LOCK``. Diagnostic-only; this never touches
+    the runtime solver/integrator state.
+    """
+    global _TETRA3_INSTANCE
+    if _TETRA3_INSTANCE is None:
+        _TETRA3_INSTANCE = diagnostic_solve.tetra3.Tetra3(str(diagnostic_solve.TETRA3_DB))
+    return _TETRA3_INSTANCE
+
+
 def _attempt_diagnostic_solve(
     frame_path: Path,
     score: Any,
@@ -1228,16 +1247,20 @@ def _attempt_diagnostic_solve(
 ) -> Dict[str, Any]:
     try:
         diagnostic_solve = _import_lite_module("diagnostic_solve_mobile_frame")
-        t3 = diagnostic_solve.tetra3.Tetra3(str(diagnostic_solve.TETRA3_DB))
-        results = diagnostic_solve.solve_one(
-            t3=t3,
-            frame_path=frame_path,
-            score=score,
-            candidate_rank=1,
-            preprocess_modes=preprocess_modes,
-            solve_timeout_ms=solve_timeout_ms,
-            continue_after_solve=False,
-        )
+        # Serialize solves: keeps a single Tetra3 DB resident and one solve in
+        # flight at a time, which caps memory on the Pi and makes sharing the
+        # cached instance across waitress threads safe.
+        with _TETRA3_SOLVE_LOCK:
+            t3 = _diagnostic_tetra3(diagnostic_solve)
+            results = diagnostic_solve.solve_one(
+                t3=t3,
+                frame_path=frame_path,
+                score=score,
+                candidate_rank=1,
+                preprocess_modes=preprocess_modes,
+                solve_timeout_ms=solve_timeout_ms,
+                continue_after_solve=False,
+            )
     except Exception as exc:
         return {
             "attempted": True,
