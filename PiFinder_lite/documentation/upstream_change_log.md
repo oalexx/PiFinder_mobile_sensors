@@ -1325,11 +1325,24 @@ Validation:
 81 passed   (baseline before merge: 80 passed / 1 WIP fail, now fixed)
 ```
 
-Status: NOT yet validated on a real Pi or by a full Flask runtime/smoke/unit
-run (the dev box has a minimal numpy-2 venv; downgrading to rebuild the full
-env was judged too risky here). Before merge, run `pip install -r
-python/requirements.txt`, `nox -s smoke_tests unit_tests`, the Lite headless
-startup, and `mobile/gradlew.bat assembleDebug` on the target environment.
+Additional verification (2026-06-16, isolated Windows venv with the full Flask
++ skyfield/pyerfa/pydeepskylog stack, numpy 2.4.6):
+
+- `from PiFinder import server` imports cleanly (whole import chain resolves).
+- `Server(...)` constructs with mock queues -> every `@app.route` registers with
+  no endpoint collision (71 routes total). All 11 `/mobile/*` endpoints plus
+  `/remote` are present in `app.url_map`. This exercises the ported
+  `mobile_auth_required` decorator and the `methods=["POST"]` conversions.
+- Whole `python/PiFinder` tree byte-compiles; no unresolved conflict markers in
+  any tracked file.
+
+Status: the migrated webserver is verified to BUILD and register all routes in a
+full Flask env, and the mobile/Lite suite is green (81). NOT yet validated by a
+hardware run on a real Pi (camera/solver/IMU/GPS/display) or by the full
+`smoke`/`unit` suites (those need numpy-quaternion, selenium, etc., and the
+Unix-only `test_single_instance.py` imports `fcntl` directly). Before merge, on
+the Pi run `pip install -r python/requirements.txt`, `nox -s smoke_tests
+unit_tests`, the Lite headless startup, and `mobile/gradlew.bat assembleDebug`.
 
 ## Pre-Merge Checklist
 
