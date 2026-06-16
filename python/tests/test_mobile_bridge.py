@@ -1053,3 +1053,120 @@ def test_server_exposes_ai_imu_drift_analysis_endpoint():
 
     assert '@app.route("/mobile/imu_drift_analysis", methods=["POST"])' in source
     assert "mobile_bridge.ai_imu_drift_analysis(" in source
+
+
+# ---------------------------------------------------------------------------
+# Regression: numeric validators must reject non-finite values (NaN/Infinity).
+# Flask 3 decodes standard JSON with the stdlib decoder, so 1e400 -> inf and the
+# literals NaN/Infinity are accepted at the HTTP layer. Before this guard,
+# int(float('inf')) inside _validate_imu_sample raised an uncaught OverflowError
+# and the /mobile/imu route returned HTTP 500 instead of a clean 400.
+# ---------------------------------------------------------------------------
+def test_validate_imu_payload_rejects_non_finite_timestamp():
+    payload = {
+        "samples": [
+            {
+                "sensor": "game_rotation_vector",
+                "t_android_ns": float("inf"),
+                "values": [0.0, 0.0, 0.0, 1.0],
+            }
+        ],
+    }
+
+    imu_batch, error = mobile_bridge.validate_imu_payload(payload)
+
+    assert imu_batch == {}
+    assert error is not None
+    assert "finite" in error
+
+
+def test_validate_gps_payload_rejects_non_finite_altitude():
+    gps_fix, error = mobile_bridge.validate_gps_payload(
+        {
+            "lat": 40.4168,
+            "lon": -3.7038,
+            "altitude_m": float("inf"),
+            "time_utc": "2026-05-08T00:00:00Z",
+            "source": "android",
+        }
+    )
+
+    assert gps_fix == {}
+    assert error is not None
+    assert "altitude_m" in error
+
+
+def test_validate_gps_payload_rejects_nan_latitude():
+    gps_fix, error = mobile_bridge.validate_gps_payload(
+        {
+            "lat": float("nan"),
+            "lon": -3.7038,
+            "time_utc": "2026-05-08T00:00:00Z",
+            "source": "android",
+        }
+    )
+
+    assert gps_fix == {}
+    assert error is not None
+    assert "lat" in error
+
+
+def test_optical_boresight_calibration_rejects_out_of_range_declination(tmp_path):
+    result = mobile_bridge.optical_boresight_calibration(
+        {
+            "frame_id": "20260516T000000Z_frame",
+            "reference_ra_deg": 121.0,
+            "reference_dec_deg": 500.0,
+        },
+        profiles_dir=tmp_path / "optical_profiles",
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_reference_coordinates"
+    assert "reference_dec_deg" in result["error"]["message"]
+
+
+# ---------------------------------------------------------------------------
+# Regression: atomic JSON writes must be concurrency-safe. waitress serves from
+# a thread pool, so a fixed "<name>.tmp" let two writers share one temp file and
+# corrupt the target. _unique_temp_path isolates each in-flight write.
+# ---------------------------------------------------------------------------
+def test_unique_temp_path_is_distinct_per_call(tmp_path):
+    target = tmp_path / "imu_latest.json"
+
+    paths = {mobile_bridge._unique_temp_path(target) for _ in range(200)}
+
+    assert len(paths) == 200
+    for path in paths:
+        assert path.name.startswith("imu_latest.json.")
+        assert path.name.endswith(".tmp")
+
+
+def test_write_debug_json_is_concurrency_safe(tmp_path, monkeypatch):
+    import threading
+
+    monkeypatch.setattr(mobile_bridge, "MOBILE_DATA_DIR", tmp_path / "mobile")
+    errors = []
+
+    def worker(writer_id):
+        try:
+            for _ in range(25):
+                mobile_bridge.write_debug_json(
+                    "imu_latest.json",
+                    {"writer": writer_id, "samples": list(range(64))},
+                )
+        except BaseException as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    target = tmp_path / "mobile" / "imu_latest.json"
+    with open(target) as handle:
+        data = json.load(handle)  # must be complete, valid JSON (no interleaving)
+    assert data["writer"] in range(8)
+    assert list((tmp_path / "mobile").glob("*.tmp")) == []

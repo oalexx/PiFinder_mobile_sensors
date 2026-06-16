@@ -8,6 +8,7 @@ import math
 import os
 import re
 import sys
+import threading
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -99,19 +100,78 @@ def ensure_mobile_camera_solve_reports_dir() -> Path:
     return reports_dir
 
 
+def _unique_temp_path(target: Path) -> Path:
+    """Return a process/thread-unique temp sibling for an atomic write.
+
+    A fixed ``<name>.tmp`` is unsafe: waitress serves requests from a thread
+    pool, so two concurrent writes to the same target would share one temp file
+    and interleave bytes (corrupt JSON) or race on os.replace. Embedding
+    pid/thread/random keeps every in-flight write isolated until the rename.
+    """
+    unique = f"{os.getpid()}.{threading.get_ident()}.{os.urandom(4).hex()}"
+    return target.with_name(f"{target.name}.{unique}.tmp")
+
+
+# Serializes the final rename so concurrent writers to the same target never
+# race on it. POSIX rename() is atomic and tolerates this, but on Windows two
+# concurrent MoveFileEx calls onto one destination raise PermissionError.
+_ATOMIC_WRITE_LOCK = threading.Lock()
+
+
+def _atomic_replace(temp: Path, target: Path) -> None:
+    with _ATOMIC_WRITE_LOCK:
+        for attempt in range(5):
+            try:
+                os.replace(temp, target)
+                return
+            except PermissionError:
+                # Transient on Windows when the destination is momentarily held
+                # (e.g. by a reader or AV scanner). The lock removes writer/writer
+                # races; this retry covers external holders.
+                if attempt == 4:
+                    raise
+                time.sleep(0.02)
+
+
+def _atomic_write_bytes(target: Path, data: bytes) -> None:
+    temp = _unique_temp_path(target)
+    try:
+        with open(temp, "wb") as output:
+            output.write(data)
+        _atomic_replace(temp, target)
+    except BaseException:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_json(target: Path, payload: Dict[str, Any]) -> None:
+    temp = _unique_temp_path(target)
+    try:
+        with open(temp, "w") as output:
+            json.dump(payload, output, indent=2, sort_keys=True)
+            output.write("\n")
+        _atomic_replace(temp, target)
+    except BaseException:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise
+
+
 def write_debug_json(filename: str, payload: Dict[str, Any]) -> Path:
     """Persist the latest mobile bridge payload for debugging.
 
-    Writes through a temporary file and then replaces the target path so readers
-    do not observe partially written JSON.
+    Writes through a unique temporary file and then replaces the target path so
+    readers never observe partially written JSON and concurrent writers do not
+    corrupt each other's output.
     """
     data_dir = ensure_mobile_data_dir()
     target = data_dir / filename
-    temp = target.with_suffix(target.suffix + ".tmp")
-    with open(temp, "w") as output:
-        json.dump(payload, output, indent=2, sort_keys=True)
-        output.write("\n")
-    os.replace(temp, target)
+    _atomic_write_json(target, payload)
     return target
 
 
@@ -322,10 +382,7 @@ def store_camera_frame(
     frame_path = frames_dir / frame_filename
     metadata_path = frames_dir / metadata_filename
 
-    temp_frame_path = frame_path.with_suffix(".jpg.tmp")
-    with open(temp_frame_path, "wb") as output:
-        output.write(frame_bytes)
-    os.replace(temp_frame_path, frame_path)
+    _atomic_write_bytes(frame_path, frame_bytes)
 
     stored_metadata = {
         "received_utc": received_utc,
@@ -339,11 +396,7 @@ def store_camera_frame(
         "metadata_file": str(metadata_path),
         "metadata": metadata,
     }
-    temp_metadata_path = metadata_path.with_suffix(".json.tmp")
-    with open(temp_metadata_path, "w") as output:
-        json.dump(stored_metadata, output, indent=2, sort_keys=True)
-        output.write("\n")
-    os.replace(temp_metadata_path, metadata_path)
+    _atomic_write_json(metadata_path, stored_metadata)
     return stored_metadata
 
 
@@ -590,6 +643,16 @@ def optical_boresight_calibration(
         return error_payload(
             "invalid_reference_coordinates",
             ra_error or dec_error or "Invalid reference coordinates.",
+        )
+    if reference_ra_deg is not None and not 0.0 <= reference_ra_deg < 360.0:
+        return error_payload(
+            "invalid_reference_coordinates",
+            "reference_ra_deg must be between 0 and 360.",
+        )
+    if reference_dec_deg is not None and not -90.0 <= reference_dec_deg <= 90.0:
+        return error_payload(
+            "invalid_reference_coordinates",
+            "reference_dec_deg must be between -90 and 90.",
         )
 
     solve_timeout_ms, timeout_error = validate_solve_timeout_ms(
@@ -1705,11 +1768,7 @@ def _write_diagnostic_report(
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_path = target_dir / f"{timestamp}_{frame_id}.json"
     report_payload = _sanitize_diagnostic_report(payload)
-    temp_path = report_path.with_suffix(".json.tmp")
-    with open(temp_path, "w") as output:
-        json.dump(report_payload, output, indent=2, sort_keys=True)
-        output.write("\n")
-    os.replace(temp_path, report_path)
+    _atomic_write_json(report_path, report_payload)
     return {
         "stored": True,
         "json_report": str(report_path),
@@ -1830,11 +1889,7 @@ def _write_optical_boresight_profile(
     latest_path = target_dir / OPTICAL_BORESIGHT_LATEST_FILENAME
     sanitized = _strip_private_location_fields(json.loads(json.dumps(profile, default=str)))
     for path in (archive_path, latest_path):
-        temp_path = path.with_suffix(path.suffix + ".tmp")
-        with open(temp_path, "w") as output:
-            json.dump(sanitized, output, indent=2, sort_keys=True)
-            output.write("\n")
-        os.replace(temp_path, path)
+        _atomic_write_json(path, sanitized)
     return {
         "profile": str(archive_path),
         "latest_profile": str(latest_path),
@@ -2055,7 +2110,13 @@ def _number_field(payload: Dict[str, Any], field: str) -> Tuple[float, Optional[
     value = payload.get(field)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0.0, f"{field} must be a number."
-    return float(value), None
+    number = float(value)
+    # Reject NaN/Infinity. Flask 3 parses standard JSON with the stdlib decoder,
+    # so a value like 1e400 arrives as float('inf'); downstream int()/range checks
+    # would then raise or silently corrupt runtime/diagnostic state.
+    if not math.isfinite(number):
+        return 0.0, f"{field} must be a finite number."
+    return number, None
 
 
 def _optional_number_field(
@@ -2067,7 +2128,10 @@ def _optional_number_field(
     value = payload[field]
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None, f"{field} must be a number."
-    return float(value), None
+    number = float(value)
+    if not math.isfinite(number):
+        return None, f"{field} must be a finite number."
+    return number, None
 
 
 def _validate_imu_sample(
