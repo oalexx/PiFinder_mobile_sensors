@@ -62,7 +62,12 @@ def _cycle_result(cycle: dict[str, Any], index: int) -> dict[str, Any]:
     solved = _point(cycle, "solve_final")
     residual_alt = wrap_delta_deg(solved["alt_deg"] - predicted["alt_deg"])
     residual_az = wrap_delta_deg(solved["az_deg"] - predicted["az_deg"])
-    error_deg = math.hypot(residual_alt, residual_az)
+    # Azimuth residuals are not metric on the sphere: a given delta-az subtends a
+    # smaller on-sky angle near the zenith. Weight by cos(mean altitude) so
+    # error_deg is the true angular separation (same cos(dec) convention the
+    # optical boresight offset uses). residual_az_deg below stays raw for trace.
+    mean_alt_rad = math.radians((solved["alt_deg"] + predicted["alt_deg"]) / 2.0)
+    error_deg = math.hypot(residual_alt, residual_az * math.cos(mean_alt_rad))
     duration_s = max(0.0, float(cycle.get("duration_s") or 0.0))
     drift_deg_per_min = (error_deg / duration_s * 60.0) if duration_s > 0 else None
     return {

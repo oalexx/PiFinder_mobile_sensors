@@ -81,3 +81,17 @@ def test_high_inconsistent_error_rejects_imu_reliability():
     assert report["verdict"] == "imu_not_reliable"
     assert report["confidence"] == "LOW"
     assert report["recommendation"] == "keep_read_only_and_collect_better_cycles"
+
+
+def test_error_metric_weights_azimuth_by_cos_altitude():
+    # Near the zenith a 10-deg azimuth residual subtends a much smaller on-sky
+    # angle: at alt=80 the true separation is ~10 * cos(80) = 1.7365 deg, not 10.
+    payload = {"cycles": [cycle(1, 80.0, 100.0, 80.0, 110.0)]}
+
+    report = analyze_mobile_imu_drift.analyze_payload(payload)
+    cycle_result = report["cycles"][0]
+
+    # Raw azimuth residual is preserved for traceability.
+    assert cycle_result["residual_az_deg"] == 10.0
+    # error_deg is the cos(altitude)-weighted on-sky separation.
+    assert abs(cycle_result["error_deg"] - 1.7365) < 0.01
