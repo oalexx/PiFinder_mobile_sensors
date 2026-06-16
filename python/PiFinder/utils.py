@@ -1,6 +1,10 @@
 import os
 import errno
-import fcntl
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows/dev fallback (no advisory flock)
+    fcntl = None  # type: ignore[assignment]
 import time
 import logging
 import json
@@ -108,6 +112,13 @@ def acquire_single_instance_lock(
     """
     global _instance_lock_file
     log = logging.getLogger("utils")
+    if fcntl is None:
+        # No advisory-lock support (e.g. Windows dev hosts). Fail open per the
+        # contract above: never block startup just because locking is missing.
+        log.warning(
+            "fcntl unavailable on this platform; starting without instance lock."
+        )
+        return True
     if lock_dir is None:
         lock_dir = runtime_lock_dir()
     if lock_dir is None:
