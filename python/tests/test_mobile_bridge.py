@@ -249,7 +249,7 @@ def test_environment_payload_adds_summary_and_received_time():
 def test_server_exposes_mobile_environment_endpoint():
     source = SERVER.read_text(encoding="utf-8")
 
-    assert '@app.route("/mobile/environment", method="POST")' in source
+    assert '@app.route("/mobile/environment", methods=["POST"])' in source
     assert "validate_environment_payload" in source
     assert "ENVIRONMENT_LATEST_FILENAME" in source
 
@@ -965,7 +965,7 @@ def test_server_exposes_optical_boresight_endpoint():
     source = SERVER.read_text(encoding="utf-8")
 
     assert '@app.route("/mobile/optical_boresight")' in source
-    assert '@app.route("/mobile/optical_boresight", method="POST")' in source
+    assert '@app.route("/mobile/optical_boresight", methods=["POST"])' in source
     assert "mobile_bridge.optical_boresight_status(" in source
     assert "mobile_bridge.optical_boresight_calibration(" in source
 
@@ -973,7 +973,7 @@ def test_server_exposes_optical_boresight_endpoint():
 def test_server_exposes_diagnostic_camera_solve_endpoint():
     source = SERVER.read_text(encoding="utf-8")
 
-    assert '@app.route("/mobile/camera_solve", method="POST")' in source
+    assert '@app.route("/mobile/camera_solve", methods=["POST"])' in source
     assert "mobile_bridge.diagnostic_camera_solve(" in source
     assert '"ai_image_preprocessing_enabled"' in source
     assert '"preprocess_strategy", "classic"' in source
@@ -985,19 +985,19 @@ def test_server_mobile_mutating_and_report_endpoints_require_mobile_auth():
     for route in (
         '@app.route("/mobile/mount_profile")',
         '@app.route("/mobile/optical_boresight")',
-        '@app.route("/mobile/profile", method="POST")',
-        '@app.route("/mobile/environment", method="POST")',
-        '@app.route("/mobile/gps", method="POST")',
-        '@app.route("/mobile/imu", method="POST")',
-        '@app.route("/mobile/imu_drift_analysis", method="POST")',
-        '@app.route("/mobile/camera_frame", method="POST")',
+        '@app.route("/mobile/profile", methods=["POST"])',
+        '@app.route("/mobile/environment", methods=["POST"])',
+        '@app.route("/mobile/gps", methods=["POST"])',
+        '@app.route("/mobile/imu", methods=["POST"])',
+        '@app.route("/mobile/imu_drift_analysis", methods=["POST"])',
+        '@app.route("/mobile/camera_frame", methods=["POST"])',
         '@app.route("/mobile/camera_reports")',
-        '@app.route("/mobile/camera_solve", method="POST")',
-        '@app.route("/mobile/optical_boresight", method="POST")',
+        '@app.route("/mobile/camera_solve", methods=["POST"])',
+        '@app.route("/mobile/optical_boresight", methods=["POST"])',
     ):
         route_index = source.index(route)
         decorator_lines = source[route_index:].splitlines()[:3]
-        assert "@mobile_auth_required" in decorator_lines
+        assert any("@mobile_auth_required" in line for line in decorator_lines)
 
 
 def test_server_mobile_camera_solve_validates_timeout_before_solving():
@@ -1051,5 +1051,5 @@ def test_mobile_bridge_exposes_ai_imu_drift_analysis():
 def test_server_exposes_ai_imu_drift_analysis_endpoint():
     source = SERVER.read_text(encoding="utf-8")
 
-    assert '@app.route("/mobile/imu_drift_analysis", method="POST")' in source
+    assert '@app.route("/mobile/imu_drift_analysis", methods=["POST"])' in source
     assert "mobile_bridge.ai_imu_drift_analysis(" in source

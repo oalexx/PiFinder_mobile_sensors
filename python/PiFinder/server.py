@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 import pydeepskylog as pds
 from PIL import Image
-from PiFinder import utils, calc_utils, config
+from PiFinder import utils, calc_utils, config, mobile_bridge
 from PiFinder.db.observations_db import (
     ObservationsDatabase,
 )
@@ -58,6 +58,58 @@ def auth_required(func):
 
     auth_wrapper.__name__ = func.__name__
     return auth_wrapper
+
+
+def mobile_auth_required(func):
+    """Auth gate for /mobile/* endpoints.
+
+    Accepts either the browser Flask login session (so the web UI can call the
+    endpoints) or a mobile API token supplied via the X-PiFinder-Mobile-Token
+    header or an Authorization: Bearer <token> header.
+    """
+
+    def mobile_auth_wrapper(*args, **kwargs):
+        # Browser/cookie auth: reuse the same Flask login session as auth_required.
+        if "authenticated" in session and session["authenticated"]:
+            return func(*args, **kwargs)
+
+        auth_header = request.headers.get("Authorization") or ""
+        bearer_prefix = "Bearer "
+        bearer_token = (
+            auth_header[len(bearer_prefix):].strip()
+            if auth_header.startswith(bearer_prefix)
+            else ""
+        )
+        provided_token = request.headers.get("X-PiFinder-Mobile-Token") or bearer_token
+        configured_token = mobile_bridge.configured_mobile_api_token()
+        if not configured_token:
+            return make_response(
+                jsonify(
+                    mobile_bridge.error_payload(
+                        "mobile_auth_not_configured",
+                        (
+                            "Mobile API token is required. Set PIFINDER_MOBILE_TOKEN "
+                            "or create mobile/mobile_api_token.txt under PiFinder_data."
+                        ),
+                    )
+                ),
+                503,
+            )
+        if mobile_bridge.mobile_api_token_matches(provided_token, configured_token):
+            return func(*args, **kwargs)
+
+        return make_response(
+            jsonify(
+                mobile_bridge.error_payload(
+                    "mobile_auth_required",
+                    "Send X-PiFinder-Mobile-Token or Authorization: Bearer <token>.",
+                )
+            ),
+            401,
+        )
+
+    mobile_auth_wrapper.__name__ = func.__name__
+    return mobile_auth_wrapper
 
 
 class MockSharedState:
@@ -281,6 +333,347 @@ class Server:
         @auth_required
         def remote():
             return app.jinja_env.get_template("remote.html").render(title=_("Remote"))
+
+        # ------------------------------------------------------------------
+        # Mobile companion bridge endpoints (diagnostic / read-only).
+        # Ported from the fork's Bottle routes to Flask. Heavy logic lives in
+        # PiFinder.mobile_bridge; these are thin request/response shims.
+        # ------------------------------------------------------------------
+        @app.route("/mobile/status")
+        def mobile_status():
+            payload = mobile_bridge.status_payload()
+            mobile_bridge.write_debug_json("status.json", payload)
+            return jsonify(payload)
+
+        @app.route("/mobile/mount_profile")
+        @mobile_auth_required
+        def mobile_mount_profile():
+            return jsonify(
+                mobile_bridge.mount_profile_status(
+                    mobile_profile_path=mobile_bridge.MOBILE_DATA_DIR
+                    / mobile_bridge.PROFILE_LATEST_FILENAME,
+                )
+            )
+
+        @app.route("/mobile/optical_boresight")
+        @mobile_auth_required
+        def mobile_optical_boresight_status():
+            return jsonify(mobile_bridge.optical_boresight_status())
+
+        @app.route("/mobile/profile", methods=["POST"])
+        @mobile_auth_required
+        def mobile_profile():
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_json",
+                            "Request body must be a JSON object.",
+                        )
+                    ),
+                    400,
+                )
+
+            profile_payload = mobile_bridge.profile_payload(payload)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.PROFILE_LATEST_FILENAME,
+                profile_payload,
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "api": mobile_bridge.API_VERSION,
+                    "message": "profile accepted",
+                    "stored_as": mobile_bridge.PROFILE_LATEST_FILENAME,
+                    "received_utc": profile_payload["received_utc"],
+                }
+            )
+
+        @app.route("/mobile/environment", methods=["POST"])
+        @mobile_auth_required
+        def mobile_environment():
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_json",
+                            "Request body must be a JSON object.",
+                        )
+                    ),
+                    400,
+                )
+
+            environment, error_message = mobile_bridge.validate_environment_payload(
+                payload
+            )
+            if error_message:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_environment",
+                            error_message,
+                        )
+                    ),
+                    400,
+                )
+
+            environment_payload = mobile_bridge.environment_payload(environment)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.ENVIRONMENT_LATEST_FILENAME,
+                environment_payload,
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "api": mobile_bridge.API_VERSION,
+                    "message": "environment accepted for diagnostics",
+                    "stored_as": mobile_bridge.ENVIRONMENT_LATEST_FILENAME,
+                    "received_utc": environment_payload["received_utc"],
+                    "summary": environment_payload["summary"],
+                    "diagnostic_only": True,
+                    "integrator_updated": False,
+                    "runtime_pointing_updated": False,
+                }
+            )
+
+        @app.route("/mobile/gps", methods=["POST"])
+        @mobile_auth_required
+        def mobile_gps():
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_json",
+                            "Request body must be a JSON object.",
+                        )
+                    ),
+                    400,
+                )
+
+            gps_fix, error_message = mobile_bridge.validate_gps_payload(payload)
+            if error_message:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_gps",
+                            error_message,
+                        )
+                    ),
+                    400,
+                )
+
+            gps_payload = mobile_bridge.gps_payload(gps_fix)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.GPS_LATEST_FILENAME,
+                gps_payload,
+            )
+            self.gps_queue.put(("fix", mobile_bridge.mobile_gps_queue_fix(gps_fix)))
+            self.gps_queue.put(("time", mobile_bridge.mobile_gps_queue_time(gps_fix)))
+            return jsonify(
+                {
+                    "ok": True,
+                    "api": mobile_bridge.API_VERSION,
+                    "message": "gps accepted",
+                    "stored_as": mobile_bridge.GPS_LATEST_FILENAME,
+                    "received_utc": gps_payload["received_utc"],
+                }
+            )
+
+        @app.route("/mobile/imu", methods=["POST"])
+        @mobile_auth_required
+        def mobile_imu():
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_json",
+                            "Request body must be a JSON object.",
+                        )
+                    ),
+                    400,
+                )
+
+            imu_batch, error_message = mobile_bridge.validate_imu_payload(payload)
+            if error_message:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_imu",
+                            error_message,
+                        )
+                    ),
+                    400,
+                )
+
+            imu_payload = mobile_bridge.imu_payload(imu_batch)
+            mobile_bridge.write_debug_json(
+                mobile_bridge.IMU_LATEST_FILENAME,
+                imu_payload,
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "api": mobile_bridge.API_VERSION,
+                    "message": "imu batch accepted for debug",
+                    "stored_as": mobile_bridge.IMU_LATEST_FILENAME,
+                    "received_utc": imu_payload["received_utc"],
+                    "sample_count": imu_batch["sample_count"],
+                    "batch_label": imu_batch["batch_label"],
+                }
+            )
+
+        @app.route("/mobile/imu_drift_analysis", methods=["POST"])
+        @mobile_auth_required
+        def mobile_imu_drift_analysis():
+            payload = request.get_json(silent=True)
+            result = mobile_bridge.ai_imu_drift_analysis(payload)
+            if result.get("ok") is False:
+                return make_response(jsonify(result), 400)
+            return jsonify(result)
+
+        @app.route("/mobile/camera_frame", methods=["POST"])
+        @mobile_auth_required
+        def mobile_camera_frame():
+            start_time = time.time()
+            upload = request.files.get("frame")
+            if upload is None:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "missing_frame",
+                            "Request must include a multipart JPEG file field named frame.",
+                        )
+                    ),
+                    400,
+                )
+
+            metadata, metadata_error = mobile_bridge.validate_camera_frame_metadata(
+                request.form.get("metadata", ""),
+            )
+            if metadata_error:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_metadata",
+                            metadata_error,
+                        )
+                    ),
+                    400,
+                )
+
+            frame_bytes = upload.read(mobile_bridge.MAX_CAMERA_FRAME_BYTES + 1)
+            frame_error = mobile_bridge.validate_camera_frame_bytes(frame_bytes)
+            if frame_error:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_frame",
+                            frame_error,
+                        )
+                    ),
+                    400,
+                )
+
+            stored_frame = mobile_bridge.store_camera_frame(
+                frame_bytes=frame_bytes,
+                metadata=metadata,
+                original_filename=upload.filename or "frame.jpg",
+                content_type=upload.content_type or "image/jpeg",
+            )
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return jsonify(
+                {
+                    "ok": True,
+                    "api": mobile_bridge.API_VERSION,
+                    "message": "camera frame stored for debug",
+                    "frame_id": stored_frame["frame_id"],
+                    "stored_frame": stored_frame["frame_file"],
+                    "stored_metadata": stored_frame["metadata_file"],
+                    "bytes": stored_frame["bytes"],
+                    "received_utc": stored_frame["received_utc"],
+                    "elapsed_ms": elapsed_ms,
+                    "solver_invoked": False,
+                }
+            )
+
+        @app.route("/mobile/camera_reports")
+        @mobile_auth_required
+        def mobile_camera_reports():
+            try:
+                limit = int(request.args.get("limit", 20))
+            except (TypeError, ValueError):
+                limit = 20
+            return jsonify(mobile_bridge.camera_report_history(limit=limit))
+
+        @app.route("/mobile/camera_solve", methods=["POST"])
+        @mobile_auth_required
+        def mobile_camera_solve():
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_json",
+                            "Request body must be a JSON object.",
+                        )
+                    ),
+                    400,
+                )
+
+            frame_id = payload.get("frame_id")
+            solve_timeout_ms, timeout_error = mobile_bridge.validate_solve_timeout_ms(
+                payload,
+                default_ms=1000,
+            )
+            if timeout_error:
+                return make_response(
+                    jsonify(
+                        mobile_bridge.error_payload(
+                            "invalid_solve_timeout",
+                            timeout_error,
+                        )
+                    ),
+                    400,
+                )
+            assert solve_timeout_ms is not None
+            preprocess_modes = payload.get("preprocess_modes")
+            if isinstance(preprocess_modes, str):
+                preprocess_modes = [
+                    mode.strip()
+                    for mode in preprocess_modes.split(",")
+                    if mode.strip()
+                ]
+            elif not isinstance(preprocess_modes, list):
+                preprocess_modes = None
+            ai_image_preprocessing_enabled = bool(
+                payload.get("ai_image_preprocessing_enabled", False)
+            )
+            preprocess_strategy = str(payload.get("preprocess_strategy", "classic"))
+
+            result = mobile_bridge.diagnostic_camera_solve(
+                frame_id=frame_id,
+                solve_timeout_ms=solve_timeout_ms,
+                preprocess_modes=preprocess_modes,
+                force_attempt=bool(payload.get("force_attempt", False)),
+                ai_image_preprocessing_enabled=ai_image_preprocessing_enabled,
+                preprocess_strategy=preprocess_strategy,
+            )
+            if result.get("ok") is False:
+                return make_response(jsonify(result), 400)
+            return jsonify(result)
+
+        @app.route("/mobile/optical_boresight", methods=["POST"])
+        @mobile_auth_required
+        def mobile_optical_boresight():
+            payload = request.get_json(silent=True)
+            result = mobile_bridge.optical_boresight_calibration(payload)
+            if result.get("ok") is False:
+                return make_response(jsonify(result), 400)
+            return jsonify(result)
 
         @app.route("/advanced")
         @auth_required
