@@ -1273,6 +1273,64 @@ Status:
 Keep. This is required for Phase 6 issue #63. Thresholds are conservative until
 more Phase 2 clear-sky evidence tunes them.
 
+### 2026-06-16: Resync onto upstream/main (Bottle -> Flask)
+
+Merged `upstream/main` (88 commits ahead of the previous `upstream/release`
+base `651e23fe`) into the mobile fork on branch
+`upstream-main-migration-20260616`. Brings the webserver Flask migration
+(#331), official headless `/remote` (#435), polar alignment (#459), FastAltAz
+(#423), and IMU integrator selection (#388). Full plan:
+`PiFinder_lite/documentation/upstream_main_migration_plan_2026-06-16.md`.
+
+Conflict resolution (4 files):
+
+- `python/PiFinder/server.py` — took upstream's Flask server, then re-registered
+  the 11 `/mobile/*` endpoints and ported `mobile_auth_required` from Bottle
+  (`response.status` / `get_cookie` / `get_header`) to Flask (`session` /
+  `request.headers` / `make_response`+`jsonify`). Adopted upstream's official
+  `/remote` (the fork's was the same feature; the fork never customised the
+  template) — D1 resolved by adoption, no namespacing needed.
+- `python/PiFinder/utils.py` — kept upstream's `__file__`-anchored `pifinder_dir`
+  and kept the fork's `resolve_tetra3_dir` / `tetra3_sys_paths` /
+  `ensure_numpy_math_compat` helpers.
+- `python/PiFinder/keyboard_none.py` — kept the fork's `KeyboardNone` log fix and
+  upstream's `bloom_remap` parity note.
+- `CLAUDE.md` — kept the fork's project context.
+
+Auto-merged with fork patches preserved (verified): `solver.py`,
+`ui/preview.py` (tetra3 sys.path), `ui/marking_menus.py` (dataclass
+`field(default_factory=...)` for Py3.11+).
+
+Required fixes ("what broke"):
+
+- `python/PiFinder/utils.py` — upstream's unconditional `import fcntl` (Unix-only)
+  plus an advisory-flock instance lock broke Windows dev/test. Guarded the import
+  and fail open when `fcntl` is unavailable. Required only for non-Unix dev hosts.
+- `PiFinder_lite/requirements-trixie-py313.txt` — added `Flask`/`flask-babel`/
+  `waitress` (the migrated server needs them at runtime on the Pi) and bumped
+  `pydeepskylog` 1.3.2 -> 1.6 to match upstream. **Pending Pi re-validation.**
+
+D4 (tetra3 shims): the dev `.venv` runs **numpy 2.4.4**, which removed `np.math`,
+so `ensure_numpy_math_compat` is genuinely required. Shims kept.
+
+Validation:
+
+```
+.\python\.venv\Scripts\python.exe -m pytest python\tests\test_mobile_bridge.py
+  python\tests\test_mobile_camera_profile.py python\tests\test_mobile_imu_analysis.py
+  python\tests\test_lite_runtime_compat.py python\tests\test_mobile_mount_offset.py
+  python\tests\test_mobile_mount_repeatability.py
+  python\tests\test_mobile_android_calibration_ui.py
+  python\tests\test_mobile_android_camera_solve_ui.py -q
+81 passed   (baseline before merge: 80 passed / 1 WIP fail, now fixed)
+```
+
+Status: NOT yet validated on a real Pi or by a full Flask runtime/smoke/unit
+run (the dev box has a minimal numpy-2 venv; downgrading to rebuild the full
+env was judged too risky here). Before merge, run `pip install -r
+python/requirements.txt`, `nox -s smoke_tests unit_tests`, the Lite headless
+startup, and `mobile/gradlew.bat assembleDebug` on the target environment.
+
 ## Pre-Merge Checklist
 
 Before merging Lite work back into a branch intended for upstream PiFinder:

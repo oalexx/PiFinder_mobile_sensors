@@ -11,6 +11,14 @@ should not disturb the original hardware mode unless explicitly requested.
 
 Current status:
 
+- 2026-06-16 upstream resync: the fork was merged onto `upstream/main`
+  (Bottle -> Flask webserver, #331) on branch `upstream-main-migration-20260616`.
+  The 11 `/mobile/*` endpoints and `mobile_auth_required` were ported to Flask;
+  the fork now uses upstream's official `/remote`. Mobile tests pass (81). Not
+  yet validated on a real Pi / full Flask runtime — see
+  `PiFinder_lite/documentation/upstream_main_migration_plan_2026-06-16.md` and
+  the 2026-06-16 entry in `upstream_change_log.md`. The previous
+  `upstream/release` base only advanced docs/case files.
 - Phase 1 Android compatibility tester is implemented.
 - Phase 3 PiFinder Lite headless/web remote workflow is implemented.
 - Phase 4 mobile bridge is implemented and Raspberry-validated.
