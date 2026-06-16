@@ -161,3 +161,17 @@ astro_data/comets.txt
 test_ubx
 test_ubx/*
 python/telemetry_analysis/
+
+# Local-only artifacts (never commit per mobile/Lite guardrails)
+# Local conda env used on the Windows dev box
+python/.conda-py39/
+# Android Studio / Gradle build artifacts and machine-specific config
+mobile/.gradle/
+mobile/.idea/
+mobile/local.properties
+.gradle/
+.idea/
+# Local hardware backup, phone captures, and generated camera analysis output
+/HW_backup/
+/Test cam/
+PiFinder_lite/phase2_camera_analysis/
