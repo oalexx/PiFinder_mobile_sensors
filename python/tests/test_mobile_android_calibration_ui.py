@@ -70,6 +70,18 @@ def test_android_calibration_screen_exposes_optical_boresight_recalibration():
     assert '"runtime_pointing_updated", false' in source
 
 
+def test_android_optical_boresight_uses_dedicated_full_diagnostic_frame():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "private String opticalBoresightFrameId = \"\";" in source
+    assert "opticalBoresightFrameId = \"\";" in source
+    assert "opticalBoresightFrameId = selected.frameId;" in source
+    assert "lastUploadedFrameId = json.optString(\"frame_id\", \"\");" in source
+    assert "String frameId = opticalBoresightFrameId == null ? \"\" : opticalBoresightFrameId.trim();" in source
+    assert 'payload.put("frame_id", frameId);' in source
+    assert 'payload.put("frame_source", "full_diagnostic_selected_candidate");' in source
+
+
 def test_android_calibration_screen_exposes_ai_imu_drift_analysis_evidence():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 

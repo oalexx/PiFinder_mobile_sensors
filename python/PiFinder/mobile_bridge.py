@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 """Helpers for the optional PiFinder Mobile Bridge API."""
 
+import hmac
 import json
 import math
 import os
@@ -17,6 +18,7 @@ from PiFinder import utils
 
 API_VERSION = "mobile-bridge-v0"
 MOBILE_DATA_DIR = utils.data_dir / "mobile"
+MOBILE_API_TOKEN_FILENAME = "mobile_api_token.txt"
 PROFILE_LATEST_FILENAME = "profile_latest.json"
 GPS_LATEST_FILENAME = "gps_latest.json"
 IMU_LATEST_FILENAME = "imu_latest.json"
@@ -36,6 +38,8 @@ FRAMES_DIRNAME = "frames"
 CAMERA_SOLVE_REPORTS_DIRNAME = "camera_solve_reports"
 MAX_CAMERA_FRAME_BYTES = 25 * 1024 * 1024
 DEFAULT_MOBILE_GPS_ERROR_M = 9999
+MIN_SOLVE_TIMEOUT_MS = 100
+MAX_SOLVE_TIMEOUT_MS = 5000
 MOUNT_PROFILE_SCHEMA = "pifinder-mobile-mount-profile-v0"
 OPTICAL_BORESIGHT_SCHEMA = "pifinder-mobile-optical-boresight-profile-v0"
 CAMERA_SOLVE_FRAME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,96}$")
@@ -200,6 +204,34 @@ def error_payload(code: str, message: str) -> Dict[str, Any]:
     }
 
 
+def configured_mobile_api_token(data_dir: Optional[Path] = None) -> Optional[str]:
+    """Return the configured mobile API token, if one exists.
+
+    Set ``PIFINDER_MOBILE_TOKEN`` for temporary runs, or create
+    ``~/PiFinder_data/mobile/mobile_api_token.txt`` for field use.
+    """
+    env_token = os.environ.get("PIFINDER_MOBILE_TOKEN")
+    if isinstance(env_token, str) and env_token.strip():
+        return env_token.strip()
+
+    token_path = (data_dir or MOBILE_DATA_DIR) / MOBILE_API_TOKEN_FILENAME
+    try:
+        token = token_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return token or None
+
+
+def mobile_api_token_matches(
+    provided_token: Optional[str],
+    configured_token: Optional[str] = None,
+) -> bool:
+    expected = configured_token or configured_mobile_api_token()
+    if not expected or not provided_token:
+        return False
+    return hmac.compare_digest(str(provided_token).strip(), expected)
+
+
 def validate_camera_frame_metadata(metadata_text: str) -> Tuple[Dict[str, Any], Optional[str]]:
     if not isinstance(metadata_text, str) or not metadata_text.strip():
         return {}, "Missing required multipart field: metadata."
@@ -248,6 +280,21 @@ def _optional_float(value: Any) -> Optional[float]:
 
 def _optional_bool(value: Any) -> Optional[bool]:
     return value if isinstance(value, bool) else None
+
+
+def _parse_utc_timestamp(value: str) -> Tuple[Optional[datetime], Optional[str]]:
+    time_utc = str(value).strip()
+    if not time_utc:
+        return None, "time_utc must be a non-empty string."
+    if time_utc.endswith("Z"):
+        time_utc = time_utc[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(time_utc)
+    except ValueError:
+        return None, "time_utc must be an ISO-8601 timestamp."
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc), None
 
 
 def _environment_sensor_payload(value: Any, value_field: str) -> Dict[str, Any]:
@@ -545,7 +592,13 @@ def optical_boresight_calibration(
             ra_error or dec_error or "Invalid reference coordinates.",
         )
 
-    solve_timeout_ms = int(payload.get("solve_timeout_ms", 1500))
+    solve_timeout_ms, timeout_error = validate_solve_timeout_ms(
+        payload,
+        default_ms=1500,
+    )
+    if timeout_error:
+        return error_payload("invalid_solve_timeout", timeout_error)
+    assert solve_timeout_ms is not None
     solve_result = diagnostic_camera_solve(
         frame_id=frame_id,
         reports_dir=reports_dir,
@@ -742,6 +795,10 @@ def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optio
     time_utc = payload.get("time_utc")
     if not isinstance(time_utc, str) or not time_utc.strip():
         return {}, "time_utc must be a non-empty string."
+    parsed_time, time_error = _parse_utc_timestamp(time_utc)
+    if time_error:
+        return {}, time_error
+    assert parsed_time is not None
     source = payload.get("source")
     if not isinstance(source, str) or not source.strip():
         return {}, "source must be a non-empty string."
@@ -751,7 +808,7 @@ def validate_gps_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optio
         "lon": lon,
         "altitude_m": altitude_m,
         "accuracy_m": accuracy_m,
-        "time_utc": time_utc,
+        "time_utc": parsed_time.isoformat().replace("+00:00", "Z"),
         "source": source,
     }
     if "provider" in payload:
@@ -788,13 +845,29 @@ def mobile_gps_queue_fix(gps_fix: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def mobile_gps_queue_time(gps_fix: Dict[str, Any]) -> datetime:
-    time_utc = str(gps_fix["time_utc"]).strip()
-    if time_utc.endswith("Z"):
-        time_utc = time_utc[:-1] + "+00:00"
-    gps_time = datetime.fromisoformat(time_utc)
-    if gps_time.tzinfo is None:
-        gps_time = gps_time.replace(tzinfo=timezone.utc)
-    return gps_time.astimezone(timezone.utc)
+    gps_time, error_message = _parse_utc_timestamp(str(gps_fix["time_utc"]))
+    if error_message:
+        raise ValueError(error_message)
+    assert gps_time is not None
+    return gps_time
+
+
+def validate_solve_timeout_ms(
+    payload: Dict[str, Any],
+    default_ms: int,
+    min_ms: int = MIN_SOLVE_TIMEOUT_MS,
+    max_ms: int = MAX_SOLVE_TIMEOUT_MS,
+) -> Tuple[Optional[int], Optional[str]]:
+    raw_timeout = payload.get("solve_timeout_ms", default_ms)
+    if isinstance(raw_timeout, bool):
+        return None, "solve_timeout_ms must be an integer."
+    try:
+        timeout_ms = int(raw_timeout)
+    except (TypeError, ValueError):
+        return None, "solve_timeout_ms must be an integer."
+    if timeout_ms < min_ms or timeout_ms > max_ms:
+        return None, f"solve_timeout_ms must be between {min_ms} and {max_ms}."
+    return timeout_ms, None
 
 
 def validate_imu_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str]]:

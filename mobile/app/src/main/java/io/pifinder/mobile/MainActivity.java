@@ -133,6 +133,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private static final String PREFS_NAME = "pifinder_mobile";
     private static final String KEY_CHECK_HISTORY = "check_history";
     private static final String KEY_REMOTE_BASE_URL = "remote_base_url";
+    private static final String KEY_MOBILE_API_TOKEN = "mobile_api_token";
     private static final String KEY_NIGHT_VISION_ENABLED = "night_vision_enabled";
     private static final String KEY_PENDING_SCREEN_AFTER_THEME_TOGGLE = "pending_screen_after_theme_toggle";
     private static final String KEY_PENDING_REMOTE_WEB_URL_AFTER_THEME_TOGGLE = "pending_remote_web_url_after_theme_toggle";
@@ -181,6 +182,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private TextView subtitleView;
     private Button nightVisionToggleButton;
     private EditText remoteUrlInput;
+    private EditText mobileTokenInput;
     private TextView remoteStatusView;
     private TextView calibrationStatusView;
     private EditText calibrationTargetInput;
@@ -219,6 +221,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
     private Float latestPressureHpa;
     private long latestPressureAtMs = 0L;
     private String lastUploadedFrameId = "";
+    private String opticalBoresightFrameId = "";
     private boolean fullDiagnosticRunning = false;
     private boolean aiImuDriftSolveRunning = false;
     private String aiImuDriftSolveRole = "";
@@ -554,6 +557,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         remoteScreen.addView(remoteStatusView);
         remoteUrlInput = makeUrlInput();
         remoteScreen.addView(remoteUrlInput);
+        mobileTokenInput = makeMobileTokenInput();
+        remoteScreen.addView(mobileTokenInput);
         LinearLayout remoteRow = buttonRow();
         remoteScreen.addView(remoteRow);
         Button openRemote = makePrimaryButton("Open remote");
@@ -1284,6 +1289,27 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return input;
     }
 
+    private EditText makeMobileTokenInput() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(loadMobileApiToken());
+        input.setTextColor(themeText());
+        input.setHintTextColor(themeMuted());
+        input.setHint("Mobile API token");
+        input.setTextSize(14);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setSelectAllOnFocus(false);
+        input.setPadding(dp(14), 0, dp(14), 0);
+        input.setBackground(roundedRect(themePanel(), themeHairline(), 1, 16));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(52)
+        );
+        params.setMargins(0, 0, 0, dp(10));
+        input.setLayoutParams(params);
+        return input;
+    }
+
     private EditText makeTextInput(String hint) {
         EditText input = new EditText(this);
         input.setSingleLine(true);
@@ -1470,7 +1496,8 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             updateCalibrationStatus("Connection missing\nEnter a PiFinder base URL.");
             return;
         }
-        if (lastUploadedFrameId == null || lastUploadedFrameId.trim().length() == 0) {
+        String frameId = opticalBoresightFrameId == null ? "" : opticalBoresightFrameId.trim();
+        if (frameId.length() == 0) {
             updateCalibrationStatus("Optical align waiting\nCenter a known target in the eyepiece, run Camera Lab -> Run full diagnostic, then return here.");
             return;
         }
@@ -1484,7 +1511,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             updateCalibrationStatus("Optical align needs coordinates\n" + e.getMessage());
             return;
         }
-        updateCalibrationStatus("Running optical align\nFrame: " + lastUploadedFrameId
+        updateCalibrationStatus("Running optical align\nFrame: " + frameId
                 + "\n" + baseUrl + "/mobile/optical_boresight");
         new Thread(() -> {
             String message = postOpticalBoresightCalibration(baseUrl, payloadJson);
@@ -1654,7 +1681,17 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             prefs().edit().putString(KEY_REMOTE_BASE_URL, baseUrl).apply();
             remoteUrlInput.setText(baseUrl);
         }
+        saveMobileApiTokenFromInput();
         return baseUrl;
+    }
+
+    private void saveMobileApiTokenFromInput() {
+        if (mobileTokenInput == null) {
+            return;
+        }
+        prefs().edit()
+                .putString(KEY_MOBILE_API_TOKEN, mobileTokenInput.getText().toString().trim())
+                .apply();
     }
 
     private boolean shouldRetryMobileRequest(Exception e) {
@@ -1695,6 +1732,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
                 connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
                 connection.setRequestProperty("Accept", "application/json");
+                applyMobileAuthHeader(connection);
                 int status = connection.getResponseCode();
                 String body = readHttpBody(connection, status);
                 if (status < 200 || status >= 300) {
@@ -1742,6 +1780,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
                 connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
                 connection.setRequestProperty("Accept", "application/json");
+                applyMobileAuthHeader(connection);
                 int status = connection.getResponseCode();
                 String body = readHttpBody(connection, status);
                 if (status < 200 || status >= 300) {
@@ -1833,6 +1872,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.setConnectTimeout(MOBILE_CONNECT_TIMEOUT_MS);
                 connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
                 connection.setRequestProperty("Accept", "application/json");
+                applyMobileAuthHeader(connection);
                 int status = connection.getResponseCode();
                 String body = readHttpBody(connection, status);
                 if (status < 200 || status >= 300) {
@@ -1916,6 +1956,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Accept", "application/json");
+                applyMobileAuthHeader(connection);
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
                 byte[] bodyBytes = profileJson.getBytes(StandardCharsets.UTF_8);
@@ -1980,6 +2021,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
                 connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Accept", "application/json");
+                applyMobileAuthHeader(connection);
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
                 byte[] bodyBytes = gpsJson.getBytes(StandardCharsets.UTF_8);
@@ -2027,6 +2069,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
             byte[] bodyBytes = environmentJson.getBytes(StandardCharsets.UTF_8);
@@ -2242,6 +2285,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
             byte[] bodyBytes = imuJson.getBytes(StandardCharsets.UTF_8);
@@ -2367,6 +2411,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         }
         fullDiagnosticRunning = true;
         lastUploadedFrameId = "";
+        opticalBoresightFrameId = "";
         updateMobileCameraDiagnosticGuide("full_running");
         updateCameraFieldTestStatus("running", "Capturing frames", "Run full diagnostic started.");
         captureView.setText("Full diagnostic running...\n1. Capturing solve-candidate JPEG burst.");
@@ -2453,6 +2498,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             if (selected != null) {
                 selectedSolveCandidateFrame = selected.candidate;
                 lastUploadedFrameId = selected.frameId;
+                opticalBoresightFrameId = selected.frameId;
                 lastCapturedJpegBytes = Arrays.copyOf(selected.candidate.bytes, selected.candidate.bytes.length);
                 lastCapturedJpegName = selected.candidate.filename;
                 lastCapturedJpegMetadataJson = buildCameraFrameMetadataJson(
@@ -2518,6 +2564,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(20000);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
 
             int status = connection.getResponseCode();
             String responseBody = readHttpBody(connection, status);
@@ -2756,6 +2803,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setReadTimeout(30000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
             connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
             connection.setFixedLengthStreamingMode(multipartBody.length);
 
@@ -2843,6 +2891,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setReadTimeout(45000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setFixedLengthStreamingMode(body.length);
             try (OutputStream output = connection.getOutputStream()) {
@@ -2880,6 +2929,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setReadTimeout(45000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setFixedLengthStreamingMode(body.length);
             try (OutputStream output = connection.getOutputStream()) {
@@ -3420,6 +3470,13 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return TextUtils.join(", ", values);
     }
 
+    private void applyMobileAuthHeader(HttpURLConnection connection) {
+        String token = loadMobileApiToken();
+        if (token != null && token.trim().length() > 0) {
+            connection.setRequestProperty("X-PiFinder-Mobile-Token", token.trim());
+        }
+    }
+
     private String readHttpBody(HttpURLConnection connection, int status) throws IOException {
         InputStream stream = status >= 200 && status < 400
                 ? connection.getInputStream()
@@ -3447,6 +3504,10 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private String loadRemoteBaseUrl() {
         return prefs().getString(KEY_REMOTE_BASE_URL, "http://pifinder.local");
+    }
+
+    private String loadMobileApiToken() {
+        return prefs().getString(KEY_MOBILE_API_TOKEN, "");
     }
 
     private String normalizeRemoteBaseUrl(String value) {
@@ -4210,12 +4271,14 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
 
     private String buildOpticalBoresightPayloadJson() throws JSONException {
         JSONObject payload = new JSONObject();
+        String frameId = opticalBoresightFrameId == null ? "" : opticalBoresightFrameId.trim();
         payload.put("schema", "pifinder-mobile-optical-boresight-calibration-v0");
         payload.put("created_utc", utcIso(System.currentTimeMillis()));
         payload.put("reference_target", calibrationReferenceText());
         payload.put("reference_ra_deg", requiredDecimalDegrees(opticalReferenceRaInput, "Reference RA deg"));
         payload.put("reference_dec_deg", requiredDecimalDegrees(opticalReferenceDecInput, "Reference Dec deg"));
-        payload.put("frame_id", lastUploadedFrameId == null ? "" : lastUploadedFrameId.trim());
+        payload.put("frame_id", frameId);
+        payload.put("frame_source", "full_diagnostic_selected_candidate");
         payload.put("solve_timeout_ms", 1500);
         payload.put("ai_image_preprocessing_enabled", aiImagePreprocessingEnabled);
         payload.put("preprocess_strategy", aiImagePreprocessingEnabled ? "adaptive" : "classic");
@@ -4304,6 +4367,7 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
             connection.setReadTimeout(30000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
+            applyMobileAuthHeader(connection);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setFixedLengthStreamingMode(body.length);
             try (OutputStream output = connection.getOutputStream()) {
@@ -6393,3 +6457,5 @@ public class MainActivity extends Activity implements SensorEventListener, Locat
         return (int) (value * getResources().getDisplayMetrics().density);
     }
 }
+
+

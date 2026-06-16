@@ -75,6 +75,40 @@ def test_mobile_gps_queue_time_parses_utc_timestamp():
     assert gps_time.tzinfo == timezone.utc
 
 
+def test_validate_gps_payload_rejects_invalid_timestamp_before_queue_update():
+    gps_fix, error = mobile_bridge.validate_gps_payload(
+        {
+            "lat": 40.4168,
+            "lon": -3.7038,
+            "time_utc": "not-a-date",
+            "source": "android",
+        }
+    )
+
+    assert gps_fix == {}
+    assert "time_utc" in error
+
+
+def test_validate_solve_timeout_ms_rejects_invalid_values():
+    timeout, error = mobile_bridge.validate_solve_timeout_ms(
+        {"solve_timeout_ms": "bad"},
+        default_ms=1000,
+    )
+
+    assert timeout is None
+    assert "solve_timeout_ms" in error
+
+
+def test_validate_solve_timeout_ms_accepts_supported_range():
+    timeout, error = mobile_bridge.validate_solve_timeout_ms(
+        {"solve_timeout_ms": 2500},
+        default_ms=1000,
+    )
+
+    assert error is None
+    assert timeout == 2500
+
+
 def test_validate_imu_payload_preserves_calibration_label_and_metadata():
     payload = {
         "schema": "pifinder-mobile-imu-batch-v0",
@@ -412,6 +446,34 @@ def test_optical_boresight_calibration_needs_reference_coordinates(tmp_path, mon
     assert result["calibration_ok"] is False
     assert result["profile"]["status"] == "needs_reference_coordinates"
     assert "reference_ra_dec_required" in result["profile"]["warnings"]
+
+
+def test_optical_boresight_calibration_rejects_invalid_timeout_before_solving(
+    tmp_path,
+    monkeypatch,
+):
+    solve_called = False
+
+    def fake_diagnostic_camera_solve(**kwargs):
+        nonlocal solve_called
+        solve_called = True
+        return {"ok": True}
+
+    monkeypatch.setattr(mobile_bridge, "diagnostic_camera_solve", fake_diagnostic_camera_solve)
+
+    result = mobile_bridge.optical_boresight_calibration(
+        {
+            "frame_id": "20260516T000000Z_frame",
+            "reference_ra_deg": 120.0,
+            "reference_dec_deg": 22.5,
+            "solve_timeout_ms": "bad",
+        },
+        profiles_dir=tmp_path / "optical_profiles",
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_solve_timeout"
+    assert solve_called is False
 
 
 def test_diagnostic_camera_solve_rejects_unsafe_frame_id(tmp_path):
@@ -915,6 +977,34 @@ def test_server_exposes_diagnostic_camera_solve_endpoint():
     assert "mobile_bridge.diagnostic_camera_solve(" in source
     assert '"ai_image_preprocessing_enabled"' in source
     assert '"preprocess_strategy", "classic"' in source
+
+
+def test_server_mobile_mutating_and_report_endpoints_require_mobile_auth():
+    source = SERVER.read_text(encoding="utf-8")
+
+    for route in (
+        '@app.route("/mobile/mount_profile")',
+        '@app.route("/mobile/optical_boresight")',
+        '@app.route("/mobile/profile", method="POST")',
+        '@app.route("/mobile/environment", method="POST")',
+        '@app.route("/mobile/gps", method="POST")',
+        '@app.route("/mobile/imu", method="POST")',
+        '@app.route("/mobile/imu_drift_analysis", method="POST")',
+        '@app.route("/mobile/camera_frame", method="POST")',
+        '@app.route("/mobile/camera_reports")',
+        '@app.route("/mobile/camera_solve", method="POST")',
+        '@app.route("/mobile/optical_boresight", method="POST")',
+    ):
+        route_index = source.index(route)
+        decorator_lines = source[route_index:].splitlines()[:3]
+        assert "@mobile_auth_required" in decorator_lines
+
+
+def test_server_mobile_camera_solve_validates_timeout_before_solving():
+    source = SERVER.read_text(encoding="utf-8")
+
+    assert "mobile_bridge.validate_solve_timeout_ms(" in source
+    assert "invalid_solve_timeout" in source
 
 
 def test_server_exposes_camera_report_history_endpoint():

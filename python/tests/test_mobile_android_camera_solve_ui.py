@@ -164,6 +164,17 @@ def test_android_mobile_bridge_uses_field_retry_timeouts():
     assert "connection.setReadTimeout(MOBILE_READ_TIMEOUT_MS)" in source
 
 
+def test_android_mobile_bridge_sends_configured_mobile_token_header():
+    source = MAIN_ACTIVITY.read_text(encoding="utf-8")
+
+    assert "KEY_MOBILE_API_TOKEN" in source
+    assert "mobileTokenInput" in source
+    assert "loadMobileApiToken()" in source
+    assert "saveMobileApiTokenFromInput()" in source
+    assert "applyMobileAuthHeader(connection)" in source
+    assert '"X-PiFinder-Mobile-Token"' in source
+
+
 def test_android_full_diagnostic_ranks_dynamic_burst_candidates():
     source = MAIN_ACTIVITY.read_text(encoding="utf-8")
 

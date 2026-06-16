@@ -47,6 +47,42 @@ def auth_required(func):
     return auth_wrapper
 
 
+def mobile_auth_required(func):
+    def mobile_auth_wrapper(*args, **kwargs):
+        auth_cookie = request.get_cookie("pf_auth", secret=SESSION_SECRET)
+        if auth_cookie:
+            return func(*args, **kwargs)
+
+        auth_header = request.get_header("Authorization") or ""
+        bearer_prefix = "Bearer "
+        bearer_token = (
+            auth_header[len(bearer_prefix):].strip()
+            if auth_header.startswith(bearer_prefix)
+            else ""
+        )
+        provided_token = request.get_header("X-PiFinder-Mobile-Token") or bearer_token
+        configured_token = mobile_bridge.configured_mobile_api_token()
+        if not configured_token:
+            response.status = 503
+            return mobile_bridge.error_payload(
+                "mobile_auth_not_configured",
+                (
+                    "Mobile API token is required. Set PIFINDER_MOBILE_TOKEN "
+                    "or create mobile/mobile_api_token.txt under PiFinder_data."
+                ),
+            )
+        if mobile_bridge.mobile_api_token_matches(provided_token, configured_token):
+            return func(*args, **kwargs)
+
+        response.status = 401
+        return mobile_bridge.error_payload(
+            "mobile_auth_required",
+            "Send X-PiFinder-Mobile-Token or Authorization: Bearer <token>.",
+        )
+
+    return mobile_auth_wrapper
+
+
 class Server:
     def __init__(
         self,
@@ -196,6 +232,7 @@ class Server:
             return payload
 
         @app.route("/mobile/mount_profile")
+        @mobile_auth_required
         def mobile_mount_profile():
             return mobile_bridge.mount_profile_status(
                 mobile_profile_path=mobile_bridge.MOBILE_DATA_DIR
@@ -203,10 +240,12 @@ class Server:
             )
 
         @app.route("/mobile/optical_boresight")
+        @mobile_auth_required
         def mobile_optical_boresight_status():
             return mobile_bridge.optical_boresight_status()
 
         @app.route("/mobile/profile", method="POST")
+        @mobile_auth_required
         def mobile_profile():
             payload = request.json
             if not isinstance(payload, dict):
@@ -230,6 +269,7 @@ class Server:
             }
 
         @app.route("/mobile/environment", method="POST")
+        @mobile_auth_required
         def mobile_environment():
             payload = request.json
             if not isinstance(payload, dict):
@@ -267,6 +307,7 @@ class Server:
             }
 
         @app.route("/mobile/gps", method="POST")
+        @mobile_auth_required
         def mobile_gps():
             payload = request.json
             if not isinstance(payload, dict):
@@ -300,6 +341,7 @@ class Server:
             }
 
         @app.route("/mobile/imu", method="POST")
+        @mobile_auth_required
         def mobile_imu():
             payload = request.json
             if not isinstance(payload, dict):
@@ -333,6 +375,7 @@ class Server:
             }
 
         @app.route("/mobile/imu_drift_analysis", method="POST")
+        @mobile_auth_required
         def mobile_imu_drift_analysis():
             payload = request.json
             result = mobile_bridge.ai_imu_drift_analysis(payload)
@@ -341,6 +384,7 @@ class Server:
             return result
 
         @app.route("/mobile/camera_frame", method="POST")
+        @mobile_auth_required
         def mobile_camera_frame():
             start_time = time.time()
             upload = request.files.get("frame")
@@ -393,6 +437,7 @@ class Server:
             }
 
         @app.route("/mobile/camera_reports")
+        @mobile_auth_required
         def mobile_camera_reports():
             try:
                 limit = int(request.query.get("limit", 20))
@@ -401,6 +446,7 @@ class Server:
             return mobile_bridge.camera_report_history(limit=limit)
 
         @app.route("/mobile/camera_solve", method="POST")
+        @mobile_auth_required
         def mobile_camera_solve():
             payload = request.json
             if not isinstance(payload, dict):
@@ -411,7 +457,17 @@ class Server:
                 )
 
             frame_id = payload.get("frame_id")
-            solve_timeout_ms = int(payload.get("solve_timeout_ms", 1000))
+            solve_timeout_ms, timeout_error = mobile_bridge.validate_solve_timeout_ms(
+                payload,
+                default_ms=1000,
+            )
+            if timeout_error:
+                response.status = 400
+                return mobile_bridge.error_payload(
+                    "invalid_solve_timeout",
+                    timeout_error,
+                )
+            assert solve_timeout_ms is not None
             preprocess_modes = payload.get("preprocess_modes")
             if isinstance(preprocess_modes, str):
                 preprocess_modes = [
@@ -439,6 +495,7 @@ class Server:
             return result
 
         @app.route("/mobile/optical_boresight", method="POST")
+        @mobile_auth_required
         def mobile_optical_boresight():
             payload = request.json
             result = mobile_bridge.optical_boresight_calibration(payload)
