@@ -341,8 +341,11 @@ class Server:
         # ------------------------------------------------------------------
         @app.route("/mobile/status")
         def mobile_status():
+            # Intentionally public (unauthenticated) as a connectivity/health
+            # check: status_payload() exposes only static capability flags, no
+            # private data. It must stay side-effect free -- do not persist to
+            # disk here, or an unauthenticated GET could force repeated writes.
             payload = mobile_bridge.status_payload()
-            mobile_bridge.write_debug_json("status.json", payload)
             return jsonify(payload)
 
         @app.route("/mobile/mount_profile")
