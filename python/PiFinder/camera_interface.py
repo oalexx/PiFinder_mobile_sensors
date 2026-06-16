@@ -9,16 +9,17 @@ This module is the camera
 
 """
 
-import datetime
-import logging
-import os
-import queue
-import time
 from typing import Tuple, Optional
-
 from PIL import Image
+import os
+import time
+import datetime
+import numpy as np
+import queue
+import logging
 
 from PiFinder import state_utils, utils
+import PiFinder.pointing_model.quaternion_transforms as qt
 from PiFinder.auto_exposure import (
     ExposurePIDController,
     ExposureSNRController,
@@ -32,6 +33,12 @@ from PiFinder.sqm.camera_profiles import detect_camera_type
 
 logger = logging.getLogger("Camera.Interface")
 
+# Daytime alignment uses the camera's native (driver) auto-exposure where it is
+# available. On backends with no native AE (debug / non-Pi), `set_exp:native`
+# falls back to this fixed short exposure -- short enough not to saturate in
+# daylight while still usable for framing a distant object.
+DAYTIME_AE_FALLBACK_EXPOSURE = 1000  # microseconds
+
 
 class CameraInterface:
     """The CameraInterface interface."""
@@ -43,6 +50,18 @@ class CameraInterface:
     _auto_exposure_pid: Optional[ExposurePIDController] = None
     _auto_exposure_snr: Optional[ExposureSNRController] = None
     _last_solve_time: Optional[float] = None
+    # Native (camera-driver) auto-exposure, distinct from the solver-driven
+    # auto-exposure above. Enabled for daytime alignment via `set_exp:native`.
+    _native_ae_enabled = False
+
+    def set_native_ae(self, enabled: bool) -> bool:
+        """Enable/disable the camera's native (driver) auto-exposure.
+
+        Returns True if the backend actually supports native AE; False otherwise
+        (the caller then falls back to a fixed short exposure). The base
+        implementation has no native AE.
+        """
+        return False
 
     def initialize(self) -> None:
         pass
@@ -56,6 +75,12 @@ class CameraInterface:
     def capture_raw_file(self, filename) -> None:
         pass
 
+    def _blank_capture(self):
+        """
+        Returns a properly formated black frame
+        """
+        return Image.new("L", (512, 512), 0)  # Black 512x512 image
+
     def capture_bias(self):
         """
         Capture a bias frame for pedestal calculation.
@@ -63,7 +88,7 @@ class CameraInterface:
         Override in subclasses that support bias frames.
         Returns Image.Image or np.ndarray depending on implementation.
         """
-        return Image.new("L", (512, 512), 0)  # Black 512x512 image
+        return self._blank_capture()
 
     def set_camera_config(
         self, exposure_time: float, gain: float
@@ -171,26 +196,34 @@ class CameraInterface:
                         base_image = base_image.convert(
                             "L"
                         )  # Convert to grayscale to match camera output
-                        time.sleep(1)
+                        time.sleep(0.2)
                     image_end_time = time.time()
                     # check imu to make sure we're still static
                     imu_end = shared_state.imu()
 
                     # see if we moved during exposure
-                    reading_diff = 0
                     if imu_start and imu_end:
-                        reading_diff = (
-                            abs(imu_start["pos"][0] - imu_end["pos"][0])
-                            + abs(imu_start["pos"][1] - imu_end["pos"][1])
-                            + abs(imu_start["pos"][2] - imu_end["pos"][2])
+                        # Returns the pointing difference between successive IMU quaternions as
+                        # an angle (radians). Note that this also accounts for rotation around the
+                        # scope axis. Returns an angle in radians.
+                        pointing_diff = qt.get_quat_angular_diff(
+                            imu_start.quat, imu_end.quat
                         )
+                    else:
+                        pointing_diff = 0.0
 
-                    camera_image.paste(base_image)
+                    # Make image available
+                    if debug and abs(pointing_diff) > 0.01:
+                        # Check if we moved and return a blank image
+                        camera_image.paste(self._blank_capture())
+                    else:
+                        camera_image.paste(base_image)
+
                     image_metadata = {
                         "exposure_start": image_start_time,
                         "exposure_end": image_end_time,
                         "imu": imu_end,
-                        "imu_delta": reading_diff,
+                        "imu_delta": np.rad2deg(pointing_diff),
                         "exposure_time": self.exposure_time,
                         "gain": self.gain,
                     }
@@ -200,15 +233,13 @@ class CameraInterface:
                     # Updates as fast as new solve results arrive (naturally rate-limited)
                     if self._auto_exposure_enabled and self._auto_exposure_pid:
                         solution = shared_state.solution()
-                        solve_source = (
-                            solution.get("solve_source") if solution else None
-                        )
+                        solve_source = solution.solve_source if solution else None
 
                         # Handle camera solves (successful or failed)
                         if solve_source in ("CAM", "CAM_FAILED"):
-                            matched_stars = solution.get("Matches", 0)
-                            solve_attempt_time = solution.get("last_solve_attempt")
-                            solve_rmse = solution.get("RMSE")
+                            matched_stars = solution.diagnostics.Matches
+                            solve_attempt_time = solution.last_solve_attempt
+                            solve_rmse = solution.diagnostics.RMSE
 
                             # Only update on NEW solve results (not re-processing same solution)
                             # Use last_solve_attempt since it's set for both success and failure
@@ -307,6 +338,7 @@ class CameraInterface:
                             if exp_value == "auto":
                                 # Enable auto-exposure mode
                                 self._auto_exposure_enabled = True
+                                self._native_ae_enabled = False
                                 self._last_solve_time = None  # Reset solve tracking
                                 if self._auto_exposure_pid is None:
                                     self._auto_exposure_pid = ExposurePIDController()
@@ -314,9 +346,35 @@ class CameraInterface:
                                     self._auto_exposure_pid.reset()
                                 console_queue.put("CAM: Auto-Exposure Enabled")
                                 logger.info("Auto-exposure mode enabled")
-                            else:
-                                # Disable auto-exposure and set manual exposure
+                            elif exp_value == "native":
+                                # Native (driver) auto-exposure for daytime align.
+                                # Disable the solver-driven AE so it doesn't fight
+                                # the driver; leave the saved camera_exp config
+                                # untouched so the prior mode can be restored.
                                 self._auto_exposure_enabled = False
+                                self._last_solve_time = None
+                                if self.set_native_ae(True):
+                                    self._native_ae_enabled = True
+                                    console_queue.put("CAM: Native AE")
+                                    logger.info("Native auto-exposure enabled")
+                                else:
+                                    # No native AE on this backend (debug / non-Pi):
+                                    # fall back to a fixed short daylight exposure.
+                                    self._native_ae_enabled = False
+                                    self.exposure_time = DAYTIME_AE_FALLBACK_EXPOSURE
+                                    self.set_camera_config(
+                                        self.exposure_time, self.gain
+                                    )
+                                    console_queue.put("CAM: Day exposure")
+                                    logger.info(
+                                        "Native AE unsupported; fixed exposure "
+                                        f"{self.exposure_time}µs"
+                                    )
+                            else:
+                                # Disable auto-exposure and set manual exposure.
+                                # set_camera_config also clears native AE on Pi.
+                                self._auto_exposure_enabled = False
+                                self._native_ae_enabled = False
                                 self.exposure_time = int(exp_value)
                                 self.set_camera_config(self.exposure_time, self.gain)
                                 # Update config to reflect manual exposure value
@@ -391,7 +449,10 @@ class CameraInterface:
 
                         if command == "exp_up" or command == "exp_dn":
                             # Manual exposure adjustments disable auto-exposure
+                            # (both solver-driven and native; set_camera_config
+                            # also clears native AeEnable on Pi).
                             self._auto_exposure_enabled = False
+                            self._native_ae_enabled = False
                             if command == "exp_up":
                                 self.exposure_time = int(self.exposure_time * 1.25)
                             else:
@@ -410,7 +471,17 @@ class CameraInterface:
                                 f"Exposure saved and auto-exposure disabled: {self.exposure_time}µs"
                             )
 
-                        if command.startswith("save"):
+                        if command.startswith("save_image:"):
+                            # Save current camera frame to specified path
+                            save_path = command.split(":", 1)[1]
+                            try:
+                                img = camera_image.copy()
+                                img.save(save_path, "PNG", compress_level=6)
+                                logger.debug("Telemetry image saved: %s", save_path)
+                            except Exception as e:
+                                logger.error("Failed to save telemetry image: %s", e)
+
+                        if command.startswith("save:"):
                             # Set flag to save next capture to this file
                             self._save_next_to = command.split(":")[1]
                             console_queue.put("CAM: Save flag set")
@@ -578,11 +649,15 @@ class CameraInterface:
                                 altitude_deg = None
                                 azimuth_deg = None
 
-                                if solve_state is not None:
-                                    ra_deg = solve_state.get("RA")
-                                    dec_deg = solve_state.get("Dec")
-                                    altitude_deg = solve_state.get("Alt")
-                                    azimuth_deg = solve_state.get("Az")
+                                if (
+                                    solve_state is not None
+                                    and solve_state.has_pointing()
+                                ):
+                                    aligned = solve_state.pointing.aligned.estimate
+                                    ra_deg = aligned.RA
+                                    dec_deg = aligned.Dec
+                                    altitude_deg = solve_state.Alt
+                                    azimuth_deg = solve_state.Az
                                     logger.debug(
                                         f"Solve: RA={ra_deg}, Dec={dec_deg}, Alt={altitude_deg}, Az={azimuth_deg}"
                                     )
