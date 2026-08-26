@@ -67,8 +67,11 @@ For re-imaging instructions, see :ref:`user_guide:update software` and the
 The camera view is blank or black
 ---------------------------------
 
-If the Focus screen shows nothing at all — not even faint noise with the lens cap on —
-the **Camera Type** setting probably doesn't match the camera in your unit.
+The Focus screen opens on its magnified star tiles, which stay black whenever no stars are
+detected — so a healthy camera can look dead there.  Press **SQUARE** until the **Image**
+view shows the full camera frame before judging.  If the Image view shows nothing at all —
+not even faint noise with the lens cap on — the **Camera Type** setting probably doesn't
+match the camera in your unit.
 
 - Open Settings → Advanced and try a different Camera Type.  The v3 sensors are ``imx462`` and
   ``imx296``; older v2 cameras are ``imx477``.  It won't hurt to try each.
@@ -76,8 +79,9 @@ the **Camera Type** setting probably doesn't match the camera in your unit.
   restart alone won't apply it.
 - A software update can quietly reset this setting, so re-check it after you update.
 
-A healthy camera shows at least faint noise with the lens cap on, and a brighter image in
-daylight — use that to confirm the camera is alive before chasing focus or exposure.
+A healthy camera shows at least faint noise in the Image view with the lens cap on, and a
+brighter image in daylight — use that to confirm the camera is alive before chasing focus
+or exposure.
 
 
 It won't plate solve ("can't find stars")
@@ -90,15 +94,19 @@ often not tight enough.
 
 Work through these in order:
 
-- **Focus, properly.**  On the Focus screen, use **+/-** to zoom to 2x and 4x and rotate
-  the lens until the stars are as small as you can make them.  Tight focus matters *even
+- **Focus, properly.**  On the Focus screen, rotate the lens until the four magnified stars
+  are as small as possible and the central HFD reaches its lowest value.  The difference
+  between fair and good focus is less than half a turn, so work in steps of an eighth to a
+  quarter of a turn with a pause for vibration to settle, and judge by the HFD rather than
+  the camera icon, which lags a second or so behind each change of the lens.  Tight focus matters *even
   more* under bright, light-polluted skies, where slightly soft dim stars vanish into the
   background.  If you're starting from way off, set the lens so about 6 mm of thread is
   showing — roughly a pencil's width — which is close to in focus.
 - **Lens cap off, and hold still.**  The PiFinder can only solve a sharp, stationary
   image.
-- **Exposure.**  The default 0.2 s suits most skies.  For bright urban skies try 0.4 s;
-  for dark skies 0.1 s works well, or choose **AUTO** to let the PiFinder set it for you.
+- **Exposure.**  The PiFinder defaults to **AUTO**, setting the exposure itself from each
+  solve — leave it there unless you have a reason not to.  To set it by hand, 0.2 s suits
+  most skies, bright urban skies want 0.4 s, and dark skies solve well at 0.1 s.
   (Software older than 2.2 doesn't have the AUTO option — another reason to update.)
 - **High, thin cloud.**  An invisible drifting cloudbank will stop solves at an otherwise
   perfect site.  If solves come and go while the scope is dead still, suspect the sky
@@ -167,8 +175,9 @@ Frequently Asked Questions
    select it on the PiFinder's chart.
 
 **Does it work in light-polluted skies?**
-   Yes — very well.  Bright skies just need a longer exposure: raise the default 0.2 s to
-   0.4 s for heavy light pollution.  Good focus matters most of all here.
+   Yes — very well.  Leave the exposure on **AUTO** and the PiFinder adapts it to the sky;
+   setting it by hand, a longer 0.4 s helps pull stars out under heavy light pollution.
+   Good focus matters most of all here.
 
 **How do I update the software?**
    From the unit, go to Tools → Software Upd while connected to a WiFi network with

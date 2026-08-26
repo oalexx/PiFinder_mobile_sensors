@@ -13,6 +13,4 @@ def test_keyboard_none_accepts_main_process_arguments():
         "q",
         "shared_state",
         "log_queue",
-        "bloom_remap",
     ]
-    assert signature.parameters["bloom_remap"].default is False

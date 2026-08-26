@@ -17,6 +17,7 @@ import pytz
 
 from typing import Any, TYPE_CHECKING
 from PiFinder import utils, calc_utils
+from PiFinder import timez
 from PiFinder.locations import Location as SavedLocation
 from PiFinder.state import Location
 from PiFinder.ui.base import UIModule
@@ -97,18 +98,9 @@ def apply_brightness(ui_module: UIModule) -> None:
     ui_module.command_queues["ui_queue"].put("set_brightness")
 
 
-def set_auto_exposure_zero_star_handler(ui_module: UIModule) -> None:
-    """
-    Sets the zero-star handler plugin for auto-exposure.
-    Supports:
-      - "sweep": Systematic doubling sweep (25ms→1s, 2× ratio)
-      - "exponential": Logarithmic sweep (25ms→1s, 1.85× ratio, 7 steps)
-      - "reset": Quick reset to 0.4s default
-      - "histogram": Histogram-based adaptive with viable exposure selection
-    """
-    handler_type = ui_module.config_object.get_option("auto_exposure_zero_star_handler")
-    logger.info("Set auto-exposure zero-star handler to: %s", handler_type)
-    ui_module.command_queues["camera"].put(f"set_ae_handler:{handler_type}")
+def apply_sound_volume(ui_module: UIModule) -> None:
+    """Re-push master volume from current config to the buzzer."""
+    ui_module.command_queues["ui_queue"].put("set_volume")
 
 
 def capture_exposure_sweep(ui_module: UIModule) -> None:
@@ -170,10 +162,17 @@ def get_camera_exposure_display(ui_module: UIModule) -> str:
 
 def shutdown(ui_module: UIModule) -> None:
     """
-    shuts down the Pi
+    Shuts down the Pi.
+
+    Routes through the main loop (``play_shutdown_sound``) instead of calling
+    ``sys_utils.shutdown()`` here. This callback runs in the main process but
+    does not hold ``sound_queue``; the SHUTDOWN earcon must play and its
+    bounded wait elapse *before* the OS cuts power (the GPIO14 latch). The
+    main-loop handler plays the cue, waits, then triggers the shutdown — with
+    or without a buzzer. See ADR 0008 and the Sound handoff §6.
     """
     ui_module.message(_("Shutting Down"), 10)
-    sys_utils.shutdown()
+    ui_module.command_queues["ui_queue"].put("play_shutdown_sound")
 
 
 def restart_pifinder(ui_module: UIModule) -> None:
@@ -280,12 +279,12 @@ def set_location(ui_module: UIModule) -> None:
 
 def gps_reset(ui_module: UIModule) -> None:
     ui_module.command_queues["gps"].put(("reset", {}))
-    ui_module.message("Location Reset", 2)
+    ui_module.message(_("Location Reset"), 2)
 
 
 def datetime_reset(ui_module: UIModule) -> None:
     ui_module.command_queues["gps"].put(("reset_datetime", {}))
-    ui_module.message("Time/Date Reset", 2)
+    ui_module.message(_("Time/Date Reset"), 2)
 
 
 def save_location(ui_module: UIModule) -> None:
@@ -325,18 +324,25 @@ def set_time(ui_module: UIModule, time_str: str) -> None:
     """
     logger.info(f"Setting time to: {time_str}")
 
-    timezone_str = ui_module.shared_state.location().timezone
+    # Location.timezone is Optional and pytz.timezone(None) raises, so fall
+    # back rather than crash on commit. set_location already settles the zone
+    # to UTC when it cannot resolve one; this covers a Location built directly.
+    timezone_str = ui_module.shared_state.location().timezone or "UTC"
 
     # First create a datetime object (using today's date by default)
-    dt = datetime.strptime(time_str, "%H:%M:%S")
+    dt = timez.parse(time_str, "%H:%M:%S")
 
     # Get the timezone object
     timezone = pytz.timezone(timezone_str)
 
     # Create a timezone-aware datetime by combining today's date with the time
     # and localizing it to the specified timezone
-    now = datetime.now()
-    dt_with_date = datetime(now.year, now.month, now.day, dt.hour, dt.minute, dt.second)
+    # OS timezone may be different from target timezone so "now's date" needs
+    # to also be taken in the target timezone!!
+    now = datetime.now(timezone)
+    dt_with_date = timez.naive(
+        now.year, now.month, now.day, dt.hour, dt.minute, dt.second
+    )
     dt_with_timezone = timezone.localize(dt_with_date)
 
     ui_module.command_queues["gps"].put(("time_force", {"time": dt_with_timezone}))
@@ -351,10 +357,11 @@ def set_datetime(ui_module: UIModule, date_str: str) -> None:
     time_str = ui_module.item_definition.get("time_str", "00:00:00")
     logger.info(f"Setting datetime to: {date_str} {time_str}")
 
-    timezone_str = ui_module.shared_state.location().timezone
+    # See set_time: fall back rather than raise on an unresolved zone.
+    timezone_str = ui_module.shared_state.location().timezone or "UTC"
     timezone = pytz.timezone(timezone_str)
 
-    dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
+    dt = timez.parse(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
     dt_with_timezone = timezone.localize(dt)
 
     ui_module.command_queues["gps"].put(("time_force", {"time": dt_with_timezone}))
@@ -377,7 +384,10 @@ def handle_radec_entry(ui_module: UIModule, ra_deg: float, dec_deg: float) -> No
     ui_module.shared_state.ui_state().add_recent(custom_object)
 
     # Show popup notification that user object was created
-    ui_module.message(f"User object created\n{custom_object.display_name}", timeout=2)
+    ui_module.message(
+        _("User object created\n{name}").format(name=custom_object.display_name),
+        timeout=2,
+    )
 
     # Navigate to object details for the created object
     object_item_definition = {
