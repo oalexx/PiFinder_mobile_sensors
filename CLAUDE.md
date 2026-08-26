@@ -11,6 +11,24 @@ should not disturb the original hardware mode unless explicitly requested.
 
 Current status:
 
+- 2026-08-26 upstream resync: merged `upstream/main` `19717fb2..0f54d7fc`
+  (156 commits, ~10 weeks, spanning releases v2.6.1 and v2.6.2/relabeled
+  v2.6.3) into the fork in 3 staged merges (branch `upstream-sync-2026-08`,
+  safety tag `pre-upstream-sync-2026-08-26`). Pulls in perf/reliability
+  fixes, Rev4 hardware enablement (incl. `kicad/PiFinder_rev4/`), SQM
+  self-calibration rework, focus/optics improvements, observing-list import
+  formats, GPS UBX decoding fixes, low-battery UX overhaul, two i18n passes,
+  and API input-validation hardening in `server.py`. Only real conflict was
+  in `server.py`'s import block (kept the fork's `mobile_bridge` import
+  alongside upstream's new `timez` module) — resolved once in the first
+  stage, stages 2-3 merged clean. Upstream's `bloom_remap` parameter removal
+  auto-merged cleanly across `keyboard_none.py`/`keyboard_local.py`/
+  `keyboard_pi.py`; `test_keyboard_none.py`'s signature assertion was
+  updated to match (3 params, no `bloom_remap`). All 93 mobile/Lite tests
+  pass on Windows after the full sync; `python/PiFinder/*.py` byte-compiles
+  clean. Not yet validated on a real Pi / full Flask runtime, and Fase 1
+  static checks (ruff/mypy) could not run on Windows (minimal dev venv
+  lacks them) — same pending gap as the 2026-06-16 entry below, still open.
 - 2026-06-16 upstream resync: the fork was merged onto `upstream/main`
   (Bottle -> Flask webserver, #331) on branch `upstream-main-migration-20260616`.
   The 11 `/mobile/*` endpoints and `mobile_auth_required` were ported to Flask;
